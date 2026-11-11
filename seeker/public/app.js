@@ -1,0 +1,147 @@
+const form = document.querySelector('#import-form');
+const limitInput = document.querySelector('#import-limit');
+const importButton = document.querySelector('#import-button');
+const buttonLabel = document.querySelector('#button-label');
+const toast = document.querySelector('#toast');
+let toastTimer;
+
+function formatDate(value, options = {}) {
+  if (!value) return 'Never';
+  const date = new Date(value);
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: options.dateStyle || 'medium',
+    ...(options.timeStyle ? { timeStyle: options.timeStyle } : {}),
+  }).format(date);
+}
+
+function relativeDate(value) {
+  if (!value) return 'Run an import to start';
+  const date = new Date(value);
+  const seconds = Math.round((date.getTime() - Date.now()) / 1000);
+  const units = [
+    ['year', 31_536_000],
+    ['month', 2_592_000],
+    ['day', 86_400],
+    ['hour', 3_600],
+    ['minute', 60],
+  ];
+  for (const [unit, size] of units) {
+    if (Math.abs(seconds) >= size) {
+      return new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(Math.round(seconds / size), unit);
+    }
+  }
+  return 'Just now';
+}
+
+function escapeHtml(value = '') {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[character]);
+}
+
+function showToast(message, isError = false) {
+  clearTimeout(toastTimer);
+  toast.textContent = message;
+  toast.classList.toggle('error', isError);
+  toast.classList.add('visible');
+  toastTimer = setTimeout(() => toast.classList.remove('visible'), 5000);
+}
+
+function renderArtists(artists) {
+  const list = document.querySelector('#artist-list');
+  document.querySelector('#recent-count').textContent = `${artists.length} ${artists.length === 1 ? 'artist' : 'artists'}`;
+  if (!artists.length) {
+    list.innerHTML = '<div class="empty-state"><span class="empty-icon">♫</span><strong>Your artist catalogue starts here</strong><span>Use “Get data” to import Lithuanian artists from MusicBrainz.</span></div>';
+    return;
+  }
+  const rows = artists.map((artist) => {
+    const name = escapeHtml(artist.name);
+    const type = escapeHtml(artist.artist_type || 'Artist');
+    const area = escapeHtml(artist.area || artist.country || '—');
+    const date = formatDate(artist.first_seen_at, { dateStyle: 'short' });
+    return `<tr>
+      <td><a class="artist-name-link" href="${escapeHtml(artist.source_url)}" target="_blank" rel="noreferrer">${name}<span class="artist-type">${type}</span></a></td>
+      <td class="artist-area">${area}</td>
+      <td>${escapeHtml(date)}</td>
+    </tr>`;
+  }).join('');
+  list.innerHTML = `<table class="artist-table"><thead><tr><th>ARTIST</th><th>AREA</th><th>FIRST SEEN</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderRuns(runs) {
+  const list = document.querySelector('#run-list');
+  if (!runs.length) {
+    list.innerHTML = '<div class="empty-activity">No imports yet</div>';
+    return;
+  }
+  list.innerHTML = runs.map((run) => {
+    const statusClass = run.status === 'failed' ? 'failed' : run.status === 'running' ? 'running' : '';
+    const statusText = run.status === 'failed' ? 'Import failed' : run.status === 'running' ? 'Import in progress' : `Checked up to ${run.requested_limit}`;
+    const added = run.status === 'completed' ? `+${run.added_count}` : '';
+    const error = run.error_message ? `<div class="run-failed">${escapeHtml(run.error_message)}</div>` : '';
+    return `<div class="activity-row">
+      <span class="run-status-dot ${statusClass}"></span>
+      <div><div class="run-main">${statusText}</div><div class="run-date">${escapeHtml(formatDate(run.started_at, { dateStyle: 'medium', timeStyle: 'short' }))}</div>${error}</div>
+      <span class="run-added">${added}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderDashboard(data) {
+  document.querySelector('#total-artists').textContent = Number(data.totalArtists).toLocaleString();
+  const lastRun = data.lastRun;
+  if (!lastRun) {
+    document.querySelector('#last-run-date').textContent = 'Never';
+    document.querySelector('#last-run-relative').textContent = 'Run an import to start';
+    document.querySelector('#last-run-added').textContent = '—';
+    document.querySelector('#last-run-summary').textContent = 'From the latest import';
+  } else {
+    document.querySelector('#last-run-date').textContent = formatDate(lastRun.started_at, { dateStyle: 'medium' });
+    document.querySelector('#last-run-relative').textContent = relativeDate(lastRun.started_at);
+    document.querySelector('#last-run-added').textContent = lastRun.status === 'completed' ? Number(lastRun.added_count).toLocaleString() : '—';
+    document.querySelector('#last-run-summary').textContent = lastRun.status === 'completed'
+      ? `${Number(lastRun.updated_count).toLocaleString()} existing records refreshed`
+      : lastRun.status === 'failed' ? 'The latest import failed' : 'Import is in progress';
+  }
+  renderArtists(data.recentArtists);
+  renderRuns(data.recentRuns);
+}
+
+async function loadDashboard() {
+  const response = await fetch('/api/dashboard');
+  if (!response.ok) throw new Error('Could not load the dashboard data.');
+  renderDashboard(await response.json());
+}
+
+form.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const limit = Number(limitInput.value);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
+    showToast('Enter a whole number from 1 to 1,000.', true);
+    limitInput.focus();
+    return;
+  }
+  importButton.disabled = true;
+  buttonLabel.textContent = 'Importing…';
+  try {
+    const response = await fetch('/api/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ limit }),
+    });
+    const result = await response.json();
+    if (result.dashboard) renderDashboard(result.dashboard);
+    if (!response.ok) throw new Error(result.error || 'The import failed.');
+    const { addedCount, updatedCount, fetchedCount, totalAvailable } = result.result;
+    const suffix = totalAvailable !== null && fetchedCount < limit ? ` (${totalAvailable.toLocaleString()} matched)` : '';
+    showToast(`Done — added ${addedCount}, refreshed ${updatedCount}${suffix}.`);
+  } catch (error) {
+    await loadDashboard().catch(() => {});
+    showToast(error.message || 'Could not reach MusicBrainz.', true);
+  } finally {
+    importButton.disabled = false;
+    buttonLabel.textContent = 'Get data';
+  }
+});
+
+loadDashboard().catch((error) => showToast(error.message, true));
