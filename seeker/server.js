@@ -43,16 +43,42 @@ db.exec(`
     started_at TEXT NOT NULL,
     finished_at TEXT,
     requested_limit INTEGER NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'next',
     fetched_count INTEGER NOT NULL DEFAULT 0,
     added_count INTEGER NOT NULL DEFAULT 0,
     updated_count INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'running',
     error_message TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS source_state (
+    source_key TEXT PRIMARY KEY,
+    next_offset INTEGER NOT NULL DEFAULT 0,
+    total_available INTEGER,
+    updated_at TEXT NOT NULL
+  );
 `);
 
+const runColumns = db.prepare('PRAGMA table_info(import_runs)').all();
+if (!runColumns.some((column) => column.name === 'mode')) {
+  db.exec("ALTER TABLE import_runs ADD COLUMN mode TEXT NOT NULL DEFAULT 'next'");
+}
+
+const sourceKey = 'musicbrainz-lithuania-artists';
+const storedSourceState = db.prepare('SELECT source_key FROM source_state WHERE source_key = ?').get(sourceKey);
+if (!storedSourceState) {
+  const previousRun = db.prepare(`
+    SELECT mode, fetched_count FROM import_runs WHERE status = 'completed' ORDER BY id DESC LIMIT 1
+  `).get();
+  const initialOffset = previousRun && previousRun.mode !== 'all'
+    ? Number(previousRun.fetched_count || 0)
+    : 0;
+  db.prepare(`INSERT INTO source_state (source_key, next_offset, updated_at) VALUES (?, ?, ?)`)
+    .run(sourceKey, initialOffset, new Date().toISOString());
+}
+
 const statements = {
-  runStart: db.prepare('INSERT INTO import_runs (started_at, requested_limit) VALUES (?, ?)'),
+  runStart: db.prepare('INSERT INTO import_runs (started_at, requested_limit, mode) VALUES (?, ?, ?)'),
   runFinish: db.prepare(`UPDATE import_runs SET finished_at = ?, fetched_count = ?, added_count = ?, updated_count = ?, status = ?, error_message = ? WHERE id = ?`),
   artistExists: db.prepare('SELECT 1 FROM artists WHERE mbid = ?'),
   artistUpsert: db.prepare(`
@@ -78,6 +104,7 @@ const statements = {
 };
 
 let importInProgress = false;
+let lastMusicBrainzRequestAt = 0;
 
 function sendJson(response, statusCode, body) {
   response.writeHead(statusCode, {
@@ -90,12 +117,14 @@ function sendJson(response, statusCode, body) {
 function readDashboard() {
   const totalArtists = db.prepare('SELECT COUNT(*) AS count FROM artists').get().count;
   const lastRun = db.prepare('SELECT * FROM import_runs ORDER BY id DESC LIMIT 1').get() || null;
+  const sourceState = db.prepare('SELECT next_offset, total_available FROM source_state WHERE source_key = ?')
+    .get('musicbrainz-lithuania-artists');
   const recentRuns = db.prepare('SELECT * FROM import_runs ORDER BY id DESC LIMIT 8').all();
-  const recentArtists = db.prepare(`
+  const artists = db.prepare(`
     SELECT mbid, name, artist_type, area, country, source_url, first_seen_at
-    FROM artists ORDER BY first_seen_at DESC, name COLLATE NOCASE LIMIT 10
+    FROM artists ORDER BY name COLLATE NOCASE ASC
   `).all();
-  return { totalArtists, lastRun, recentRuns, recentArtists, importInProgress };
+  return { totalArtists, lastRun, recentRuns, artists, sourceState, importInProgress };
 }
 
 function sleep(ms) {
@@ -109,17 +138,40 @@ async function fetchArtistPage(offset, limit) {
   url.searchParams.set('limit', String(limit));
   url.searchParams.set('offset', String(offset));
 
-  const response = await fetch(url, {
-    headers: {
-      accept: 'application/json',
-      'user-agent': userAgent,
-    },
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!response.ok) {
+  const backoffMs = [2000, 4000, 8000];
+  for (let attempt = 0; attempt <= backoffMs.length; attempt += 1) {
+    const delay = Math.max(0, 1100 - (Date.now() - lastMusicBrainzRequestAt));
+    if (delay > 0) await sleep(delay);
+    lastMusicBrainzRequestAt = Date.now();
+
+    const response = await fetch(url, {
+      headers: {
+        accept: 'application/json',
+        'user-agent': userAgent,
+      },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (response.ok) return response.json();
+
+    if (response.status === 503 && attempt < backoffMs.length) {
+      const retryAfter = response.headers.get('retry-after');
+      const retryAfterSeconds = Number(retryAfter);
+      const retryAfterDate = Date.parse(retryAfter || '');
+      const retryAfterMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+        ? Math.min(retryAfterSeconds * 1000, 30000)
+        : Number.isFinite(retryAfterDate)
+          ? Math.min(Math.max(0, retryAfterDate - Date.now()), 30000)
+          : 0;
+      await sleep(Math.max(backoffMs[attempt], retryAfterMs));
+      continue;
+    }
+
+    if (response.status === 503) {
+      throw new Error('MusicBrainz is still returning HTTP 503 after several retries. Its API may be busy or rate-limiting requests. Completed pages are saved, so “Get next batch” can resume from the next unsaved page.');
+    }
     throw new Error(`MusicBrainz returned HTTP ${response.status}. Please try again later.`);
   }
-  return response.json();
+  throw new Error('MusicBrainz did not return a response. Please try again later.');
 }
 
 function datePart(value) {
@@ -129,28 +181,37 @@ function datePart(value) {
   return parts.length ? parts.join('-') : null;
 }
 
-async function importArtists(limit, runId) {
+async function importArtists(limit, runId, startOffset, fetchAll = false) {
   let fetchedCount = 0;
   let addedCount = 0;
   let updatedCount = 0;
-  let offset = 0;
+  let offset = startOffset;
   let totalAvailable = null;
-  let previousRequestAt = 0;
+  let nextOffset = startOffset;
 
   try {
-    while (fetchedCount < limit) {
-      const now = Date.now();
-      const delay = Math.max(0, 1100 - (now - previousRequestAt));
-      if (previousRequestAt) await sleep(delay);
-      previousRequestAt = Date.now();
-
-      const requestedPageSize = Math.min(pageSize, limit - fetchedCount);
+    while (fetchAll || fetchedCount < limit) {
+      const requestedPageSize = fetchAll ? pageSize : Math.min(pageSize, limit - fetchedCount);
       const page = await fetchArtistPage(offset, requestedPageSize);
       const artists = Array.isArray(page.artists) ? page.artists : [];
       if (totalAvailable === null) totalAvailable = Number(page.count || artists.length);
-      if (artists.length === 0) break;
+      if (artists.length === 0) {
+        if (fetchedCount === 0 && offset > 0) {
+          offset = 0;
+          nextOffset = 0;
+          continue;
+        }
+        nextOffset = 0;
+        db.prepare(`UPDATE source_state SET next_offset = 0, total_available = ?, updated_at = ? WHERE source_key = ?`)
+          .run(totalAvailable, new Date().toISOString(), sourceKey);
+        break;
+      }
 
       const timestamp = new Date().toISOString();
+      let pageAddedCount = 0;
+      let pageUpdatedCount = 0;
+      const nextPageOffset = offset + artists.length;
+      nextOffset = nextPageOffset >= totalAvailable ? 0 : nextPageOffset;
       db.exec('BEGIN');
       try {
         for (const artist of artists) {
@@ -173,23 +234,27 @@ async function importArtists(limit, runId) {
             timestamp,
             timestamp,
           );
-          if (isNew) addedCount += 1;
-          else updatedCount += 1;
+          if (isNew) pageAddedCount += 1;
+          else pageUpdatedCount += 1;
         }
+        db.prepare(`UPDATE source_state SET next_offset = ?, total_available = ?, updated_at = ? WHERE source_key = ?`)
+          .run(nextOffset, totalAvailable, timestamp, 'musicbrainz-lithuania-artists');
         db.exec('COMMIT');
       } catch (error) {
         db.exec('ROLLBACK');
         throw error;
       }
 
+      addedCount += pageAddedCount;
+      updatedCount += pageUpdatedCount;
       fetchedCount += artists.length;
-      offset += artists.length;
+      offset = nextPageOffset;
       if (artists.length < requestedPageSize || offset >= totalAvailable) break;
     }
 
     const finishedAt = new Date().toISOString();
     statements.runFinish.run(finishedAt, fetchedCount, addedCount, updatedCount, 'completed', null, runId);
-    return { fetchedCount, addedCount, updatedCount, requestedLimit: limit, totalAvailable };
+    return { fetchedCount, addedCount, updatedCount, requestedLimit: limit, totalAvailable, nextOffset };
   } catch (error) {
     statements.runFinish.run(new Date().toISOString(), fetchedCount, addedCount, updatedCount, 'failed', error.message, runId);
     throw error;
@@ -240,17 +305,21 @@ const server = createServer(async (request, response) => {
       sendJson(response, 400, { error: 'Request body must be valid JSON.' });
       return;
     }
+    const mode = ['next', 'start', 'all'].includes(body.mode) ? body.mode : 'next';
     const limit = Number(body.limit);
-    if (!Number.isInteger(limit) || limit < 1 || limit > maxImportLimit) {
+    if (mode !== 'all' && (!Number.isInteger(limit) || limit < 1 || limit > maxImportLimit)) {
       sendJson(response, 400, { error: `Choose a whole number from 1 to ${maxImportLimit}.` });
       return;
     }
 
     importInProgress = true;
-    const run = statements.runStart.run(new Date().toISOString(), limit);
+    const run = statements.runStart.run(new Date().toISOString(), mode === 'all' ? -1 : limit, mode);
     const runId = Number(run.lastInsertRowid);
+    const currentOffset = db.prepare('SELECT next_offset FROM source_state WHERE source_key = ?')
+      .get('musicbrainz-lithuania-artists').next_offset;
     try {
-      const result = await importArtists(limit, runId);
+      const startOffset = mode === 'next' ? currentOffset : 0;
+      const result = await importArtists(limit, runId, startOffset, mode === 'all');
       sendJson(response, 200, { result, dashboard: readDashboard() });
     } catch (error) {
       sendJson(response, 502, { error: error.message, dashboard: readDashboard() });

@@ -1,9 +1,12 @@
 const form = document.querySelector('#import-form');
 const limitInput = document.querySelector('#import-limit');
-const importButton = document.querySelector('#import-button');
-const buttonLabel = document.querySelector('#button-label');
+const artistSearch = document.querySelector('#artist-search');
+const importButtons = [...document.querySelectorAll('.import-button')];
 const toast = document.querySelector('#toast');
 let toastTimer;
+let nextOffset = 0;
+let totalAvailable = null;
+let allArtists = [];
 
 function formatDate(value, options = {}) {
   if (!value) return 'Never';
@@ -48,13 +51,37 @@ function showToast(message, isError = false) {
 }
 
 function renderArtists(artists) {
+  allArtists = artists;
+  filterArtists();
+}
+
+function normalizeForSearch(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLocaleLowerCase('lt');
+}
+
+function filterArtists() {
   const list = document.querySelector('#artist-list');
-  document.querySelector('#recent-count').textContent = `${artists.length} ${artists.length === 1 ? 'artist' : 'artists'}`;
-  if (!artists.length) {
+  const query = normalizeForSearch(artistSearch.value.trim());
+  const visibleArtists = query
+    ? allArtists.filter((artist) => normalizeForSearch(artist.name).startsWith(query))
+    : allArtists;
+  const count = document.querySelector('#artist-count');
+  count.textContent = query
+    ? `${visibleArtists.length} / ${allArtists.length} artists`
+    : `${allArtists.length} ${allArtists.length === 1 ? 'artist' : 'artists'}`;
+
+  if (!allArtists.length) {
     list.innerHTML = '<div class="empty-state"><span class="empty-icon">♫</span><strong>Your artist catalogue starts here</strong><span>Use “Get data” to import Lithuanian artists from MusicBrainz.</span></div>';
     return;
   }
-  const rows = artists.map((artist) => {
+  if (!visibleArtists.length) {
+    list.innerHTML = `<div class="empty-state"><span class="empty-icon">⌕</span><strong>No artists start with “${escapeHtml(artistSearch.value.trim())}”</strong><span>Try another name or clear the search field.</span></div>`;
+    return;
+  }
+  const rows = visibleArtists.map((artist) => {
     const name = escapeHtml(artist.name);
     const type = escapeHtml(artist.artist_type || 'Artist');
     const area = escapeHtml(artist.area || artist.country || '—');
@@ -76,7 +103,15 @@ function renderRuns(runs) {
   }
   list.innerHTML = runs.map((run) => {
     const statusClass = run.status === 'failed' ? 'failed' : run.status === 'running' ? 'running' : '';
-    const statusText = run.status === 'failed' ? 'Import failed' : run.status === 'running' ? 'Import in progress' : `Checked up to ${run.requested_limit}`;
+    const statusText = run.status === 'failed'
+      ? 'Import failed'
+      : run.status === 'running'
+        ? 'Import in progress'
+        : run.mode === 'all'
+          ? `Full import · ${Number(run.fetched_count).toLocaleString()} artists`
+          : run.mode === 'start'
+            ? `From beginning · ${Number(run.fetched_count).toLocaleString()} artists`
+            : `Next batch · ${Number(run.fetched_count).toLocaleString()} artists`;
     const added = run.status === 'completed' ? `+${run.added_count}` : '';
     const error = run.error_message ? `<div class="run-failed">${escapeHtml(run.error_message)}</div>` : '';
     return `<div class="activity-row">
@@ -90,6 +125,9 @@ function renderRuns(runs) {
 function renderDashboard(data) {
   document.querySelector('#total-artists').textContent = Number(data.totalArtists).toLocaleString();
   const lastRun = data.lastRun;
+  nextOffset = Number(data.sourceState?.next_offset || 0);
+  totalAvailable = data.sourceState?.total_available == null ? null : Number(data.sourceState.total_available);
+  updateBatchPosition();
   if (!lastRun) {
     document.querySelector('#last-run-date').textContent = 'Never';
     document.querySelector('#last-run-relative').textContent = 'Run an import to start';
@@ -103,8 +141,19 @@ function renderDashboard(data) {
       ? `${Number(lastRun.updated_count).toLocaleString()} existing records refreshed`
       : lastRun.status === 'failed' ? 'The latest import failed' : 'Import is in progress';
   }
-  renderArtists(data.recentArtists);
+  renderArtists(data.artists);
   renderRuns(data.recentRuns);
+}
+
+function updateBatchPosition() {
+  const batchSize = Number(limitInput.value);
+  const firstResult = nextOffset + 1;
+  const lastResult = Number.isInteger(batchSize) && batchSize > 0
+    ? totalAvailable ? Math.min(nextOffset + batchSize, totalAvailable) : nextOffset + batchSize
+    : null;
+  document.querySelector('#batch-position').textContent = lastResult
+    ? `Next batch: results ${firstResult.toLocaleString()}–${lastResult.toLocaleString()}${totalAvailable ? ` of ${totalAvailable.toLocaleString()}` : ''}`
+    : `Next batch starts at result ${firstResult.toLocaleString()}`;
 }
 
 async function loadDashboard() {
@@ -115,33 +164,40 @@ async function loadDashboard() {
 
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
+  const mode = event.submitter?.value || 'next';
   const limit = Number(limitInput.value);
-  if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
+  if (mode !== 'all' && (!Number.isInteger(limit) || limit < 1 || limit > 1000)) {
     showToast('Enter a whole number from 1 to 1,000.', true);
     limitInput.focus();
     return;
   }
-  importButton.disabled = true;
-  buttonLabel.textContent = 'Importing…';
+  const submitter = event.submitter;
+  const originalLabel = submitter?.innerHTML;
+  importButtons.forEach((button) => { button.disabled = true; });
+  if (submitter) submitter.innerHTML = '<span class="button-icon" aria-hidden="true">↻</span><span>Importing…</span>';
   try {
     const response = await fetch('/api/import', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ limit }),
+      body: JSON.stringify({ mode, limit }),
     });
     const result = await response.json();
     if (result.dashboard) renderDashboard(result.dashboard);
     if (!response.ok) throw new Error(result.error || 'The import failed.');
-    const { addedCount, updatedCount, fetchedCount, totalAvailable } = result.result;
-    const suffix = totalAvailable !== null && fetchedCount < limit ? ` (${totalAvailable.toLocaleString()} matched)` : '';
-    showToast(`Done — added ${addedCount}, refreshed ${updatedCount}${suffix}.`);
+    const { addedCount, updatedCount, fetchedCount, totalAvailable: matchedCount } = result.result;
+    const action = mode === 'all' ? 'Full import complete' : mode === 'start' ? 'Batch from the beginning complete' : 'Next batch complete';
+    const suffix = matchedCount !== null && fetchedCount < limit && mode !== 'all' ? ` (${matchedCount.toLocaleString()} matched in total)` : '';
+    showToast(`${action} — fetched ${fetchedCount}, added ${addedCount}, refreshed ${updatedCount}${suffix}.`);
   } catch (error) {
     await loadDashboard().catch(() => {});
     showToast(error.message || 'Could not reach MusicBrainz.', true);
   } finally {
-    importButton.disabled = false;
-    buttonLabel.textContent = 'Get data';
+    importButtons.forEach((button) => { button.disabled = false; });
+    if (submitter && originalLabel) submitter.innerHTML = originalLabel;
   }
 });
+
+limitInput.addEventListener('input', updateBatchPosition);
+artistSearch.addEventListener('input', filterArtists);
 
 loadDashboard().catch((error) => showToast(error.message, true));

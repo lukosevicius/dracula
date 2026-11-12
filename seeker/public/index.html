@@ -69,26 +69,34 @@
               <div class="panel-icon" aria-hidden="true">⌁</div>
               <div>
                 <h2>Collect artists</h2>
-                <p>Search MusicBrainz for artists associated with Lithuania. Existing records will be refreshed; new artists will be added.</p>
+                <p>Get the next batch, restart at the beginning, or import every matching result. Existing records are refreshed; new artists are added.</p>
               </div>
             </div>
-            <form id="import-form" class="import-controls">
-              <label class="limit-label" for="import-limit">MAX ARTISTS</label>
+            <form id="import-form" class="import-controls" novalidate>
+              <label class="limit-label" for="import-limit">BATCH SIZE</label>
               <input id="import-limit" name="limit" type="number" min="1" max="1000" step="1" value="100" required />
-              <button id="import-button" class="primary-button" type="submit">
-                <span class="button-icon" aria-hidden="true">↧</span>
-                <span id="button-label">Get data</span>
-              </button>
+              <div class="import-actions">
+                <button class="primary-button import-button" type="submit" name="mode" value="next">
+                  <span class="button-icon" aria-hidden="true">↧</span><span>Get next batch</span>
+                </button>
+                <button class="secondary-button import-button" type="submit" name="mode" value="start">Start from beginning</button>
+                <button class="text-button import-button" type="submit" name="mode" value="all">Get all</button>
+              </div>
             </form>
           </section>
-          <p class="import-note"><span class="note-icon">ⓘ</span> MusicBrainz allows up to 100 records per request. Larger imports are paged automatically and paced to respect its API limit.</p>
+          <p class="import-note"><span class="note-icon">ⓘ</span> Up to 100 records per API request; larger imports are paced automatically. <span class="batch-position" id="batch-position">Next batch starts at artist 1</span></p>
 
           <section class="content-grid">
             <article class="content-card artists-card">
               <div class="card-heading">
-                <div><h2>Recently added</h2><p>Latest artists saved to your local database</p></div>
-                <span class="count-chip" id="recent-count">0 artists</span>
+                <div><h2>All artists</h2><p>Search the complete local catalogue as you type</p></div>
+                <span class="count-chip" id="artist-count">0 artists</span>
               </div>
+              <label class="artist-search">
+                <span class="search-icon" aria-hidden="true">⌕</span>
+                <input id="artist-search" type="search" placeholder="Type a name to filter…" autocomplete="off" />
+                <span class="search-hint">STARTS WITH</span>
+              </label>
               <div id="artist-list" class="table-wrap">
                 <div class="empty-state"><span class="empty-icon">♫</span><strong>Your artist catalogue starts here</strong><span>Use “Get data” to import Lithuanian artists from MusicBrainz.</span></div>
               </div>
