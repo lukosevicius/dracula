@@ -32,6 +32,6 @@ export function matchesDate(event, filter, range, today) {
   if (filter==='all') return true;
   if (filter==='unknown') return !start;
   if (filter==='past') return Boolean(start && end < today);
-  if (filter==='upcoming') return !start || end >= today;
+  if (filter==='upcoming') return Boolean(start && end >= today);
   return Boolean(!range?.error && range && start && start <= range.to && end >= range.from);
 }

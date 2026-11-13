@@ -21,9 +21,32 @@ export function extractPageDetails(html = '') {
   const calendars = [...html.matchAll(/<add-to-calendar-button\b([^>]*)>/gi)];
   const attrs = (tag) => Object.fromEntries([...tag.matchAll(/([\w-]+)\s*=\s*["']([^"']*)["']/g)].map(m=>[m[1].toLowerCase(),m[2].replace(/&amp;/g,'&')]));
   const calendar = calendars.length === 1 ? attrs(calendars[0][1]) : {};
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(calendar.startdate || '') && !Number.isNaN(Date.parse(`${calendar.startdate}T00:00:00Z`)) && new Date(`${calendar.startdate}T00:00:00Z`).toISOString().slice(0,10)===calendar.startdate ? calendar.startdate : null;
+  let date = /^\d{4}-\d{2}-\d{2}$/.test(calendar.startdate || '') && !Number.isNaN(Date.parse(`${calendar.startdate}T00:00:00Z`)) && new Date(`${calendar.startdate}T00:00:00Z`).toISOString().slice(0,10)===calendar.startdate ? calendar.startdate : null;
   const hasVisibleTime = /<div\b[^>]*class=["'][^"']*\bse-date-card__time\b/i.test(html);
-  const time = hasVisibleTime && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(calendar.starttime || '') ? calendar.starttime : null;
+  let time = hasVisibleTime && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(calendar.starttime || '') ? calendar.starttime : null;
+  // Read only the event's own date card, never dates from related event cards.
+  const cards = [...html.matchAll(/<(div|section|article)\b[^>]*class=["'][^"']*\bse-date-card\b[^"']*["'][^>]*>/gi)].map(match=>{
+    const tag=match[1], start=match.index+match[0].length;
+    const tags=new RegExp(`<\\/?${tag}\\b[^>]*>`, 'gi'); tags.lastIndex=start;
+    let depth=1, next;
+    while ((next=tags.exec(html))) {
+      if (/^<\//.test(next[0])) depth--; else if (!/\/>$/.test(next[0])) depth++;
+      if (!depth) return html.slice(start,next.index);
+    }
+    return '';
+  });
+  if (!date && calendars.length <= 1 && cards.length === 1) {
+    const card = textFromHtml(cards[0]).replace(/\s+/g, ' ');
+    const match = card.match(/\b(sausio|vasario|kovo|balandžio|gegužės|birželio|liepos|rugpjūčio|rugsėjo|spalio|lapkričio|gruodžio)\s+(\d{1,2}),?\s+(20\d{2})\b/i);
+    if (match) {
+      const y=Number(match[3]), m=months[match[1].toLowerCase()], d=Number(match[2]);
+      const value=new Date(Date.UTC(y,m-1,d));
+      if (value.getUTCFullYear()===y && value.getUTCMonth()===m-1 && value.getUTCDate()===d) date=value.toISOString().slice(0,10);
+    }
+    const timeMatch = cards[0].match(/<[^>]*class=["'][^"']*\bse-date-card__time\b[^"']*["'][^>]*>([\s\S]*?)<\//i);
+    const visibleTime = timeMatch && textFromHtml(timeMatch[1]).match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+    if (date && visibleTime) time=`${visibleTime[1].padStart(2,'0')}:${visibleTime[2]}`;
+  }
   let end = /^\d{4}-\d{2}-\d{2}$/.test(calendar.enddate || '') && !Number.isNaN(Date.parse(`${calendar.enddate}T00:00:00Z`)) && new Date(`${calendar.enddate}T00:00:00Z`).toISOString().slice(0,10)===calendar.enddate && calendar.enddate>date ? calendar.enddate : null;
   if (end && time && calendar.endtime==='00:00' && Date.parse(`${end}T00:00:00Z`)-Date.parse(`${date}T00:00:00Z`)===86400000) end=null;
   const location = html.match(/<div\b[^>]*class=["'][^"']*\bse-location__address\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
@@ -34,7 +57,7 @@ export function extractPageDetails(html = '') {
     try { const url=new URL(href); if (['http:','https:'].includes(url.protocol)) ticket=url.href; } catch {}
     if (ticket) break;
   }
-  return {event_date:date,event_end_date:date?end:null,event_time:date?time:null,venue,ticket_url:ticket,ambiguous_dates:calendars.length>1};
+  return {event_date:date,event_end_date:date?end:null,event_time:date?time:null,venue,ticket_url:ticket,ambiguous_dates:calendars.length>1 || (!date && cards.length>1)};
 }
 const normalized = value => textFromHtml(value || '').normalize('NFKC').toLocaleLowerCase('lt').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
 export function suggestArtists(event, artists, reviews) {
@@ -44,6 +67,10 @@ export function suggestArtists(event, artists, reviews) {
     const singleWord=!name.includes(' '), needle=` ${name} `;
     const inTitle=singleWord ? titleText===name : title.includes(needle);
     const inBody=!singleWord && body.includes(needle);
-    return inTitle || inBody ? {...a, reason:inTitle?'Title':'Description'} : null;
+    if (!inTitle && !inBody) return null;
+    const original = textFromHtml(inTitle ? event.title : event.content_html).replace(/\s+/g,' ').trim();
+    const sections = original.match(/[^.!?\n]+(?:[.!?]|$)/g) || [original];
+    const excerpt = sections.find(part => ` ${normalized(part)} `.includes(needle))?.trim() || original;
+    return {...a, reason:inTitle?'Title':'Description', excerpt:excerpt.length>240 ? excerpt.slice(0,237)+'…' : excerpt};
   }).filter(Boolean).sort((a,b)=>(a.reason==='Title'?-1:0)-(b.reason==='Title'?-1:0)||b.name.length-a.name.length).slice(0,8);
 }

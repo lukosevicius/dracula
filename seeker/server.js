@@ -304,16 +304,18 @@ async function serveStatic(request, response) {
 
 const server = createServer(async (request, response) => {
   if (request.method === 'POST' && request.url === '/api/vilnius-events/enrich') {
-    try { const result=await vilniusEvents.enrich(10); sendJson(response,200,{result,dashboard:vilniusEvents.state()}); }
+    let raw=''; for await (const chunk of request) { raw+=chunk; if(raw.length>1024) { sendJson(response,413,{error:'Request too large.'}); return; } }
+    try { const body=JSON.parse(raw || '{}'); const result=await vilniusEvents.enrich(10,body.refresh===true); sendJson(response,200,{result,dashboard:vilniusEvents.state()}); }
     catch(error) { sendJson(response,error.status||502,{error:error.message,dashboard:vilniusEvents.state()}); }
     return;
   }
-  if (request.method === 'POST' && ['/api/vilnius-events/update','/api/vilnius-events/artist'].includes(request.url)) {
+  if (request.method === 'POST' && ['/api/vilnius-events/update','/api/vilnius-events/artist','/api/vilnius-events/review'].includes(request.url)) {
     let raw = '';
     for await (const chunk of request) { raw += chunk; if (raw.length > 8192) { sendJson(response, 413, {error:'Request too large.'}); return; } }
     try {
       const body = JSON.parse(raw);
       if (request.url.endsWith('/update')) vilniusEvents.updateEvent(body.id, body);
+      else if (request.url.endsWith('/review')) vilniusEvents.reviewEvent(body.id,body.review_status);
       else vilniusEvents.reviewArtist(body.id, body.mbid, body.decision);
       sendJson(response, 200, {dashboard:vilniusEvents.state()});
     } catch (error) { sendJson(response, error.status || 400, {error:error.message}); }
@@ -335,7 +337,7 @@ const server = createServer(async (request, response) => {
       sendJson(response, 400, {error:'Choose between 1 and 10 pages.'}); return;
     }
     try {
-      const result = await vilniusEvents.run(body.pages, body.restart, body.sample === true);
+      const result = await vilniusEvents.run(body.pages, body.restart, body.sample === true, body.refresh === true);
       sendJson(response, 200, {result, dashboard:vilniusEvents.state()});
     } catch (error) { sendJson(response, error.status || 502, {error:error.message, dashboard:vilniusEvents.state()}); }
     return;

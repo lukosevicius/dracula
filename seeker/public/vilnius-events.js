@@ -5,6 +5,7 @@ const status = document.querySelector('#event-status');
 const list = document.querySelector('#event-list');
 const runs = document.querySelector('#event-runs');
 const enrichButton = document.querySelector('#enrich-events');
+const refreshDetailsButton = document.querySelector('#refresh-details');
 const plain = (html) => new DOMParser().parseFromString(html || '', 'text/html').body.textContent.trim();
 let currentData = null;
 const whenFilter = document.querySelector('#event-when');
@@ -79,7 +80,8 @@ function renderEvents(data) {
     const body=make('div'); body.className='event-item-body';
     const editor=make('form'); editor.className='event-editor';
     const fields=[['event_date','EVENT DATE','date'],['event_end_date','CALENDAR END DATE','date'],['event_time','TIME','time'],['venue','VENUE','text'],['ticket_url','TICKET URL','url']];
-    for (const [name,label,type] of fields) { const wrapper=make('label',label), input=make('input'); input.name=name; input.type=type; input.value=event[name] || ''; wrapper.append(input); editor.append(wrapper); }
+    const manualFields=JSON.parse(event.manual_fields || '[]');
+    for (const [name,label,type] of fields) { const wrapper=make('label',label+(manualFields.includes(name)?' · MANUAL':'')), input=make('input'); input.name=name; input.type=type; input.value=event[name] || ''; wrapper.append(input); editor.append(wrapper); }
     const reviewLabel=make('label','REVIEW STATUS'), select=make('select'); select.name='review_status';
     for (const [value,label] of [['unsure','Unsure'],['music','Music'],['not_music','Not music']]) { const option=make('option',label); option.value=value; option.selected=event.review_status===value; select.append(option); }
     reviewLabel.append(select); editor.append(reviewLabel);
@@ -91,11 +93,14 @@ function renderEvents(data) {
     for (const artist of event.artist_links) { const button=make('button',`Remove ${artist.name}`); button.type='button'; button.className='event-artist-action'; button.addEventListener('click',()=>save('/api/vilnius-events/artist',{id:event.source_id,mbid:artist.artist_mbid,decision:'remove'}).catch(e=>{status.textContent=e.message;})); artists.append(button); }
     const heading=make('p','SUGGESTED MATCHES'); heading.className='event-artist-label'; artists.append(heading);
     if (!event.artist_suggestions.length) { const empty=make('p','No suggestions yet.'); empty.className='event-artist-caption'; artists.append(empty); }
-    for (const artist of event.artist_suggestions) { const row=make('div'); row.className='event-artist-row'; const label=make('span',`${artist.name} · ${artist.reason}`); row.append(label); const actions=make('span'); for (const [decision,text] of [['accepted','Accept'],['dismissed','Dismiss']]) {const button=make('button',text);button.type='button';button.className='event-artist-action';button.addEventListener('click',()=>save('/api/vilnius-events/artist',{id:event.source_id,mbid:artist.mbid,decision}).catch(e=>{status.textContent=e.message;}));actions.append(button);}row.append(actions);artists.append(row); }
+    for (const artist of event.artist_suggestions) { const row=make('div'); row.className='event-artist-row'; const label=make('div'); label.append(make('strong',`${artist.name} · ${artist.reason}`)); if(artist.excerpt){const excerpt=make('p',`“${artist.excerpt}”`);excerpt.className='event-artist-caption';label.append(excerpt);} row.append(label); const actions=make('span'); for (const [decision,text] of [['accepted','Accept'],['dismissed','Dismiss']]) {const button=make('button',text);button.type='button';button.className='event-artist-action';button.addEventListener('click',()=>save('/api/vilnius-events/artist',{id:event.source_id,mbid:artist.mbid,decision}).catch(e=>{status.textContent=e.message;}));actions.append(button);}row.append(actions);artists.append(row); }
     body.append(artists);
     const description=make('div'); description.className='event-description'; description.append(eventDescription(event.content_html, event.source_url)); if (!description.textContent.trim()) description.textContent='No description available.'; body.append(description);
-    const links=make('div'); links.className='event-item-links'; const source=externalLink(event.source_url,'View original event ↗'); if(source) links.append(source); body.append(links); details.append(body);
-    const row=make('div'); row.className='event-row'; row.append(details); if(event.ticket_url){const ticket=externalLink(event.ticket_url,'Tickets ↗'); if(ticket){ticket.className='event-row-ticket';row.append(ticket);}} list.append(row);
+    const links=make('div'); links.className='event-item-links'; const source=externalLink(event.source_url,'View original event ↗'); if(source) links.append(source); body.append(links); const checked=make('p',event.details_checked_at ? `Details checked ${new Date(event.details_checked_at).toLocaleString()}` : 'Details need checking or refreshing'); checked.className='event-checked';body.append(checked);details.append(body);
+    const row=make('div'); row.className='event-row'; row.append(details);
+    const quick=make('div');quick.className='event-quick-review';quick.setAttribute('aria-label',`Review ${plain(event.title)}`);
+    for(const [value,label] of [['music','Music'],['not_music','Not music'],['unsure','Unsure']]) {const button=make('button',label);button.type='button';button.setAttribute('aria-pressed',String(event.review_status===value));button.addEventListener('click',async()=>{button.disabled=true;try{await save('/api/vilnius-events/review',{id:event.source_id,review_status:value});status.textContent='Review saved.';}catch(error){status.textContent=error.message;button.disabled=false;}});quick.append(button);}row.append(quick);
+    if(event.ticket_url){const ticket=externalLink(event.ticket_url,'Tickets ↗'); if(ticket){ticket.className='event-row-ticket';row.append(ticket);}} list.append(row);
   }
 }
 whenFilter.addEventListener('change',()=>currentData && renderEvents(currentData));
@@ -105,11 +110,13 @@ for (const button of dateButtons) button.addEventListener('click',()=>{whenFilte
 function render(data) {
   currentData=data;
   document.querySelector('#event-total').textContent = data.total.toLocaleString();
+  const counts={music:0,not_music:0,unsure:0}; for(const event of data.events) counts[event.review_status]++;
+  document.querySelector('#event-review-counts').textContent=`Music ${counts.music} · Not music ${counts.not_music} · Unsure ${counts.unsure} · Unknown date ${data.events.filter(e=>!e.event_date).length}`;
   document.querySelector('#event-next-page').textContent = `Page ${data.nextPage}`;
   const last = data.runs[0];
   document.querySelector('#event-last-run').textContent = last ? new Date(last.started_at).toLocaleDateString(undefined, {month:'short',day:'numeric',year:'numeric'}) : 'Never';
   document.querySelector('#event-last-summary').textContent = last ? `${last.added_count} added · ${last.status}` : 'No imports yet';
-  document.querySelector('#event-position').textContent = `Page ${data.nextPage} is next · Up to 50 records per page`;
+  document.querySelector('#event-position').textContent = `Page ${data.nextPage} is next · Continuing also refreshes the newest and previous pages`;
   renderEvents(data);
   runs.replaceChildren();
   if (!data.runs.length) runs.textContent = 'No imports yet.';
@@ -120,6 +127,7 @@ function render(data) {
   }
   form.querySelectorAll('button').forEach((button) => { button.disabled = data.running; });
   enrichButton.disabled = data.running;
+  refreshDetailsButton.disabled = data.running;
 }
 async function load() {
   const response = await fetch('/api/vilnius-events');
@@ -132,10 +140,11 @@ form.addEventListener('submit', async (event) => {
   if (!Number.isInteger(count) || count < 1 || count > 10) { status.textContent = 'Choose between 1 and 10 pages.'; return; }
   const restart = event.submitter?.value === 'start';
   const sample = event.submitter?.value === 'sample';
+  const refresh = event.submitter?.value === 'refresh';
   form.querySelectorAll('button').forEach((button) => { button.disabled = true; });
   status.textContent = 'Importing events…';
   try {
-    const response = await fetch('/api/vilnius-events/import', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pages:count,restart,sample})});
+    const response = await fetch('/api/vilnius-events/import', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({pages:count,restart,sample,refresh})});
     const result = await response.json();
     if (result.dashboard) render(result.dashboard);
     if (!response.ok) throw new Error(result.error || 'Import failed.');
@@ -143,10 +152,12 @@ form.addEventListener('submit', async (event) => {
   } catch (error) { status.textContent = error.message; await load().catch(() => {}); }
   finally { form.querySelectorAll('button').forEach((button) => { button.disabled = false; }); }
 });
-enrichButton.addEventListener('click', async () => {
-  enrichButton.disabled=true; form.querySelectorAll('button').forEach(button=>{button.disabled=true;}); status.textContent='Fetching event details…';
-  try { const response=await fetch('/api/vilnius-events/enrich',{method:'POST'}); const result=await response.json(); if(result.dashboard)render(result.dashboard); if(!response.ok)throw new Error(result.error||'Could not fetch details.'); status.textContent=`Checked ${result.result.checked} events; found page details for ${result.result.enriched}.`; }
+async function enrichEvents(refresh) {
+  enrichButton.disabled=true; refreshDetailsButton.disabled=true; form.querySelectorAll('button').forEach(button=>{button.disabled=true;}); status.textContent='Fetching event details…';
+  try { const response=await fetch('/api/vilnius-events/enrich',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({refresh})}); const result=await response.json(); if(result.dashboard)render(result.dashboard); if(!response.ok)throw new Error(result.error||'Could not fetch details.'); status.textContent=`Checked ${result.result.checked} events; found page details for ${result.result.enriched}.`; }
   catch(error){status.textContent=error.message;await load().catch(()=>{});}
-  finally {enrichButton.disabled=false;form.querySelectorAll('button').forEach(button=>{button.disabled=false;});}
-});
+  finally {enrichButton.disabled=false;refreshDetailsButton.disabled=false;form.querySelectorAll('button').forEach(button=>{button.disabled=false;});}
+}
+enrichButton.addEventListener('click',()=>enrichEvents(false));
+refreshDetailsButton.addEventListener('click',()=>enrichEvents(true));
 load().catch((error) => { status.textContent = error.message; });

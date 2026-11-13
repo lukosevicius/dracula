@@ -328,4 +328,11 @@ h2 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -.2px; }
 .event-custom-dates input { width:100%; min-width:0; height:40px; padding:0 11px; border:1px solid #3b3c47; border-radius:7px; background:#121319; color:#e4e4e9; font:14px 'DM Sans',sans-serif; }
 .event-date-hint,.event-date-error { margin:-9px 24px 18px; font-size:13px; line-height:1.4; color:#aaaab5; }
 .event-date-error { color:#f19da9; }
+.event-review-counts { margin: 0; padding: 0 24px 18px; color: #b2b3bd; font-size: 13px; }
+.event-quick-review { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 24px 12px 88px; }
+.event-quick-review button { border: 1px solid #44414b; border-radius: 6px; padding: 5px 10px; background: #191a21; color: #c9c9d2; font: 13px 'DM Sans', sans-serif; cursor: pointer; }
+.event-quick-review button[aria-pressed="true"] { border-color: #a35f6e; background: #3a252d; color: #fff; }
+.event-quick-review button:focus-visible { outline: 2px solid #d9485f; outline-offset: 2px; }
+.event-checked { margin: 12px 0 0; color: #aaaab5; font-size: 12px; }
+@media (max-width: 760px) { .event-review-counts { padding-left: 16px; padding-right: 16px; } .event-quick-review { margin-left: 75px; } }
 @media (max-width:760px) { .event-date-presets { padding:0 16px 16px; } .event-date-presets > span { width:100%; } .event-custom-dates:not([hidden]) { width:100%; } .event-custom-dates label { flex:1; min-width:140px; } .event-date-hint,.event-date-error { margin-left:16px; margin-right:16px; } }
