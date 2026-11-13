@@ -34,6 +34,12 @@ function renderEvents(data) {
   dateError.hidden=!range?.error || (!fromInput.value && !toInput.value); dateError.textContent=range?.error || '';
   dateButtons.forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.dateFilter===when)));
   const visible=data.events.filter(e => (review==='all' || e.review_status===review) && matchesDate(e,when,range,date));
+  if (when!=='all' && when!=='unknown') visible.sort((a,b)=>{
+    if (!a.event_date) return b.event_date ? 1 : 0;
+    if (!b.event_date) return -1;
+    const order=a.event_date.localeCompare(b.event_date) || (a.event_time || '99:99').localeCompare(b.event_time || '99:99');
+    return when==='past' ? -order : order;
+  });
   document.querySelector('#event-visible-count').textContent = `${visible.length.toLocaleString()} shown`;
   if (!visible.length && !range?.error) { const empty=make('div','No events match these filters.'); empty.className='event-empty'; list.append(empty); }
   for (const event of visible) {

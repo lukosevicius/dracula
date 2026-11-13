@@ -38,6 +38,12 @@ export function extractPageDetails(html = '') {
 }
 const normalized = value => textFromHtml(value || '').normalize('NFKC').toLocaleLowerCase('lt').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
 export function suggestArtists(event, artists, reviews) {
-  const title=` ${normalized(event.title)} `, body=` ${normalized(event.content_html)} `;
-  return artists.map(a=>{const name=normalized(a.name); if(name.length<5 || reviews.has(a.mbid))return null; const needle=` ${name} `; const inTitle=title.includes(needle); return inTitle || body.includes(needle) ? {...a, reason:inTitle?'Title':'Description'} : null;}).filter(Boolean).sort((a,b)=>(a.reason==='Title'?-1:0)-(b.reason==='Title'?-1:0)||b.name.length-a.name.length).slice(0,8);
+  const titleText=normalized(event.title), title=` ${titleText} `, body=` ${normalized(event.content_html)} `;
+  return artists.map(a=>{
+    const name=normalized(a.name); if(name.length<5 || reviews.has(a.mbid))return null;
+    const singleWord=!name.includes(' '), needle=` ${name} `;
+    const inTitle=singleWord ? titleText===name : title.includes(needle);
+    const inBody=!singleWord && body.includes(needle);
+    return inTitle || inBody ? {...a, reason:inTitle?'Title':'Description'} : null;
+  }).filter(Boolean).sort((a,b)=>(a.reason==='Title'?-1:0)-(b.reason==='Title'?-1:0)||b.name.length-a.name.length).slice(0,8);
 }
