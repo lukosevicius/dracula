@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#101116" />
+    <title>About MusicBrainz · Seeker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="/" aria-label="Dracula home">
+          <span class="brand-mark" aria-hidden="true">D</span>
+          <span class="brand-name">Dracula<span class="brand-dot">.</span></span>
+        </a>
+        <div class="workspace-label">WORKSPACE</div>
+        <nav aria-label="Main navigation">
+          <a class="nav-link" href="/">
+            <span class="nav-icon">◈</span> Seeker
+          </a>
+          <a class="nav-link active" href="/about.html" aria-current="page">
+            <span class="nav-icon nav-icon-info">ⓘ</span> About MusicBrainz
+          </a>
+          <a class="nav-link" href="/vilnius-events.html">
+            <span class="nav-icon nav-icon-info">◷</span> Vilnius Events
+          </a>
+        </nav>
+        <div class="sidebar-bottom"><span class="connection-dot"></span><span>Local workspace</span></div>
+      </aside>
+
+      <main class="main-content info-main">
+        <header class="topbar">
+          <div class="breadcrumbs"><a href="/">Dracula</a><span class="crumb-separator">/</span><a href="/">Seeker</a><span class="crumb-separator">/</span><strong>About MusicBrainz</strong></div>
+          <div class="topbar-right"><a class="topbar-info-link" href="/">← Back to Seeker</a></div>
+        </header>
+
+        <div class="page-wrap info-page">
+          <section class="page-heading">
+            <div>
+              <p class="eyebrow">SEEKER <span>·</span> DATA SOURCE</p>
+              <h1>About MusicBrainz</h1>
+              <p class="page-description">Music metadata and the API endpoints Seeker can query.</p>
+            </div>
+          </section>
+
+          <section class="content-card info-intro">
+            <div class="info-mark" aria-hidden="true">♫</div>
+            <div>
+              <h2>Community-maintained music metadata</h2>
+              <p>MusicBrainz catalogs artists, releases, recordings and related entities. Its REST API is rooted at <code>https://musicbrainz.org/ws/2/</code>. Records have stable MBIDs (MusicBrainz IDs), which let clients link an artist to their releases and other data.</p>
+            </div>
+          </section>
+
+          <section class="endpoint-section" aria-labelledby="api-endpoints-title">
+            <div class="section-heading">
+              <div><span class="info-number">REST API · /WS/2</span><h2 id="api-endpoints-title">Three useful request patterns</h2></div>
+              <span class="http-method">GET · JSON</span>
+            </div>
+            <div class="endpoint-grid">
+              <article class="content-card endpoint-card">
+                <span class="endpoint-index">01</span>
+                <h3>Search artists</h3>
+                <p>Browse artists linked to Lithuania’s area, then retain records whose main associated country is <code>LT</code>. Browse supports offsets beyond the search endpoint’s 500-result cap.</p>
+                <pre><code>/artist/?area=0785dc14-96af-3dc4-bde4-dcdfc2e2d0d6&amp;fmt=json&amp;limit=100&amp;offset=0</code></pre>
+              </article>
+              <article class="content-card endpoint-card">
+                <span class="endpoint-index">02</span>
+                <h3>Look up an artist</h3>
+                <p>Use an MBID to request details, including genre data.</p>
+                <pre><code>/artist/{MBID}?inc=genres&amp;fmt=json</code></pre>
+              </article>
+              <article class="content-card endpoint-card">
+                <span class="endpoint-index">03</span>
+                <h3>Browse release groups</h3>
+                <p>Use an artist MBID to retrieve album, EP and single groups.</p>
+                <pre><code>/release-group?artist={MBID}&amp;limit=100&amp;offset=0&amp;fmt=json</code></pre>
+              </article>
+            </div>
+          </section>
+
+          <section class="api-note">
+            <strong>Request limits</strong>
+            <span>Seeker requests up to 100 records at a time, at least 2 seconds apart. The <code>LT</code> country field indicates an artist’s main associated country; it does not establish nationality.</span>
+          </section>
+
+          <section class="info-sources">
+            <span class="info-number">LEARN MORE</span>
+            <a href="https://musicbrainz.org/doc/MusicBrainz_API" target="_blank" rel="noreferrer">MusicBrainz API documentation <span aria-hidden="true">↗</span></a>
+            <a href="https://musicbrainz.org/doc/About/Data_License" target="_blank" rel="noreferrer">MusicBrainz data licenses <span aria-hidden="true">↗</span></a>
+          </section>
+          <footer class="page-footer"><span>SEEKER <span class="footer-separator">/</span> DRACULA</span><a href="/">Return to artist catalogue</a></footer>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

@@ -147,13 +147,8 @@ function renderDashboard(data) {
 
 function updateBatchPosition() {
   const batchSize = Number(limitInput.value);
-  const firstResult = nextOffset + 1;
-  const lastResult = Number.isInteger(batchSize) && batchSize > 0
-    ? totalAvailable ? Math.min(nextOffset + batchSize, totalAvailable) : nextOffset + batchSize
-    : null;
-  document.querySelector('#batch-position').textContent = lastResult
-    ? `Next batch: results ${firstResult.toLocaleString()}–${lastResult.toLocaleString()}${totalAvailable ? ` of ${totalAvailable.toLocaleString()}` : ''}`
-    : `Next batch starts at result ${firstResult.toLocaleString()}`;
+  const amount = Number.isInteger(batchSize) && batchSize > 0 ? batchSize.toLocaleString() : '—';
+  document.querySelector('#batch-position').textContent = `Next batch: up to ${amount} Lithuanian artists from MusicBrainz offset ${nextOffset.toLocaleString()}`;
 }
 
 async function loadDashboard() {

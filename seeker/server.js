@@ -4,6 +4,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
+import { createVilniusEvents } from './vilnius-events.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(root, 'public');
@@ -12,8 +13,10 @@ const databasePath = join(dataDir, 'seeker.sqlite');
 const port = Number(process.env.PORT || 4177);
 const maxImportLimit = 1000;
 const pageSize = 100;
+const musicBrainzRequestIntervalMs = 2000;
 const apiBase = 'https://musicbrainz.org/ws/2/artist/';
-const userAgent = process.env.SEEKER_USER_AGENT || 'Seeker/0.1.0 (Dracula Lithuanian music events project)';
+const lithuaniaAreaMbid = '0785dc14-96af-3dc4-bde4-dcdfc2e2d0d6';
+const userAgent = process.env.SEEKER_USER_AGENT || 'Seeker/0.1.0';
 
 mkdirSync(dataDir, { recursive: true });
 const db = new DatabaseSync(databasePath);
@@ -76,6 +79,12 @@ if (!storedSourceState) {
   db.prepare(`INSERT INTO source_state (source_key, next_offset, updated_at) VALUES (?, ?, ?)`)
     .run(sourceKey, initialOffset, new Date().toISOString());
 }
+const sourceStateColumns = db.prepare('PRAGMA table_info(source_state)').all();
+if (!sourceStateColumns.some((column) => column.name === 'last_request_at')) {
+  db.exec('ALTER TABLE source_state ADD COLUMN last_request_at TEXT');
+}
+const vilniusEvents = createVilniusEvents(db, userAgent);
+db.prepare("UPDATE vilnius_event_runs SET status='failed', finished_at=?, error_message=? WHERE status='running'").run(new Date().toISOString(), 'Seeker stopped before the import finished. Completed pages are saved.');
 
 const statements = {
   runStart: db.prepare('INSERT INTO import_runs (started_at, requested_limit, mode) VALUES (?, ?, ?)'),
@@ -133,16 +142,24 @@ function sleep(ms) {
 
 async function fetchArtistPage(offset, limit) {
   const url = new URL(apiBase);
-  url.searchParams.set('query', 'country:LT');
+  url.searchParams.set('area', lithuaniaAreaMbid);
   url.searchParams.set('fmt', 'json');
   url.searchParams.set('limit', String(limit));
   url.searchParams.set('offset', String(offset));
 
-  const backoffMs = [2000, 4000, 8000];
+  const backoffMs = [5000, 15000, 30000];
   for (let attempt = 0; attempt <= backoffMs.length; attempt += 1) {
-    const delay = Math.max(0, 1100 - (Date.now() - lastMusicBrainzRequestAt));
+    const storedRequestAt = db.prepare('SELECT last_request_at FROM source_state WHERE source_key = ?')
+      .get(sourceKey)?.last_request_at;
+    const lastRequestTime = Math.max(
+      lastMusicBrainzRequestAt,
+      storedRequestAt ? Date.parse(storedRequestAt) || 0 : 0,
+    );
+    const delay = Math.max(0, musicBrainzRequestIntervalMs - (Date.now() - lastRequestTime));
     if (delay > 0) await sleep(delay);
     lastMusicBrainzRequestAt = Date.now();
+    db.prepare('UPDATE source_state SET last_request_at = ? WHERE source_key = ?')
+      .run(new Date(lastMusicBrainzRequestAt).toISOString(), sourceKey);
 
     const response = await fetch(url, {
       headers: {
@@ -186,21 +203,19 @@ async function importArtists(limit, runId, startOffset, fetchAll = false) {
   let addedCount = 0;
   let updatedCount = 0;
   let offset = startOffset;
-  let totalAvailable = null;
+  let totalAvailable = fetchAll && startOffset === 0
+    ? null
+    : db.prepare('SELECT total_available FROM source_state WHERE source_key = ?').get(sourceKey)?.total_available ?? null;
   let nextOffset = startOffset;
 
   try {
     while (fetchAll || fetchedCount < limit) {
       const requestedPageSize = fetchAll ? pageSize : Math.min(pageSize, limit - fetchedCount);
       const page = await fetchArtistPage(offset, requestedPageSize);
-      const artists = Array.isArray(page.artists) ? page.artists : [];
-      if (totalAvailable === null) totalAvailable = Number(page.count || artists.length);
-      if (artists.length === 0) {
-        if (fetchedCount === 0 && offset > 0) {
-          offset = 0;
-          nextOffset = 0;
-          continue;
-        }
+      const sourceArtists = Array.isArray(page.artists) ? page.artists : [];
+      const artists = sourceArtists.filter((artist) => artist.country === 'LT');
+      if (sourceArtists.length === 0) {
+        if (fetchAll) totalAvailable = fetchedCount;
         nextOffset = 0;
         db.prepare(`UPDATE source_state SET next_offset = 0, total_available = ?, updated_at = ? WHERE source_key = ?`)
           .run(totalAvailable, new Date().toISOString(), sourceKey);
@@ -210,8 +225,10 @@ async function importArtists(limit, runId, startOffset, fetchAll = false) {
       const timestamp = new Date().toISOString();
       let pageAddedCount = 0;
       let pageUpdatedCount = 0;
-      const nextPageOffset = offset + artists.length;
-      nextOffset = nextPageOffset >= totalAvailable ? 0 : nextPageOffset;
+      const nextPageOffset = offset + sourceArtists.length;
+      const isFinalPage = sourceArtists.length < requestedPageSize;
+      if (isFinalPage && fetchAll) totalAvailable = fetchedCount + artists.length;
+      nextOffset = isFinalPage ? 0 : nextPageOffset;
       db.exec('BEGIN');
       try {
         for (const artist of artists) {
@@ -249,7 +266,7 @@ async function importArtists(limit, runId, startOffset, fetchAll = false) {
       updatedCount += pageUpdatedCount;
       fetchedCount += artists.length;
       offset = nextPageOffset;
-      if (artists.length < requestedPageSize || offset >= totalAvailable) break;
+      if (isFinalPage) break;
     }
 
     const finishedAt = new Date().toISOString();
@@ -286,6 +303,43 @@ async function serveStatic(request, response) {
 }
 
 const server = createServer(async (request, response) => {
+  if (request.method === 'POST' && request.url === '/api/vilnius-events/enrich') {
+    try { const result=await vilniusEvents.enrich(10); sendJson(response,200,{result,dashboard:vilniusEvents.state()}); }
+    catch(error) { sendJson(response,error.status||502,{error:error.message,dashboard:vilniusEvents.state()}); }
+    return;
+  }
+  if (request.method === 'POST' && ['/api/vilnius-events/update','/api/vilnius-events/artist'].includes(request.url)) {
+    let raw = '';
+    for await (const chunk of request) { raw += chunk; if (raw.length > 8192) { sendJson(response, 413, {error:'Request too large.'}); return; } }
+    try {
+      const body = JSON.parse(raw);
+      if (request.url.endsWith('/update')) vilniusEvents.updateEvent(body.id, body);
+      else vilniusEvents.reviewArtist(body.id, body.mbid, body.decision);
+      sendJson(response, 200, {dashboard:vilniusEvents.state()});
+    } catch (error) { sendJson(response, error.status || 400, {error:error.message}); }
+    return;
+  }
+  if (request.method === 'GET' && request.url === '/api/vilnius-events') {
+    sendJson(response, 200, vilniusEvents.state());
+    return;
+  }
+  if (request.method === 'POST' && request.url === '/api/vilnius-events/import') {
+    let raw = '';
+    for await (const chunk of request) {
+      raw += chunk;
+      if (raw.length > 4096) { sendJson(response, 413, {error:'Request too large.'}); return; }
+    }
+    let body;
+    try { body = JSON.parse(raw || '{}'); } catch { sendJson(response, 400, {error:'Invalid JSON.'}); return; }
+    if (!Number.isInteger(body.pages) || body.pages < 1 || body.pages > 10 || typeof body.restart !== 'boolean') {
+      sendJson(response, 400, {error:'Choose between 1 and 10 pages.'}); return;
+    }
+    try {
+      const result = await vilniusEvents.run(body.pages, body.restart, body.sample === true);
+      sendJson(response, 200, {result, dashboard:vilniusEvents.state()});
+    } catch (error) { sendJson(response, error.status || 502, {error:error.message, dashboard:vilniusEvents.state()}); }
+    return;
+  }
   if (request.method === 'GET' && request.url === '/api/dashboard') {
     sendJson(response, 200, readDashboard());
     return;
