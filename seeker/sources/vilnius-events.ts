@@ -182,15 +182,19 @@ export function createVilniusEvents(db: DatabaseSync, userAgent: string) {
       throw error;
     } finally { running = false; }
   }
-  async function enrich(limit = 10, refresh = false, progress: (value: {checked:number; enriched:number})=>void = ()=>{}, sourceId?: number) {
+  async function enrich(limit = 10, refresh = false, progress: (value: {checked:number; enriched:number; total:number})=>void = ()=>{}, sourceId?: number, refreshAll = false) {
     if (running) throw Object.assign(new Error('An event import is already running.'), {status:409});
     running=true; let checked=0, enriched=0;
     try {
       const events=sourceId !== undefined
         ? db.prepare('SELECT source_id,source_url,content_html FROM vilnius_events WHERE source_id=?').all(sourceId)
+        : refreshAll
+        ? db.prepare('SELECT source_id,source_url,content_html FROM vilnius_events ORDER BY source_id').all()
         : refresh
         ? db.prepare('SELECT v.source_id,v.source_url,v.content_html FROM vilnius_events v ORDER BY v.details_checked_at ASC, v.published_at DESC LIMIT ?').all(limit)
         : db.prepare("SELECT v.source_id,v.source_url,v.content_html FROM vilnius_events v JOIN event_sources s ON s.source_key='vilnius-events' AND s.source_id=CAST(v.source_id AS TEXT) WHERE v.details_checked_at IS NULL OR s.about_checked_at IS NULL ORDER BY v.published_at DESC LIMIT ?").all(limit);
+      const total=events.length;
+      progress({checked,enriched,total});
       for (const event of events) {
         const url=new URL(String(event.source_url));
         if (url.protocol!=='https:' || !['www.vilnius-events.lt','vilnius-events.lt'].includes(url.hostname)) throw new Error('Unexpected event URL.');
@@ -211,13 +215,17 @@ export function createVilniusEvents(db: DatabaseSync, userAgent: string) {
         const html=await response.text(), page=extractPageDetails(html, url.href), content=extractDetails(String(event.content_html));
         const date=page.ambiguous_dates ? null : page.event_date||content.event_date;
         const time=page.event_time || (!page.ambiguous_dates && (!page.event_date || page.event_date===content.event_date) ? content.event_time : null);
-        extract(event.source_id,{event_date:date,event_end_date:page.event_end_date,event_time:time,venue:page.venue||content.venue,ticket_url:page.ticket_url||content.ticket_url});
-        db.prepare('UPDATE vilnius_events SET details_checked_at=?,details_version=1 WHERE source_id=?').run(new Date().toISOString(),event.source_id);
-        db.prepare("UPDATE event_sources SET about_url=?,about_checked_at=? WHERE source_key='vilnius-events' AND source_id=?").run(page.about_url,new Date().toISOString(),String(event.source_id));
+        db.exec('BEGIN');
+        try {
+          extract(event.source_id,{event_date:date,event_end_date:page.event_end_date,event_time:time,venue:page.venue||content.venue,ticket_url:page.ticket_url||content.ticket_url});
+          db.prepare('UPDATE vilnius_events SET details_checked_at=?,details_version=1 WHERE source_id=?').run(new Date().toISOString(),event.source_id);
+          db.prepare("UPDATE event_sources SET about_url=?,about_checked_at=? WHERE source_key='vilnius-events' AND source_id=?").run(page.about_url,new Date().toISOString(),String(event.source_id));
+          db.exec('COMMIT');
+        } catch(error) { db.exec('ROLLBACK'); throw error; }
         checked++; if(page.event_date||page.venue||page.ticket_url||page.about_url) enriched++;
-        progress({checked,enriched});
+        progress({checked,enriched,total});
       }
-      return {checked,enriched};
+      return {checked,enriched,total};
     } finally { running=false; }
   }
   return {state, details, run, updateEvent, reviewEvent, reviewArtist, enrich};

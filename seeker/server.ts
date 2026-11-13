@@ -193,7 +193,7 @@ const server = createServer(async (request, response) => {
     let raw=''; for await(const chunk of request) {raw+=chunk; if(raw.length>4096){sendJson(response,413,{error:'Request too large.'});return;}}
     try {
       const input=JSON.parse(raw || '{}');
-      if(input.source==='vilnius-events' && ['next','start','sample','refresh','details','refresh-details','details-event'].includes(input.action)) {
+      if(input.source==='vilnius-events' && ['next','start','sample','refresh','details','refresh-details','details-event','refresh-all-details'].includes(input.action)) {
         const pages=Number(input.pages ?? 1);
         if(!Number.isInteger(pages)||pages<1||pages>10) throw Object.assign(new Error('Choose between 1 and 10 pages.'),{status:400});
         let sourceId: number | undefined;
@@ -203,8 +203,8 @@ const server = createServer(async (request, response) => {
           if(!source) throw Object.assign(new Error('Event not found.'),{status:404});
           sourceId=Number(source.source_id);
         }
-        const id=jobs.start('vilnius-events',input.action,progress=>['details','refresh-details','details-event'].includes(input.action)
-          ? vilniusEvents.enrich(10,input.action==='refresh-details',progress,sourceId)
+        const id=jobs.start('vilnius-events',input.action,progress=>['details','refresh-details','details-event','refresh-all-details'].includes(input.action)
+          ? vilniusEvents.enrich(10,input.action==='refresh-details',progress,sourceId,input.action==='refresh-all-details')
           : vilniusEvents.run(pages,input.action==='start',input.action==='sample',input.action==='refresh',progress));
         sendJson(response,202,{id}); return;
       }

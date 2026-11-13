@@ -116,3 +116,37 @@ test('imports overlap safely and refresh unlocked fields without changing review
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM event_sources WHERE event_id=?').get(canonical.id).count,2);
   } finally { globalThis.fetch=originalFetch; Date.now=originalNow; db.close(); }
 });
+
+test('refresh all checks more than 10 events, reports progress and preserves manual edits', async () => {
+  const db=new DatabaseSync(':memory:');
+  db.exec(`CREATE TABLE source_state(source_key TEXT PRIMARY KEY,next_offset INTEGER,total_available INTEGER,updated_at TEXT,last_request_at TEXT);
+    CREATE TABLE artists(mbid TEXT PRIMARY KEY,name TEXT);`);
+  const originalFetch=globalThis.fetch,originalNow=Date.now;
+  let clock=Date.now(), failAt='';
+  Date.now=()=>clock+=4000;
+  const items=Array.from({length:12},(_,index)=>({id:index+1,title:{rendered:`Event ${index+1}`},link:`https://www.vilnius-events.lt/renginiai/${index+1}/`,content:{rendered:'<p>Music</p>'},categories:[4],date:'2026-11-01',modified:'2026-11-01'}));
+  globalThis.fetch=async url=>{
+    const value=String(url);
+    if(value.includes('/wp-json/')) return new Response(JSON.stringify(items),{headers:{'x-wp-totalpages':'1'}});
+    if(failAt && value.endsWith(`/${failAt}/`)) return new Response('',{status:404});
+    return new Response('<add-to-calendar-button startDate="2026-12-01" startTime="20:00"></add-to-calendar-button><div class="se-date-card__time">20:00</div><div class="se-location__address">Source venue</div>');
+  };
+  try {
+    const source=createVilniusEvents(db,'Seeker/test');
+    await source.run(1,false);
+    source.updateEvent(1,{event_date:null,event_time:null,venue:'Manual venue',review_status:'music'});
+    const updates:{checked:number;enriched:number;total:number}[]=[];
+    const result=await source.enrich(10,true,value=>updates.push(value),undefined,true);
+    assert.equal(result.checked,12); assert.equal(result.total,12);
+    assert.deepEqual(updates.map(x=>x.checked),Array.from({length:13},(_,i)=>i));
+    assert.ok(updates.every(x=>x.total===12));
+    assert.equal(db.prepare('SELECT venue FROM vilnius_events WHERE source_id=1').get().venue,'Manual venue');
+    assert.equal(db.prepare('SELECT review_status FROM vilnius_events WHERE source_id=1').get().review_status,'music');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM vilnius_events WHERE details_checked_at IS NOT NULL').get().n,12);
+
+    db.prepare('UPDATE vilnius_events SET details_checked_at=NULL').run(); failAt='2';
+    await assert.rejects(source.enrich(10,true,()=>{},undefined,true),/HTTP 404/);
+    assert.ok(db.prepare('SELECT details_checked_at FROM vilnius_events WHERE source_id=1').get().details_checked_at);
+    assert.equal(db.prepare('SELECT details_checked_at FROM vilnius_events WHERE source_id=2').get().details_checked_at,null);
+  } finally {globalThis.fetch=originalFetch;Date.now=originalNow;db.close();}
+});
