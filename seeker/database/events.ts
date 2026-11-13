@@ -66,3 +66,15 @@ export function migrateEventCatalogue(db: DatabaseSync): void {
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
 }
+
+export function migrateSourceLinks(db: DatabaseSync): void {
+  if (db.prepare('SELECT 1 FROM schema_migrations WHERE version=2').get()) return;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const columns=new Set(db.prepare('PRAGMA table_info(event_sources)').all().map(row=>row.name));
+    if(!columns.has('about_url')) db.exec('ALTER TABLE event_sources ADD COLUMN about_url TEXT');
+    if(!columns.has('about_checked_at')) db.exec('ALTER TABLE event_sources ADD COLUMN about_checked_at TEXT');
+    db.prepare('INSERT INTO schema_migrations(version,applied_at) VALUES(2,?)').run(new Date().toISOString());
+    db.exec('COMMIT');
+  } catch(error) { db.exec('ROLLBACK'); throw error; }
+}

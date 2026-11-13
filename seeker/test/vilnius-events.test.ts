@@ -8,10 +8,19 @@ import { suggestEventMatches } from '../database/event-matching.js';
 
 test('date fallback reads the event card and ignores other page dates', () => {
   const html='<div class="se-date-card"><div>Trečiadienis, lapkričio 11, 2026</div><div class="se-date-card__time">20:00</div></div><div>lapkričio 12, 2026</div>';
-  assert.deepEqual(extractPageDetails(html), {event_date:'2026-11-11',event_end_date:null,event_time:'20:00',venue:null,ticket_url:null,ambiguous_dates:false});
+  assert.deepEqual(extractPageDetails(html), {event_date:'2026-11-11',event_end_date:null,event_time:'20:00',venue:null,ticket_url:null,about_url:null,ambiguous_dates:false});
   assert.equal(extractPageDetails('<div>lapkričio 11, 2026</div>').event_date,null);
   assert.equal(extractPageDetails(html+html).ambiguous_dates,true);
   assert.equal(extractPageDetails('<div class="se-date-card">vasario 31, 2026</div>').event_date,null);
+});
+
+test('event information link is separate from tickets and rejects unsafe URLs', () => {
+  const html='<a href="https://kakava.lt/event" class="se-btn--tickets">Tickets</a><a href="https://www.facebook.com/events/1990667601581903/" class="se-btn--about">Apie renginį</a>';
+  const result=extractPageDetails(html);
+  assert.equal(result.ticket_url,'https://kakava.lt/event');
+  assert.equal(result.about_url,'https://www.facebook.com/events/1990667601581903/');
+  assert.equal(extractPageDetails('<a class="se-btn--about" href="javascript:alert(1)">Apie renginį</a>').about_url,null);
+  assert.equal(extractPageDetails('<a class="se-btn--about" href="/more">More</a>','https://www.vilnius-events.lt/renginiai/a/').about_url,'https://www.vilnius-events.lt/more');
 });
 
 test('unknown dates do not appear as upcoming', () => {
@@ -72,7 +81,7 @@ test('imports overlap safely and refresh unlocked fields without changing review
   globalThis.fetch=async (url)=>{
     const value=String(url); calls.push(value);
     if(value.includes('/wp-json/')) return new Response(JSON.stringify([item]), {headers:{'x-wp-totalpages':'3'}});
-    return new Response(`<add-to-calendar-button startDate="${pageDate}" startTime="20:00"></add-to-calendar-button><div class="se-date-card__time">20:00</div><div class="se-location__address">Source venue</div>`);
+    return new Response(`<add-to-calendar-button startDate="${pageDate}" startTime="20:00"></add-to-calendar-button><div class="se-date-card__time">20:00</div><div class="se-location__address">Source venue</div><a class="se-btn--about" href="https://www.facebook.com/events/1990667601581903/">About</a>`);
   };
   try {
     const source=createVilniusEvents(db,'Seeker/test');
@@ -86,6 +95,10 @@ test('imports overlap safely and refresh unlocked fields without changing review
     assert.equal(saved.venue,'My venue');
     assert.equal(saved.event_date,'2026-12-02');
     assert.equal(saved.review_status,'music');
+    assert.equal(db.prepare("SELECT about_url FROM event_sources WHERE source_key='vilnius-events' AND source_id='1'").get().about_url,'https://www.facebook.com/events/1990667601581903/');
+    db.prepare("UPDATE event_sources SET about_checked_at=NULL WHERE source_id='1' AND source_key='vilnius-events'").run();
+    assert.equal((await source.enrich()).checked,1);
+    assert.equal(db.prepare("SELECT venue FROM vilnius_events WHERE source_id=1").get().venue,'My venue');
     assert.deepEqual(JSON.parse(String(saved.manual_fields)),['venue']);
     const canonical=db.prepare("SELECT e.* FROM events e JOIN event_sources s ON s.event_id=e.id WHERE s.source_key='vilnius-events' AND s.source_id='1'").get();
     assert.equal(canonical.venue,'My venue');

@@ -18,7 +18,7 @@ export function extractDetails(html = '') {
   }
   return {event_date:unique.length===1?unique[0]:null,event_time:times.length===1 && unique.length===1?times[0]:null,venue,ticket_url:ticket};
 }
-export function extractPageDetails(html = '') {
+export function extractPageDetails(html = '', sourceUrl = 'https://www.vilnius-events.lt/') {
   const calendars = [...html.matchAll(/<add-to-calendar-button\b([^>]*)>/gi)];
   const attrs = (tag: string) => Object.fromEntries([...tag.matchAll(/([\w-]+)\s*=\s*["']([^"']*)["']/g)].map(m=>[m[1].toLowerCase(),m[2].replace(/&amp;/g,'&')]));
   const calendar = calendars.length === 1 ? attrs(calendars[0][1]) : {};
@@ -58,7 +58,15 @@ export function extractPageDetails(html = '') {
     try { const url=new URL(href); if (['http:','https:'].includes(url.protocol)) ticket=url.href; } catch {}
     if (ticket) break;
   }
-  return {event_date:date,event_end_date:date?end:null,event_time:date?time:null,venue,ticket_url:ticket,ambiguous_dates:calendars.length>1 || (!date && cards.length>1)};
+  let aboutUrl: string | null = null;
+  for (const match of html.matchAll(/<a\b([^>]*)>/gi)) {
+    const attributes=attrs(match[1]);
+    if (!attributes.class?.split(/\s+/).includes('se-btn--about')) continue;
+    const href=attributes.href;
+    try { if (href) { const url=new URL(href,sourceUrl); if (['http:','https:'].includes(url.protocol)) aboutUrl=url.href; } } catch { /* Ignore invalid links. */ }
+    if (aboutUrl) break;
+  }
+  return {event_date:date,event_end_date:date?end:null,event_time:date?time:null,venue,ticket_url:ticket,about_url:aboutUrl,ambiguous_dates:calendars.length>1 || (!date && cards.length>1)};
 }
 const normalized = (value: string) => textFromHtml(value || '').normalize('NFKC').toLocaleLowerCase('lt').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
 export function suggestArtists(event: {title: string; content_html: string}, artists: Artist[], reviews: Set<string>): ArtistSuggestion[] {

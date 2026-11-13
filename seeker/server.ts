@@ -193,11 +193,18 @@ const server = createServer(async (request, response) => {
     let raw=''; for await(const chunk of request) {raw+=chunk; if(raw.length>4096){sendJson(response,413,{error:'Request too large.'});return;}}
     try {
       const input=JSON.parse(raw || '{}');
-      if(input.source==='vilnius-events' && ['next','start','sample','refresh','details','refresh-details'].includes(input.action)) {
+      if(input.source==='vilnius-events' && ['next','start','sample','refresh','details','refresh-details','details-event'].includes(input.action)) {
         const pages=Number(input.pages ?? 1);
         if(!Number.isInteger(pages)||pages<1||pages>10) throw Object.assign(new Error('Choose between 1 and 10 pages.'),{status:400});
-        const id=jobs.start('vilnius-events',input.action,progress=>input.action==='details'||input.action==='refresh-details'
-          ? vilniusEvents.enrich(10,input.action==='refresh-details',progress)
+        let sourceId: number | undefined;
+        if(input.action==='details-event') {
+          if(!Number.isSafeInteger(input.event_id)) throw Object.assign(new Error('Invalid event.'),{status:400});
+          const source=db.prepare("SELECT source_id FROM event_sources WHERE event_id=? AND source_key='vilnius-events'").get(input.event_id);
+          if(!source) throw Object.assign(new Error('Event not found.'),{status:404});
+          sourceId=Number(source.source_id);
+        }
+        const id=jobs.start('vilnius-events',input.action,progress=>['details','refresh-details','details-event'].includes(input.action)
+          ? vilniusEvents.enrich(10,input.action==='refresh-details',progress,sourceId)
           : vilniusEvents.run(pages,input.action==='start',input.action==='sample',input.action==='refresh',progress));
         sendJson(response,202,{id}); return;
       }
@@ -236,7 +243,7 @@ const server = createServer(async (request, response) => {
     }
     const where=clauses.length?'WHERE '+clauses.join(' AND '):'';
     const count=Number(db.prepare(`SELECT COUNT(*) AS count FROM events e ${where}`).get(...params).count);
-    const records=db.prepare(`SELECT e.*,s.source_id,s.source_key,s.source_url,s.last_checked_at AS details_checked_at FROM events e JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY id LIMIT 1) ${where} ORDER BY e.event_date IS NULL,e.event_date ${when==='past'?'DESC':'ASC'},e.event_time IS NULL,e.event_time ${when==='past'?'DESC':'ASC'},e.id LIMIT ? OFFSET ?`).all(...params,limit,(page-1)*limit);
+    const records=db.prepare(`SELECT e.*,s.source_id,s.source_key,s.source_url,s.about_url,s.last_checked_at AS details_checked_at FROM events e JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY id LIMIT 1) ${where} ORDER BY e.event_date IS NULL,e.event_date ${when==='past'?'DESC':'ASC'},e.event_time IS NULL,e.event_time ${when==='past'?'DESC':'ASC'},e.id LIMIT ? OFFSET ?`).all(...params,limit,(page-1)*limit);
     const counts=db.prepare("SELECT COUNT(*) AS total, SUM(review_status='music') AS music, SUM(review_status='not_music') AS not_music, SUM(review_status='unsure') AS unsure, SUM(event_date IS NULL) AS unknown FROM events").get();
     const source=db.prepare('SELECT next_offset FROM source_state WHERE source_key=?').get('vilnius-events');
     sendJson(response,200,{events:records,total:count,page,limit,counts,nextPage:Number(source?.next_offset||0)+1,sources:db.prepare('SELECT DISTINCT source_key FROM event_sources ORDER BY source_key').all(),runs:db.prepare('SELECT * FROM vilnius_event_runs ORDER BY id DESC LIMIT 8').all()}); return;
