@@ -36,8 +36,8 @@ test('imports overlap safely and refresh unlocked fields without changing review
   const item={id:1,title:{rendered:'A concert'},link:'https://www.vilnius-events.lt/renginiai/concert/',content:{rendered:'<p>Music</p>'},categories:[4],date:'2026-11-01',modified:'2026-11-01'};
   globalThis.fetch=async (url)=>{
     const value=String(url); calls.push(value);
-    if(value.includes('/wp-json/')) return {ok:true,headers:{get:()=> '3'},json:async()=>[item]};
-    return {ok:true,text:async()=>`<add-to-calendar-button startDate="${pageDate}" startTime="20:00"></add-to-calendar-button><div class="se-date-card__time">20:00</div><div class="se-location__address">Source venue</div>`};
+    if(value.includes('/wp-json/')) return new Response(JSON.stringify([item]), {headers:{'x-wp-totalpages':'3'}});
+    return new Response(`<add-to-calendar-button startDate="${pageDate}" startTime="20:00"></add-to-calendar-button><div class="se-date-card__time">20:00</div><div class="se-location__address">Source venue</div>`);
   };
   try {
     const source=createVilniusEvents(db,'Seeker/test');
@@ -51,7 +51,7 @@ test('imports overlap safely and refresh unlocked fields without changing review
     assert.equal(saved.venue,'My venue');
     assert.equal(saved.event_date,'2026-12-02');
     assert.equal(saved.review_status,'music');
-    assert.deepEqual(JSON.parse(saved.manual_fields),['venue']);
+    assert.deepEqual(JSON.parse(String(saved.manual_fields)),['venue']);
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM vilnius_events').get().n,1);
     assert.deepEqual(calls.filter(url=>url.includes('/wp-json/')).map(url=>new URL(url).searchParams.get('page')),['1','1','2']);
     assert.equal(source.state().nextPage,3);

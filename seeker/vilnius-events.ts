@@ -1,11 +1,13 @@
 import { extractDetails, extractPageDetails, suggestArtists } from './event-details.js';
+import type { DatabaseSync } from 'node:sqlite';
+import type { Artist, ArtistDecision, EventRecord, ReviewStatus, SourceEvent } from './types.js';
 const SOURCE = 'vilnius-events';
 const PAGE_SIZE = 50;
 const INTERVAL = 3000;
 const DETAIL_FIELDS = ['event_date','event_end_date','event_time','venue','ticket_url'];
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export function createVilniusEvents(db, userAgent) {
+export function createVilniusEvents(db: DatabaseSync, userAgent: string) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS vilnius_events (
       source_id INTEGER PRIMARY KEY, title TEXT NOT NULL, source_url TEXT NOT NULL,
@@ -47,10 +49,10 @@ export function createVilniusEvents(db, userAgent) {
   const saveExtracted = db.prepare('UPDATE vilnius_events SET event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=? WHERE source_id=?');
   const extract = (id, values) => {
     const existing=db.prepare('SELECT * FROM vilnius_events WHERE source_id=?').get(id);
-    const locked=new Set(JSON.parse(existing.manual_fields));
+    const locked=new Set(JSON.parse(String(existing.manual_fields)));
     saveExtracted.run(...DETAIL_FIELDS.map(field => locked.has(field) ? existing[field] : values[field] ?? existing[field]),id);
   };
-  for (const e of db.prepare('SELECT source_id,content_html FROM vilnius_events WHERE details_checked_at IS NULL').all()) extract(e.source_id,extractDetails(e.content_html));
+  for (const e of db.prepare('SELECT source_id,content_html FROM vilnius_events WHERE details_checked_at IS NULL').all()) extract(e.source_id,extractDetails(String(e.content_html)));
   db.prepare('INSERT OR IGNORE INTO source_state (source_key, next_offset, updated_at) VALUES (?, 0, ?)').run(SOURCE, new Date().toISOString());
   const upsert = db.prepare(`INSERT INTO vilnius_events
     (source_id,title,source_url,content_html,categories_json,featured_media,published_at,modified_at,first_seen_at,updated_at)
@@ -60,16 +62,16 @@ export function createVilniusEvents(db, userAgent) {
     published_at=excluded.published_at,modified_at=excluded.modified_at,updated_at=excluded.updated_at`);
   let running = false;
   const state = () => {
-    const artists = db.prepare('SELECT mbid,name FROM artists').all();
+    const artists = db.prepare('SELECT mbid,name FROM artists').all() as unknown as Artist[];
     const decisions = db.prepare('SELECT v.event_id,v.artist_mbid,v.decision,a.name FROM vilnius_event_artists v JOIN artists a ON a.mbid=v.artist_mbid').all();
     const byEvent = new Map();
     for (const d of decisions) { if (!byEvent.has(d.event_id)) byEvent.set(d.event_id,[]); byEvent.get(d.event_id).push(d); }
     return {
     total: db.prepare('SELECT COUNT(*) AS count FROM vilnius_events').get().count,
-    nextPage: db.prepare('SELECT next_offset FROM source_state WHERE source_key=?').get(SOURCE).next_offset + 1,
+    nextPage: Number(db.prepare('SELECT next_offset FROM source_state WHERE source_key=?').get(SOURCE).next_offset) + 1,
     running,
     runs: db.prepare('SELECT * FROM vilnius_event_runs ORDER BY id DESC LIMIT 8').all(),
-    events: db.prepare('SELECT * FROM vilnius_events ORDER BY published_at DESC, source_id DESC').all().map(event=>{ const reviewed=byEvent.get(event.source_id)||[]; return {...event, artist_links:reviewed.filter(d=>d.decision==='accepted'), artist_suggestions:suggestArtists(event,artists,new Set(reviewed.map(d=>d.artist_mbid)))}; }),
+    events: (db.prepare('SELECT * FROM vilnius_events ORDER BY published_at DESC, source_id DESC').all() as unknown as EventRecord[]).map(event=>{ const reviewed=byEvent.get(event.source_id)||[]; return {...event, artist_links:reviewed.filter(d=>d.decision==='accepted'), artist_suggestions:suggestArtists(event,artists,new Set(reviewed.map(d=>d.artist_mbid)))}; }),
   }; };
   function updateEvent(id, input) {
     const existing=Number.isSafeInteger(id) ? db.prepare('SELECT * FROM vilnius_events WHERE source_id=?').get(id) : null;
@@ -81,15 +83,15 @@ export function createVilniusEvents(db, userAgent) {
     if (time && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) throw Object.assign(new Error('Invalid time.'),{status:400});
     if (ticket) { try { if (!['http:','https:'].includes(new URL(ticket).protocol)) throw Error(); } catch { throw Object.assign(new Error('Invalid ticket URL.'),{status:400}); } }
     if ((venue?.length || 0)>300 || (ticket?.length || 0)>2048) throw Object.assign(new Error('Field is too long.'),{status:400});
-    const values=[date,end,time,venue,ticket], locked=new Set(JSON.parse(existing.manual_fields));
+    const values=[date,end,time,venue,ticket], locked=new Set(JSON.parse(String(existing.manual_fields)));
     DETAIL_FIELDS.forEach((field,index)=>{ if(values[index]!==existing[field]) locked.add(field); });
     db.prepare('UPDATE vilnius_events SET event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=?,review_status=?,manual_fields=?,details_manual=? WHERE source_id=?').run(...values,input.review_status,JSON.stringify([...locked]),locked.size?1:0,id);
   }
-  function reviewEvent(id, status) {
+  function reviewEvent(id: number, status: ReviewStatus) {
     if (!Number.isSafeInteger(id) || !['music','not_music','unsure'].includes(status)) throw Object.assign(new Error('Invalid event or review status.'),{status:400});
     if (!db.prepare('UPDATE vilnius_events SET review_status=? WHERE source_id=?').run(status,id).changes) throw Object.assign(new Error('Event not found.'),{status:404});
   }
-  function reviewArtist(id, mbid, decision) {
+  function reviewArtist(id: number, mbid: string, decision: ArtistDecision) {
     if (!Number.isSafeInteger(id) || !db.prepare('SELECT 1 FROM vilnius_events WHERE source_id=?').get(id) || !db.prepare('SELECT 1 FROM artists WHERE mbid=?').get(mbid)) throw Object.assign(new Error('Event or artist not found.'),{status:404});
     if (!['accepted','dismissed','remove'].includes(decision)) throw Object.assign(new Error('Invalid decision.'),{status:400});
     if (decision==='remove') db.prepare('DELETE FROM vilnius_event_artists WHERE event_id=? AND artist_mbid=?').run(id,mbid);
@@ -100,7 +102,7 @@ export function createVilniusEvents(db, userAgent) {
     for (const [key, value] of Object.entries({categories:'4,81', per_page:String(size), page:String(page), orderby:'date', order:'desc', _fields:'id,title,link,content,categories,featured_media,date,modified'})) url.searchParams.set(key, value);
     for (let attempt = 0; attempt < 4; attempt++) {
       const last = db.prepare('SELECT last_request_at FROM source_state WHERE source_key=?').get(SOURCE).last_request_at;
-      const wait = Math.max(0, INTERVAL - (Date.now() - (Date.parse(last) || 0)));
+      const wait = Math.max(0, INTERVAL - (Date.now() - (Date.parse(String(last)) || 0)));
       if (wait) await pause(wait);
       db.prepare('UPDATE source_state SET last_request_at=? WHERE source_key=?').run(new Date().toISOString(), SOURCE);
       let response;
@@ -112,7 +114,7 @@ export function createVilniusEvents(db, userAgent) {
       if (response.ok) {
         const data = await response.json();
         if (!Array.isArray(data)) throw new Error('Unexpected response from Vilnius Events.');
-        return {data, pages:Number(response.headers.get('x-wp-totalpages')) || null};
+        return {data: data as SourceEvent[], pages:Number(response.headers.get('x-wp-totalpages')) || null};
       }
       if (response.status === 400) {
         const body = await response.json().catch(() => ({}));
@@ -173,12 +175,12 @@ export function createVilniusEvents(db, userAgent) {
     try {
       const events=refresh ? db.prepare('SELECT source_id,source_url,content_html FROM vilnius_events ORDER BY details_checked_at ASC, published_at DESC LIMIT ?').all(limit) : db.prepare('SELECT source_id,source_url,content_html FROM vilnius_events WHERE details_checked_at IS NULL ORDER BY published_at DESC LIMIT ?').all(limit);
       for (const event of events) {
-        const url=new URL(event.source_url);
+        const url=new URL(String(event.source_url));
         if (url.protocol!=='https:' || !['www.vilnius-events.lt','vilnius-events.lt'].includes(url.hostname)) throw new Error('Unexpected event URL.');
         let response;
         for (let attempt=0; attempt<4; attempt++) {
           const last=db.prepare('SELECT last_request_at FROM source_state WHERE source_key=?').get(SOURCE).last_request_at;
-          const delay=Math.max(0,INTERVAL-(Date.now()-(Date.parse(last)||0))); if(delay) await pause(delay);
+          const delay=Math.max(0,INTERVAL-(Date.now()-(Date.parse(String(last))||0))); if(delay) await pause(delay);
           db.prepare('UPDATE source_state SET last_request_at=? WHERE source_key=?').run(new Date().toISOString(),SOURCE);
           try { response=await fetch(url,{headers:{'user-agent':userAgent,accept:'text/html'},redirect:'error',signal:AbortSignal.timeout(20000)}); }
           catch(error) { if(attempt===3) throw new Error(`Event page request failed: ${error.message}`); await pause((attempt+1)*5000); continue; }
@@ -188,7 +190,7 @@ export function createVilniusEvents(db, userAgent) {
           if(ms>120000) throw new Error('Vilnius Events requested a longer pause. Please retry later.');
           await pause(Math.max(ms,[5000,15000,30000][attempt]));
         }
-        const html=await response.text(), page=extractPageDetails(html), content=extractDetails(event.content_html);
+        const html=await response.text(), page=extractPageDetails(html), content=extractDetails(String(event.content_html));
         const date=page.ambiguous_dates ? null : page.event_date||content.event_date;
         const time=page.event_time || (!page.ambiguous_dates && (!page.event_date || page.event_date===content.event_date) ? content.event_time : null);
         extract(event.source_id,{event_date:date,event_end_date:page.event_end_date,event_time:time,venue:page.venue||content.venue,ticket_url:page.ticket_url||content.ticket_url});

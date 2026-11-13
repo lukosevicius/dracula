@@ -1,14 +1,16 @@
-const form = document.querySelector('#import-form');
-const limitInput = document.querySelector('#import-limit');
-const artistSearch = document.querySelector('#artist-search');
-const importButtons = [...document.querySelectorAll('.import-button')];
+import type { ArtistsDashboard, DashboardArtist, MusicBrainzRun } from '../types.js';
+
+const form = document.querySelector<HTMLFormElement>('#import-form');
+const limitInput = document.querySelector<HTMLInputElement>('#import-limit');
+const artistSearch = document.querySelector<HTMLInputElement>('#artist-search');
+const importButtons = [...document.querySelectorAll<HTMLButtonElement>('.import-button')];
 const toast = document.querySelector('#toast');
 let toastTimer;
 let nextOffset = 0;
 let totalAvailable = null;
-let allArtists = [];
+let allArtists: DashboardArtist[] = [];
 
-function formatDate(value, options = {}) {
+function formatDate(value: string | null, options: Intl.DateTimeFormatOptions = {}) {
   if (!value) return 'Never';
   const date = new Date(value);
   return new Intl.DateTimeFormat(undefined, {
@@ -21,7 +23,7 @@ function relativeDate(value) {
   if (!value) return 'Run an import to start';
   const date = new Date(value);
   const seconds = Math.round((date.getTime() - Date.now()) / 1000);
-  const units = [
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [
     ['year', 31_536_000],
     ['month', 2_592_000],
     ['day', 86_400],
@@ -50,7 +52,7 @@ function showToast(message, isError = false) {
   toastTimer = setTimeout(() => toast.classList.remove('visible'), 5000);
 }
 
-function renderArtists(artists) {
+function renderArtists(artists: DashboardArtist[]) {
   allArtists = artists;
   filterArtists();
 }
@@ -95,7 +97,7 @@ function filterArtists() {
   list.innerHTML = `<table class="artist-table"><thead><tr><th>ARTIST</th><th>AREA</th><th>FIRST SEEN</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
-function renderRuns(runs) {
+function renderRuns(runs: MusicBrainzRun[]) {
   const list = document.querySelector('#run-list');
   if (!runs.length) {
     list.innerHTML = '<div class="empty-activity">No imports yet</div>';
@@ -122,7 +124,7 @@ function renderRuns(runs) {
   }).join('');
 }
 
-function renderDashboard(data) {
+function renderDashboard(data: ArtistsDashboard) {
   document.querySelector('#total-artists').textContent = Number(data.totalArtists).toLocaleString();
   const lastRun = data.lastRun;
   nextOffset = Number(data.sourceState?.next_offset || 0);
@@ -159,14 +161,14 @@ async function loadDashboard() {
 
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const mode = event.submitter?.value || 'next';
+  const submitter = event.submitter as HTMLButtonElement | null;
+  const mode = submitter?.value || 'next';
   const limit = Number(limitInput.value);
   if (mode !== 'all' && (!Number.isInteger(limit) || limit < 1 || limit > 1000)) {
     showToast('Enter a whole number from 1 to 1,000.', true);
     limitInput.focus();
     return;
   }
-  const submitter = event.submitter;
   const originalLabel = submitter?.innerHTML;
   importButtons.forEach((button) => { button.disabled = true; });
   if (submitter) submitter.innerHTML = '<span class="button-icon" aria-hidden="true">↻</span><span>Importing…</span>';

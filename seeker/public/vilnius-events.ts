@@ -1,22 +1,23 @@
 import { vilniusDate, selectedDates, matchesDate } from './event-date-filters.js';
-const form = document.querySelector('#event-import-form');
-const pages = document.querySelector('#event-pages');
+import type { EventsDashboard } from '../types.js';
+const form = document.querySelector<HTMLFormElement>('#event-import-form');
+const pages = document.querySelector<HTMLInputElement>('#event-pages');
 const status = document.querySelector('#event-status');
 const list = document.querySelector('#event-list');
 const runs = document.querySelector('#event-runs');
-const enrichButton = document.querySelector('#enrich-events');
-const refreshDetailsButton = document.querySelector('#refresh-details');
+const enrichButton = document.querySelector<HTMLButtonElement>('#enrich-events');
+const refreshDetailsButton = document.querySelector<HTMLButtonElement>('#refresh-details');
 const plain = (html) => new DOMParser().parseFromString(html || '', 'text/html').body.textContent.trim();
-let currentData = null;
-const whenFilter = document.querySelector('#event-when');
-const reviewFilter = document.querySelector('#event-review');
-const fromInput = document.querySelector('#event-date-from');
-const toInput = document.querySelector('#event-date-to');
-const customDates = document.querySelector('#event-custom-dates');
-const dateHint = document.querySelector('#event-date-hint');
-const dateError = document.querySelector('#event-date-error');
-const dateButtons = [...document.querySelectorAll('[data-date-filter]')];
-const make = (tag, text) => { const el=document.createElement(tag); if (text !== undefined) el.textContent=text; return el; };
+let currentData: EventsDashboard | null = null;
+const whenFilter = document.querySelector<HTMLSelectElement>('#event-when');
+const reviewFilter = document.querySelector<HTMLSelectElement>('#event-review');
+const fromInput = document.querySelector<HTMLInputElement>('#event-date-from');
+const toInput = document.querySelector<HTMLInputElement>('#event-date-to');
+const customDates = document.querySelector<HTMLElement>('#event-custom-dates');
+const dateHint = document.querySelector<HTMLElement>('#event-date-hint');
+const dateError = document.querySelector<HTMLElement>('#event-date-error');
+const dateButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-date-filter]')];
+const make = <K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLElementTagNameMap[K] => { const el=document.createElement(tag); if (text !== undefined) el.textContent=text; return el; };
 async function save(path, body) {
   const response = await fetch(path, {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
   const result = await response.json();
@@ -52,8 +53,8 @@ function eventDescription(html, sourceUrl) {
   for (const child of parsed.body.childNodes) copy(child, result);
   return result;
 }
-function renderEvents(data) {
-  const openIds = new Set([...list.querySelectorAll('details[open]')].map(el => el.dataset.eventId));
+function renderEvents(data: EventsDashboard) {
+  const openIds = new Set([...list.querySelectorAll<HTMLDetailsElement>('details[open]')].map(el => el.dataset.eventId));
   list.replaceChildren();
   const date=vilniusDate(), when=whenFilter.value, review=reviewFilter.value;
   const range=selectedDates(when,fromInput.value,toInput.value);
@@ -70,7 +71,7 @@ function renderEvents(data) {
   document.querySelector('#event-visible-count').textContent = `${visible.length.toLocaleString()} shown`;
   if (!visible.length && !range?.error) { const empty=make('div','No events match these filters.'); empty.className='event-empty'; list.append(empty); }
   for (const event of visible) {
-    const details=make('details'); details.className='event-item'; details.dataset.eventId=event.source_id; details.open=openIds.has(String(event.source_id));
+    const details=make('details'); details.className='event-item'; details.dataset.eventId=String(event.source_id); details.open=openIds.has(String(event.source_id));
     const summary=make('summary'); summary.className='event-item-summary';
     const dateBadge=make('span'); dateBadge.className='event-date-badge';
     if (event.event_date) { const d=new Date(`${event.event_date}T12:00:00Z`); const month=make('span',new Intl.DateTimeFormat('en',{month:'short',timeZone:'UTC'}).format(d).toUpperCase()); const day=make('strong',String(d.getUTCDate()).padStart(2,'0')); dateBadge.append(month,day); } else { dateBadge.append(make('span','DATE'),make('strong','—')); }
@@ -107,7 +108,7 @@ whenFilter.addEventListener('change',()=>currentData && renderEvents(currentData
 reviewFilter.addEventListener('change',()=>currentData && renderEvents(currentData));
 for (const input of [fromInput,toInput]) input.addEventListener('input',()=>currentData && renderEvents(currentData));
 for (const button of dateButtons) button.addEventListener('click',()=>{whenFilter.value=whenFilter.value===button.dataset.dateFilter?'upcoming':button.dataset.dateFilter; if(currentData)renderEvents(currentData);});
-function render(data) {
+function render(data: EventsDashboard) {
   currentData=data;
   document.querySelector('#event-total').textContent = data.total.toLocaleString();
   const counts={music:0,not_music:0,unsure:0}; for(const event of data.events) counts[event.review_status]++;
@@ -138,9 +139,10 @@ form.addEventListener('submit', async (event) => {
   event.preventDefault();
   const count = Number(pages.value);
   if (!Number.isInteger(count) || count < 1 || count > 10) { status.textContent = 'Choose between 1 and 10 pages.'; return; }
-  const restart = event.submitter?.value === 'start';
-  const sample = event.submitter?.value === 'sample';
-  const refresh = event.submitter?.value === 'refresh';
+  const submitter=event.submitter as HTMLButtonElement | null;
+  const restart = submitter?.value === 'start';
+  const sample = submitter?.value === 'sample';
+  const refresh = submitter?.value === 'refresh';
   form.querySelectorAll('button').forEach((button) => { button.disabled = true; });
   status.textContent = 'Importing events…';
   try {

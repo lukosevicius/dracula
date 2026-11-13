@@ -5,9 +5,11 @@ import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { createVilniusEvents } from './vilnius-events.js';
+import type { MusicBrainzPage } from './types.js';
 
-const root = dirname(fileURLToPath(import.meta.url));
+const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const publicDir = join(root, 'public');
+const compiledPublicDir = join(root, 'dist', 'public');
 const dataDir = join(root, 'data');
 const databasePath = join(dataDir, 'seeker.sqlite');
 const port = Number(process.env.PORT || 4177);
@@ -153,7 +155,7 @@ async function fetchArtistPage(offset, limit) {
       .get(sourceKey)?.last_request_at;
     const lastRequestTime = Math.max(
       lastMusicBrainzRequestAt,
-      storedRequestAt ? Date.parse(storedRequestAt) || 0 : 0,
+      typeof storedRequestAt === 'string' ? Date.parse(storedRequestAt) || 0 : 0,
     );
     const delay = Math.max(0, musicBrainzRequestIntervalMs - (Date.now() - lastRequestTime));
     if (delay > 0) await sleep(delay);
@@ -168,7 +170,7 @@ async function fetchArtistPage(offset, limit) {
       },
       signal: AbortSignal.timeout(20000),
     });
-    if (response.ok) return response.json();
+    if (response.ok) return await response.json() as MusicBrainzPage;
 
     if (response.status === 503 && attempt < backoffMs.length) {
       const retryAfter = response.headers.get('retry-after');
@@ -286,8 +288,9 @@ function contentType(path) {
 async function serveStatic(request, response) {
   const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
   const pathname = url.pathname === '/' ? '/index.html' : decodeURIComponent(url.pathname);
-  const filePath = normalize(join(publicDir, pathname));
-  if (!filePath.startsWith(`${publicDir}/`)) {
+  const assetDir = pathname.endsWith('.js') ? compiledPublicDir : publicDir;
+  const filePath = normalize(join(assetDir, pathname));
+  if (!filePath.startsWith(`${assetDir}/`)) {
     response.writeHead(403);
     response.end('Forbidden');
     return;
