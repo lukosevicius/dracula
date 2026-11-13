@@ -25,6 +25,32 @@ async function save(path, body) {
 function externalLink(url, label) {
   try { const parsed=new URL(url); if (!['http:','https:'].includes(parsed.protocol)) return null; const a=make('a',label); a.href=parsed.href; a.target='_blank'; a.rel='noopener noreferrer'; return a; } catch { return null; }
 }
+function eventDescription(html, sourceUrl) {
+  const result = document.createDocumentFragment();
+  const allowed = new Set(['p', 'br', 'strong', 'b', 'em', 'i', 'ul', 'ol', 'li', 'blockquote', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'div', 'a']);
+  const discarded = new Set(['script', 'style', 'iframe', 'object', 'embed', 'svg', 'math', 'template', 'form', 'noscript']);
+  function copy(node, parent) {
+    if (node.nodeType === Node.TEXT_NODE) { parent.append(document.createTextNode(node.textContent)); return; }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const tag = node.localName;
+    if (discarded.has(tag)) return;
+    let target = parent;
+    if (allowed.has(tag)) {
+      if (tag === 'a') {
+        try {
+          const url = new URL(node.getAttribute('href'), sourceUrl);
+          if (node.hasAttribute('href') && ['http:', 'https:'].includes(url.protocol)) {
+            target = make('a'); target.href = url.href; target.target = '_blank'; target.rel = 'noopener noreferrer'; parent.append(target);
+          }
+        } catch { /* Keep the link text without an invalid URL. */ }
+      } else { target = make(tag); parent.append(target); }
+    }
+    for (const child of node.childNodes) copy(child, target);
+  }
+  const parsed = new DOMParser().parseFromString(html || '', 'text/html');
+  for (const child of parsed.body.childNodes) copy(child, result);
+  return result;
+}
 function renderEvents(data) {
   const openIds = new Set([...list.querySelectorAll('details[open]')].map(el => el.dataset.eventId));
   list.replaceChildren();
@@ -67,7 +93,7 @@ function renderEvents(data) {
     if (!event.artist_suggestions.length) { const empty=make('p','No suggestions yet.'); empty.className='event-artist-caption'; artists.append(empty); }
     for (const artist of event.artist_suggestions) { const row=make('div'); row.className='event-artist-row'; const label=make('span',`${artist.name} · ${artist.reason}`); row.append(label); const actions=make('span'); for (const [decision,text] of [['accepted','Accept'],['dismissed','Dismiss']]) {const button=make('button',text);button.type='button';button.className='event-artist-action';button.addEventListener('click',()=>save('/api/vilnius-events/artist',{id:event.source_id,mbid:artist.mbid,decision}).catch(e=>{status.textContent=e.message;}));actions.append(button);}row.append(actions);artists.append(row); }
     body.append(artists);
-    const description=make('p',plain(event.content_html) || 'No description available.'); description.className='event-description'; body.append(description);
+    const description=make('div'); description.className='event-description'; description.append(eventDescription(event.content_html, event.source_url)); if (!description.textContent.trim()) description.textContent='No description available.'; body.append(description);
     const links=make('div'); links.className='event-item-links'; const source=externalLink(event.source_url,'View original event ↗'); if(source) links.append(source); body.append(links); details.append(body);
     const row=make('div'); row.className='event-row'; row.append(details); if(event.ticket_url){const ticket=externalLink(event.ticket_url,'Tickets ↗'); if(ticket){ticket.className='event-row-ticket';row.append(ticket);}} list.append(row);
   }

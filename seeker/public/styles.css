@@ -271,7 +271,11 @@ h2 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -.2px; }
 .event-artist-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; font-size: 14px; }
 .event-artist-action { border: 0; background: none; color: #e39ba7; cursor: pointer; font: inherit; font-size: 13px; padding: 6px; }
 .event-artist-action:hover { color: #fff; }
-.event-description { margin: 0; padding: 16px 0; border-top: 1px solid #30313a; color: #b2b3bd; font-size: 14px; line-height: 1.7; white-space: pre-line; }
+.event-description { margin: 0; padding: 16px 0; border-top: 1px solid #30313a; color: #b2b3bd; font-size: 14px; line-height: 1.7; }
+.event-description p, .event-description ul, .event-description ol, .event-description blockquote { margin: 0 0 1em; }
+.event-description > :last-child { margin-bottom: 0; }
+.event-description strong, .event-description b, .event-description h2, .event-description h3, .event-description h4, .event-description h5, .event-description h6 { color: #eeeef2; }
+.event-description a { color: #f39aab; text-decoration: underline; overflow-wrap: anywhere; }
 .event-item-links { display: flex; flex-wrap: wrap; gap: 20px; color: #eb9aa7; font-size: 13px; font-weight: 600; }
 .event-item-links a:hover { color: #fff; }
 .event-empty { padding: 48px 24px; border-top: 1px solid var(--border); color: #a7a8b2; text-align: center; font-size: 14px; }
