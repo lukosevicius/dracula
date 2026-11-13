@@ -1,0 +1,5 @@
+.event-pagination { display:flex; align-items:center; justify-content:center; gap:16px; padding:18px; border-top:1px solid #30313a; color:#c4c4cc; font-size:14px; }
+.job-list { padding:0 0 12px; color:#b8b8c2; font-size:13px; line-height:1.5; }
+.job-list p { margin:6px 0; }
+.event-row .event-quick-review button:disabled { opacity:.6; cursor:wait; }
+.event-source-content .info-sources { padding:20px 0 0; }

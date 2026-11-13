@@ -1,4 +1,4 @@
-import type { Artist, ArtistSuggestion } from './types.js';
+import type { Artist, ArtistSuggestion } from '../types.js';
 const months: Record<string, number> = {sausio:1,vasario:2,kovo:3,balandžio:4,gegužės:5,birželio:6,liepos:7,rugpjūčio:8,rugsėjo:9,spalio:10,lapkričio:11,gruodžio:12};
 export function textFromHtml(html = '') {
   return html.replace(/<\s*(?:br\s*\/?|\/p|\/li|\/div)\s*>/gi, '\n').replace(/<[^>]*>/g, ' ').replace(/&nbsp;|&#160;/gi,' ').replace(/&amp;/gi,'&').replace(/&#8211;/gi,'–').replace(/&#39;|&apos;/gi,"'").replace(/&quot;/gi,'"').replace(/[ \t]+/g,' ');
@@ -20,7 +20,7 @@ export function extractDetails(html = '') {
 }
 export function extractPageDetails(html = '') {
   const calendars = [...html.matchAll(/<add-to-calendar-button\b([^>]*)>/gi)];
-  const attrs = (tag) => Object.fromEntries([...tag.matchAll(/([\w-]+)\s*=\s*["']([^"']*)["']/g)].map(m=>[m[1].toLowerCase(),m[2].replace(/&amp;/g,'&')]));
+  const attrs = (tag: string) => Object.fromEntries([...tag.matchAll(/([\w-]+)\s*=\s*["']([^"']*)["']/g)].map(m=>[m[1].toLowerCase(),m[2].replace(/&amp;/g,'&')]));
   const calendar = calendars.length === 1 ? attrs(calendars[0][1]) : {};
   let date = /^\d{4}-\d{2}-\d{2}$/.test(calendar.startdate || '') && !Number.isNaN(Date.parse(`${calendar.startdate}T00:00:00Z`)) && new Date(`${calendar.startdate}T00:00:00Z`).toISOString().slice(0,10)===calendar.startdate ? calendar.startdate : null;
   const hasVisibleTime = /<div\b[^>]*class=["'][^"']*\bse-date-card__time\b/i.test(html);
@@ -48,7 +48,7 @@ export function extractPageDetails(html = '') {
     const visibleTime = timeMatch && textFromHtml(timeMatch[1]).match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
     if (date && visibleTime) time=`${visibleTime[1].padStart(2,'0')}:${visibleTime[2]}`;
   }
-  let end = /^\d{4}-\d{2}-\d{2}$/.test(calendar.enddate || '') && !Number.isNaN(Date.parse(`${calendar.enddate}T00:00:00Z`)) && new Date(`${calendar.enddate}T00:00:00Z`).toISOString().slice(0,10)===calendar.enddate && calendar.enddate>date ? calendar.enddate : null;
+  let end = date && /^\d{4}-\d{2}-\d{2}$/.test(calendar.enddate || '') && !Number.isNaN(Date.parse(`${calendar.enddate}T00:00:00Z`)) && new Date(`${calendar.enddate}T00:00:00Z`).toISOString().slice(0,10)===calendar.enddate && calendar.enddate>date ? calendar.enddate : null;
   if (end && time && calendar.endtime==='00:00' && Date.parse(`${end}T00:00:00Z`)-Date.parse(`${date}T00:00:00Z`)===86400000) end=null;
   const location = html.match(/<div\b[^>]*class=["'][^"']*\bse-location__address\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
   const venue = location ? textFromHtml(location[1]).trim() || null : null;
@@ -60,7 +60,7 @@ export function extractPageDetails(html = '') {
   }
   return {event_date:date,event_end_date:date?end:null,event_time:date?time:null,venue,ticket_url:ticket,ambiguous_dates:calendars.length>1 || (!date && cards.length>1)};
 }
-const normalized = value => textFromHtml(value || '').normalize('NFKC').toLocaleLowerCase('lt').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+const normalized = (value: string) => textFromHtml(value || '').normalize('NFKC').toLocaleLowerCase('lt').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
 export function suggestArtists(event: {title: string; content_html: string}, artists: Artist[], reviews: Set<string>): ArtistSuggestion[] {
   const titleText=normalized(event.title), title=` ${titleText} `, body=` ${normalized(event.content_html)} `;
   return artists.map(a=>{
@@ -73,5 +73,5 @@ export function suggestArtists(event: {title: string; content_html: string}, art
     const sections = original.match(/[^.!?\n]+(?:[.!?]|$)/g) || [original];
     const excerpt = sections.find(part => ` ${normalized(part)} `.includes(needle))?.trim() || original;
     return {...a, reason:inTitle?'Title' as const:'Description' as const, excerpt:excerpt.length>240 ? excerpt.slice(0,237)+'…' : excerpt};
-  }).filter(Boolean).sort((a,b)=>(a.reason==='Title'?-1:0)-(b.reason==='Title'?-1:0)||b.name.length-a.name.length).slice(0,8);
+  }).filter((item): item is ArtistSuggestion => item !== null).sort((a,b)=>(a.reason==='Title'?-1:0)-(b.reason==='Title'?-1:0)||b.name.length-a.name.length).slice(0,8);
 }

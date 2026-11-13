@@ -14,5 +14,5 @@
     "types": ["node"],
     "noEmitOnError": true
   },
-  "include": ["*.ts", "public/*.ts", "test/*.ts"]
+  "include": ["*.ts", "database/*.ts", "public/*.ts", "test/*.ts"]
 }
