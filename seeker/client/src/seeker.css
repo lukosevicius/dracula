@@ -25,3 +25,9 @@
 .ai-result h4 { margin:0 0 12px; }
 .ai-performer { border-top:1px solid #30313a; padding:12px 0; }
 .ai-usage { font-size:12px; margin-top:20px; }
+.event-import-form .event-include-images { display:flex; flex-direction:row; align-items:center; gap:9px; font-size:14px; color:#dddde3; }
+.event-import-form .event-include-images input { width:auto; }
+.event-image { margin:20px 0; }
+.event-image img { display:block; max-width:min(100%,700px); max-height:500px; object-fit:contain; border-radius:8px; }
+.event-image p { color:#b8b8c2; font-size:13px; }
+.event-image a { color:#eba3af; }

@@ -1,3 +1,4 @@
+import { createVilniusImages } from './vilnius-images.js';
 import { extractDetails, extractPageDetails, suggestArtists } from './event-details.js';
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import type { Artist, ArtistDecision, EventDetails, EventRecord, ReviewStatus, SourceEvent } from '../types.js';
@@ -8,7 +9,7 @@ const INTERVAL = 3000;
 const DETAIL_FIELDS = ['event_date','event_end_date','event_time','venue','ticket_url'] as const;
 const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-export function createVilniusEvents(db: DatabaseSync, userAgent: string) {
+export function createVilniusEvents(db: DatabaseSync, userAgent: string, dataDir = 'data') {
   db.exec(`
     CREATE TABLE IF NOT EXISTS vilnius_events (
       source_id INTEGER PRIMARY KEY, title TEXT NOT NULL, source_url TEXT NOT NULL,
@@ -49,6 +50,7 @@ export function createVilniusEvents(db: DatabaseSync, userAgent: string) {
   )`);
   migrateEventCatalogue(db);
   migrateSourceLinks(db);
+  const images=createVilniusImages(db,dataDir,userAgent);
   const saveExtracted = db.prepare('UPDATE vilnius_events SET event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=? WHERE source_id=?');
   const extract = (id: SQLInputValue, values: Partial<EventDetails>) => {
     const existing=db.prepare('SELECT * FROM vilnius_events WHERE source_id=?').get(id);
@@ -140,10 +142,10 @@ export function createVilniusEvents(db: DatabaseSync, userAgent: string) {
     }
     throw new Error('Vilnius Events did not return a response.');
   }
-  async function run(pages: number, restart: boolean, sample = false, refresh = false, progress: (value: {fetched:number; added:number; updated:number})=>void = ()=>{}) {
+  async function run(pages: number, restart: boolean, sample = false, refresh = false, progress: (value: {fetched:number; added:number; updated:number; images?:number; image_failed?:number})=>void = ()=>{}, includeImages = false) {
     if (running) throw Object.assign(new Error('An event import is already running.'), {status:409});
     running = true;
-    let fetched = 0, added = 0, updated = 0;
+    let fetched = 0, added = 0, updated = 0, imageCount = 0, imageFailed = 0;
     const runId = db.prepare("INSERT INTO vilnius_event_runs (started_at,status) VALUES (?, 'running')").run(new Date().toISOString()).lastInsertRowid;
     let page = restart || sample || refresh ? 1 : state().nextPage;
     const requestedStart=page;
@@ -157,10 +159,12 @@ export function createVilniusEvents(db: DatabaseSync, userAgent: string) {
         const now = new Date().toISOString();
         db.exec('BEGIN');
         let pageAdded = 0, pageUpdated = 0;
+        const changedMedia=new Set<number>();
         try {
           for (const item of result.data) {
             if (!Number.isInteger(item.id) || !item.title?.rendered || !item.link) throw new Error('An event record is missing required fields.');
             const exists = db.prepare('SELECT modified_at,content_html FROM vilnius_events WHERE source_id=?').get(item.id);
+            if(item.featured_media && exists && exists.modified_at !== (item.modified || null)) changedMedia.add(item.featured_media);
             upsert.run(item.id,item.title.rendered,item.link,item.content?.rendered || '',JSON.stringify(item.categories || []),item.featured_media || null,item.date || null,item.modified || null,now,now);
             if (exists && (exists.modified_at !== (item.modified || null) || exists.content_html !== (item.content?.rendered || ''))) db.prepare('UPDATE vilnius_events SET details_checked_at=NULL WHERE source_id=?').run(item.id);
             if (!db.prepare('SELECT details_checked_at FROM vilnius_events WHERE source_id=?').get(item.id)?.details_checked_at) extract(item.id,extractDetails(item.content?.rendered || ''));
@@ -172,11 +176,12 @@ export function createVilniusEvents(db: DatabaseSync, userAgent: string) {
           db.prepare('UPDATE vilnius_event_runs SET fetched_count=?,added_count=?,updated_count=? WHERE id=?').run(fetched,added,updated,runId);
           db.exec('COMMIT');
         } catch (e) { db.exec('ROLLBACK'); throw e; }
-        progress({fetched,added,updated});
+        if(includeImages) for(const item of result.data) { if(item.featured_media) { try { if(await images.ensure(item.featured_media,changedMedia.has(item.featured_media))==='downloaded') imageCount++; } catch(error) { imageFailed++; console.error('Image download failed:',error instanceof Error?error.message:String(error)); } progress({fetched,added,updated,images:imageCount,image_failed:imageFailed}); } }
+        progress({fetched,added,updated,images:imageCount,image_failed:imageFailed});
         if (sample || refresh || (!isOverlap && (!result.data.length || (result.pages && page >= result.pages)))) break;
       }
       db.prepare("UPDATE vilnius_event_runs SET status='completed',finished_at=? WHERE id=?").run(new Date().toISOString(),runId);
-      return {fetched,added,updated};
+      return {fetched,added,updated,images:imageCount,image_failed:imageFailed};
     } catch (error) {
       db.prepare("UPDATE vilnius_event_runs SET status='failed',finished_at=?,error_message=? WHERE id=?").run(new Date().toISOString(),error instanceof Error ? error.message : String(error),runId);
       throw error;
@@ -228,5 +233,14 @@ export function createVilniusEvents(db: DatabaseSync, userAgent: string) {
       return {checked,enriched,total};
     } finally { running=false; }
   }
-  return {state, details, run, updateEvent, reviewEvent, reviewArtist, enrich};
+  async function downloadImages(progress:(value:{checked:number;downloaded:number;failed:number;total:number})=>void=()=>{}) {
+    if(running) throw Object.assign(new Error('An event import is already running.'),{status:409});
+    running=true;let checked=0,downloaded=0,failed=0;
+    try { const rows=db.prepare('SELECT DISTINCT featured_media FROM vilnius_events WHERE featured_media IS NOT NULL ORDER BY featured_media').all();
+      progress({checked,downloaded,failed,total:rows.length});
+      for(const row of rows) { try {if(await images.ensure(Number(row.featured_media))==='downloaded')downloaded++;}catch(error){failed++;console.error('Image download failed:',error instanceof Error?error.message:String(error));} checked++;progress({checked,downloaded,failed,total:rows.length}); }
+      return {checked,downloaded,failed,total:rows.length};
+    } finally {running=false;}
+  }
+  return {state, details, run, updateEvent, reviewEvent, reviewArtist, enrich, downloadImages};
 }

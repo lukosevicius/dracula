@@ -5,6 +5,7 @@ import { mkdirSync, existsSync } from 'node:fs';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync, backup } from 'node:sqlite';
+import { loadEnvFile } from 'node:process';
 import { createVilniusEvents } from './sources/vilnius-events.js';
 import { createMusicBrainzImporter } from './sources/musicbrainz.js';
 import { createJobRunner } from './database/jobs.js';
@@ -12,6 +13,8 @@ import { createAiEvaluation, MODELS, type Model } from './database/ai-evaluation
 import { suggestEventMatches } from './database/event-matching.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const envFile = join(root, '.env');
+if (existsSync(envFile)) loadEnvFile(envFile);
 const publicDir = join(root, 'public');
 const compiledPublicDir = join(root, 'dist', 'public');
 const clientDir = join(root, 'client', 'dist');
@@ -104,7 +107,7 @@ const sourceStateColumns = db.prepare('PRAGMA table_info(source_state)').all();
 if (!sourceStateColumns.some((column) => column.name === 'last_request_at')) {
   db.exec('ALTER TABLE source_state ADD COLUMN last_request_at TEXT');
 }
-const vilniusEvents = createVilniusEvents(db, userAgent);
+const vilniusEvents = createVilniusEvents(db, userAgent, dataDir);
 const jobs = createJobRunner(db);
 const aiEvaluation = createAiEvaluation(db);
 db.prepare("UPDATE vilnius_event_runs SET status='failed', finished_at=?, error_message=? WHERE status='running'").run(new Date().toISOString(), 'Seeker stopped before the import finished. Completed pages are saved.');
@@ -214,7 +217,7 @@ const server = createServer(async (request, response) => {
         if(!process.env.GEMINI_API_KEY) throw Object.assign(new Error('Set GEMINI_API_KEY before starting Seeker.'),{status:400});
         let id=0; id=jobs.start('ai-evaluation','analyze',progress=>aiEvaluation.run(id,ids,models as Model[],budget,progress)); sendJson(response,202,{id});return;
       }
-      if(input.source==='vilnius-events' && ['next','start','sample','refresh','details','refresh-details','details-event','refresh-all-details'].includes(input.action)) {
+      if(input.source==='vilnius-events' && ['next','start','sample','refresh','details','refresh-details','details-event','refresh-all-details','download-images'].includes(input.action)) {
         const pages=Number(input.pages ?? 1);
         if(!Number.isInteger(pages)||pages<1||pages>10) throw Object.assign(new Error('Choose between 1 and 10 pages.'),{status:400});
         let sourceId: number | undefined;
@@ -224,9 +227,9 @@ const server = createServer(async (request, response) => {
           if(!source) throw Object.assign(new Error('Event not found.'),{status:404});
           sourceId=Number(source.source_id);
         }
-        const id=jobs.start('vilnius-events',input.action,progress=>['details','refresh-details','details-event','refresh-all-details'].includes(input.action)
+        const id=jobs.start('vilnius-events',input.action,progress=>input.action==='download-images' ? vilniusEvents.downloadImages(progress) : ['details','refresh-details','details-event','refresh-all-details'].includes(input.action)
           ? vilniusEvents.enrich(10,input.action==='refresh-details',progress,sourceId,input.action==='refresh-all-details')
-          : vilniusEvents.run(pages,input.action==='start',input.action==='sample',input.action==='refresh',progress));
+          : vilniusEvents.run(pages,input.action==='start',input.action==='sample',input.action==='refresh',progress,input.include_images===true));
         sendJson(response,202,{id}); return;
       }
       if(input.source==='musicbrainz' && ['next','start','all'].includes(input.action)) {
@@ -245,6 +248,12 @@ const server = createServer(async (request, response) => {
       }
       throw Object.assign(new Error('Invalid job.'),{status:400});
     } catch(error) {sendJson(response,error.status||400,{error:error.message});return;}
+  }
+  const imagePath=apiUrl.pathname.match(/^\/api\/vilnius-images\/(\d+)$/);
+  if(request.method==='GET' && imagePath) {
+    const row=db.prepare('SELECT local_name,mime_type FROM vilnius_images WHERE media_id=?').get(Number(imagePath[1]));
+    if(!row||typeof row.local_name!=='string'||!/^\d+\.(jpg|png|webp|gif)$/.test(row.local_name)){response.writeHead(404);response.end();return;}
+    try {const body=await readFile(join(dataDir,'images','vilnius-events',row.local_name));response.writeHead(200,{'content-type':String(row.mime_type),'x-content-type-options':'nosniff','cache-control':'private, max-age=3600'});response.end(body);} catch {response.writeHead(404);response.end();} return;
   }
   if (request.method === 'GET' && apiUrl.pathname === '/api/events') {
     const page=Math.max(1,Math.floor(Number(apiUrl.searchParams.get('page'))||1));
@@ -277,7 +286,7 @@ const server = createServer(async (request, response) => {
     const source=db.prepare("SELECT source_id FROM event_sources WHERE event_id=? AND source_key='vilnius-events'").get(eventId);
     if(!source){sendJson(response,404,{error:'This source does not support event details yet.'});return;}
     if(request.method==='GET' && (!eventPath[2] || eventPath[2]==='details')) {
-      try {sendJson(response,200,{event:vilniusEvents.details(Number(source.source_id)),sources:db.prepare('SELECT source_key,source_url,last_checked_at FROM event_sources WHERE event_id=? ORDER BY id').all(eventId),matches:suggestEventMatches(db,eventId)});}catch(error){sendJson(response,error.status||500,{error:error.message});}return;
+      try {sendJson(response,200,{event:vilniusEvents.details(Number(source.source_id)),image:db.prepare('SELECT i.media_id,i.width,i.height,i.source_url FROM vilnius_events v JOIN vilnius_images i ON i.media_id=v.featured_media WHERE v.source_id=?').get(Number(source.source_id))||null,sources:db.prepare('SELECT source_key,source_url,last_checked_at FROM event_sources WHERE event_id=? ORDER BY id').all(eventId),matches:suggestEventMatches(db,eventId)});}catch(error){sendJson(response,error.status||500,{error:error.message});}return;
     }
     if(request.method==='POST' && ['review','details','artist'].includes(eventPath[2])) {
       let raw='';for await(const chunk of request){raw+=chunk;if(raw.length>8192){sendJson(response,413,{error:'Request too large.'});return;}}
