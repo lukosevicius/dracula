@@ -35,3 +35,18 @@ Event details also include the source's optional “Apie renginį” link, which
 The catalogue stores canonical `events` and linked `event_sources`. The original Vilnius Events records are retained during this transition, with SQLite triggers keeping the canonical catalogue in sync. This schema supports linking multiple source records to one event, but the current importer and editor still operate on Vilnius Events; additional source adapters and a merge workflow are future work. Potential matching events can be queried, but are never merged automatically.
 
 The first launch after upgrading creates and verifies a SQLite backup in `data/backups` before migrating existing event data. Do not remove it until you have verified the migrated catalogue. Import and detail jobs are persisted in SQLite and can run while the dashboard is closed, as long as the Node server remains running. If the server stops, unfinished jobs are marked interrupted at the next startup; completed pages remain saved and can be resumed. Each source retains its original rate limits and retry behavior.
+
+## AI event evaluation
+
+Set a Gemini API key in your shell before starting Seeker (do not commit the key):
+
+```sh
+export GEMINI_API_KEY='your-api-key'
+npm start
+```
+
+Open **AI evaluation** to select events individually or select the first N events, choose Gemini 3.5 Flash-Lite, Gemini 4 Hydrogen, or both, and set an estimated per-run USD budget. Analysis runs as a background job and saves each model result as it completes. The dashboard shows the latest 1,000 results; older results remain in SQLite. A server restart marks an unfinished run as interrupted. Re-running events sends new requests and may incur charges again.
+
+Gemini receives the event title and description. Suggestions are separate from existing review decisions: use Accept to apply a classification or artist match. Performer matches are exact normalized matches against local artist names and aliases; evidence is marked when it cannot be verified in the event text. No web search is used. Event descriptions over 30,000 characters are truncated for analysis.
+
+Before each generation, Seeker asks Gemini to count input tokens and reserves the configured maximum output tokens at the listed standard model prices. It stops when this estimated reservation would exceed the run budget. This is not a provider-enforced spending cap: prices can change, requests with unknown outcomes can incur charges, and account taxes or other charges are excluded. Check Google billing and configure provider limits separately. Seeker stops if generation usage is unavailable or the request fails after being sent, because its actual charge may be unknown. The prices in `database/ai-evaluation.ts` must be updated when Google changes them.

@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 
-export type JobSource = 'musicbrainz' | 'vilnius-events';
+export type JobSource = 'musicbrainz' | 'vilnius-events' | 'ai-evaluation';
 export type JobProgress = Record<string, number>;
 
 export function createJobRunner(db: DatabaseSync) {

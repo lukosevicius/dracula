@@ -8,6 +8,7 @@ import { DatabaseSync, backup } from 'node:sqlite';
 import { createVilniusEvents } from './sources/vilnius-events.js';
 import { createMusicBrainzImporter } from './sources/musicbrainz.js';
 import { createJobRunner } from './database/jobs.js';
+import { createAiEvaluation, MODELS, type Model } from './database/ai-evaluation.js';
 import { suggestEventMatches } from './database/event-matching.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -105,6 +106,7 @@ if (!sourceStateColumns.some((column) => column.name === 'last_request_at')) {
 }
 const vilniusEvents = createVilniusEvents(db, userAgent);
 const jobs = createJobRunner(db);
+const aiEvaluation = createAiEvaluation(db);
 db.prepare("UPDATE vilnius_event_runs SET status='failed', finished_at=?, error_message=? WHERE status='running'").run(new Date().toISOString(), 'Seeker stopped before the import finished. Completed pages are saved.');
 db.prepare("UPDATE import_runs SET status='failed', finished_at=?, error_message=? WHERE status='running'").run(new Date().toISOString(), 'Seeker stopped before the import finished. Completed pages are saved.');
 
@@ -165,7 +167,7 @@ function contentType(path) {
 
 async function serveStatic(request, response) {
   const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
-  const isApp = url.pathname === '/' || url.pathname === '/vilnius-events.html';
+  const isApp = url.pathname === '/' || url.pathname === '/vilnius-events.html' || url.pathname === '/ai-evaluation.html';
   const pathname = isApp ? '/index.html' : decodeURIComponent(url.pathname);
   const assetDir = isApp || pathname.startsWith('/assets/') ? clientDir : pathname.endsWith('.js') ? compiledPublicDir : publicDir;
   const filePath = normalize(join(assetDir, pathname));
@@ -186,13 +188,32 @@ async function serveStatic(request, response) {
 
 const server = createServer(async (request, response) => {
   const apiUrl = new URL(request.url || '/', 'http://localhost');
+  if (request.method === 'GET' && apiUrl.pathname === '/about.html') {
+    response.writeHead(302, { location: '/#musicbrainz-source-notes' });
+    response.end();
+    return;
+  }
+  if (request.method === 'GET' && apiUrl.pathname === '/api/ai-evaluations/events') { const limit=Math.min(5000,Math.max(1,Math.floor(Number(apiUrl.searchParams.get('limit'))||1))); const rows=db.prepare('SELECT id FROM events ORDER BY event_date IS NULL,event_date,event_time IS NULL,event_time,id LIMIT ?').all(limit); sendJson(response,200,{ids:rows.map(row=>row.id)});return; }
+  if (request.method === 'GET' && apiUrl.pathname === '/api/ai-evaluations') { sendJson(response,200,{results:aiEvaluation.list(),configured:!!process.env.GEMINI_API_KEY}); return; }
+  if (request.method === 'POST' && apiUrl.pathname === '/api/ai-evaluations/decision') {
+    let raw=''; for await(const chunk of request) {raw+=chunk;if(raw.length>4096){sendJson(response,413,{error:'Request too large.'});return;}}
+    try { const input=JSON.parse(raw); if(!Number.isSafeInteger(input.id)||!['accepted','dismissed'].includes(input.decision)) throw new Error('Invalid decision.'); if(!aiEvaluation.decision(input.id,input.decision).changes) throw new Error('Result not found.'); sendJson(response,200,{ok:true}); } catch(error) {sendJson(response,400,{error:error.message});} return;
+  }
   if (request.method === 'GET' && apiUrl.pathname === '/api/jobs') {
     sendJson(response,200,{jobs:jobs.list()}); return;
   }
   if (request.method === 'POST' && apiUrl.pathname === '/api/jobs') {
-    let raw=''; for await(const chunk of request) {raw+=chunk; if(raw.length>4096){sendJson(response,413,{error:'Request too large.'});return;}}
+    let raw=''; for await(const chunk of request) {raw+=chunk; if(raw.length>100000){sendJson(response,413,{error:'Request too large.'});return;}}
     try {
       const input=JSON.parse(raw || '{}');
+      if(input.source==='ai-evaluation' && input.action==='analyze') {
+        const ids=input.event_ids, models=input.models, budget=Number(input.budget);
+        if(!Array.isArray(ids)||!ids.length||ids.length>5000||!ids.every((id:unknown)=>Number.isSafeInteger(id) && Number(id)>0)||new Set(ids).size!==ids.length) throw Object.assign(new Error('Select 1 to 5,000 unique events.'),{status:400});
+        if(!Array.isArray(models)||!models.length||new Set(models).size!==models.length||!models.every((m:string)=>Object.hasOwn(MODELS,m))) throw Object.assign(new Error('Choose at least one supported model.'),{status:400});
+        if(!Number.isFinite(budget)||budget<=0||budget>1000) throw Object.assign(new Error('Set a budget between $0 and $1,000.'),{status:400});
+        if(!process.env.GEMINI_API_KEY) throw Object.assign(new Error('Set GEMINI_API_KEY before starting Seeker.'),{status:400});
+        let id=0; id=jobs.start('ai-evaluation','analyze',progress=>aiEvaluation.run(id,ids,models as Model[],budget,progress)); sendJson(response,202,{id});return;
+      }
       if(input.source==='vilnius-events' && ['next','start','sample','refresh','details','refresh-details','details-event','refresh-all-details'].includes(input.action)) {
         const pages=Number(input.pages ?? 1);
         if(!Number.isInteger(pages)||pages<1||pages>10) throw Object.assign(new Error('Choose between 1 and 10 pages.'),{status:400});
