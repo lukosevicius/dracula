@@ -33,7 +33,8 @@ export function matchesDate(event: Pick<EventDetails, 'event_date'> & Partial<Pi
   const start=event.event_date, end=event.event_end_date || start;
   if (filter==='all') return true;
   if (filter==='unknown') return !start;
-  if (filter==='past') return Boolean(start && end < today);
-  if (filter==='upcoming') return Boolean(start && end >= today);
-  return Boolean(!range?.error && range && start && start <= range.to && end >= range.from);
+  if (!start || !end) return false;
+  if (filter==='past') return end < today;
+  if (filter==='upcoming') return end >= today;
+  return Boolean(!range?.error && range?.from && range.to && start <= range.to && end >= range.from);
 }

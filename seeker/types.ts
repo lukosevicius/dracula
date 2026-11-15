@@ -9,6 +9,13 @@ export interface EventDetails {
   venue: string | null;
   ticket_url: string | null;
 }
+export interface PublicEvent extends Pick<EventDetails, 'event_date' | 'event_end_date' | 'event_time' | 'venue'> {
+  id: number;
+  title: string;
+  source_url: string;
+  image: number | null;
+  artists: Artist[];
+}
 export interface Artist { mbid: string; name: string }
 export interface ArtistSuggestion extends Artist { reason: 'Title' | 'Description'; excerpt: string }
 export interface EventRecord extends EventDetails {
