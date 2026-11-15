@@ -9,10 +9,12 @@ export interface EventDetails {
   venue: string | null;
   ticket_url: string | null;
 }
-export interface PublicEvent extends Pick<EventDetails, 'event_date' | 'event_end_date' | 'event_time' | 'venue'> {
+export interface PublicEvent extends Pick<EventDetails, 'event_date' | 'event_end_date' | 'event_time' | 'venue' | 'ticket_url'> {
   id: number;
   title: string;
   source_url: string;
+  about_url: string | null;
+  description: string;
   image: number | null;
   artists: Artist[];
 }

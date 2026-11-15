@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { createServer as createPortProbe } from 'node:net';
 import { readFile } from 'node:fs/promises';
-import { mkdirSync, existsSync } from 'node:fs';
+import { mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync, backup } from 'node:sqlite';
@@ -19,6 +19,7 @@ const publicDir = join(root, 'public');
 const compiledPublicDir = join(root, 'dist', 'public');
 const clientDir = join(root, 'client', 'dist');
 const dataDir = join(root, 'data');
+const readyForDracula = readFileSync(join(root, 'database', 'ready-for-dracula.sql'), 'utf8').trim();
 const databasePath = join(dataDir, 'seeker.sqlite');
 const port = Number(process.env.PORT || 4177);
 const maxImportLimit = 1000;
@@ -261,7 +262,10 @@ const server = createServer(async (request, response) => {
     const review=apiUrl.searchParams.get('review')||'all', when=apiUrl.searchParams.get('when')||'upcoming', sourceFilter=apiUrl.searchParams.get('source')||'all';
     const today=apiUrl.searchParams.get('today')||new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Vilnius',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
     const from=apiUrl.searchParams.get('from'),to=apiUrl.searchParams.get('to');
+    const readiness=apiUrl.searchParams.get('readiness')||'all';
     const clauses:string[]=[], params:(string|number)[]=[];
+    if(readiness==='ready'){clauses.push(`(${readyForDracula})`);params.push(today);}
+    if(readiness==='attention'){clauses.push(`NOT (${readyForDracula})`);params.push(today);}
     if(['music','not_music','unsure'].includes(review)){clauses.push('e.review_status=?');params.push(review);}
     if(sourceFilter!=='all'){clauses.push('EXISTS (SELECT 1 FROM event_sources sf WHERE sf.event_id=e.id AND sf.source_key=?)');params.push(sourceFilter);}
     if(when==='upcoming'){clauses.push('e.event_date IS NOT NULL AND COALESCE(e.event_end_date,e.event_date)>=?');params.push(today);}
@@ -275,8 +279,9 @@ const server = createServer(async (request, response) => {
     const count=Number(db.prepare(`SELECT COUNT(*) AS count FROM events e ${where}`).get(...params).count);
     const records=db.prepare(`SELECT e.*,s.source_id,s.source_key,s.source_url,s.about_url,s.last_checked_at AS details_checked_at FROM events e JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY id LIMIT 1) ${where} ORDER BY e.event_date IS NULL,e.event_date ${when==='past'?'DESC':'ASC'},e.event_time IS NULL,e.event_time ${when==='past'?'DESC':'ASC'},e.id LIMIT ? OFFSET ?`).all(...params,limit,(page-1)*limit);
     const counts=db.prepare("SELECT COUNT(*) AS total, SUM(review_status='music') AS music, SUM(review_status='not_music') AS not_music, SUM(review_status='unsure') AS unsure, SUM(event_date IS NULL) AS unknown FROM events").get();
+    const readyCount=Number(db.prepare(`SELECT COUNT(*) AS count FROM events e WHERE ${readyForDracula}`).get(today).count);
     const source=db.prepare('SELECT next_offset FROM source_state WHERE source_key=?').get('vilnius-events');
-    sendJson(response,200,{events:records,total:count,page,limit,counts,nextPage:Number(source?.next_offset||0)+1,sources:db.prepare('SELECT DISTINCT source_key FROM event_sources ORDER BY source_key').all(),runs:db.prepare('SELECT * FROM vilnius_event_runs ORDER BY id DESC LIMIT 8').all()}); return;
+    sendJson(response,200,{events:records,total:count,page,limit,counts,readyCount,nextPage:Number(source?.next_offset||0)+1,sources:db.prepare('SELECT DISTINCT source_key FROM event_sources ORDER BY source_key').all(),runs:db.prepare('SELECT * FROM vilnius_event_runs ORDER BY id DESC LIMIT 8').all()}); return;
   }
   const eventPath=apiUrl.pathname.match(/^\/api\/events\/(\d+)(?:\/(review|details|artist|matches))?$/);
   if(eventPath) {
