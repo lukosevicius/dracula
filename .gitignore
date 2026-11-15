@@ -28,4 +28,5 @@ Thumbs.db
 
 # Seeker downloaded source images
 seeker/data/images/
+seeker/data/backups/
 client/assets/events

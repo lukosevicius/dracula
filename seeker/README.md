@@ -36,6 +36,8 @@ The catalogue stores canonical `events` and linked `event_sources`. The original
 
 The first launch after upgrading creates and verifies a SQLite backup in `data/backups` before migrating existing event data. Do not remove it until you have verified the migrated catalogue. Import and detail jobs are persisted in SQLite and can run while the dashboard is closed, as long as the Node server remains running. If the server stops, unfinished jobs are marked interrupted at the next startup; completed pages remain saved and can be resumed. Each source retains its original rate limits and retry behavior.
 
+For a backup of the database **and downloaded images**, run `npm run backup` from `seeker`. It saves a separate directory under `data/backups`, checks database integrity and foreign keys, and verifies image copies against SHA-256 hashes. The manifest records table counts and image hashes. The command refuses to proceed if a job is active at the time of the database snapshot. For a final migration or a point-in-time backup, stop Seeker before running it, so edits and new jobs cannot start during the copy. Backups contain private working data and are excluded from Git; keep an additional copy somewhere safe.
+
 ## AI event evaluation
 
 Add your Gemini API key to `seeker/.env` (this file is excluded from git):
@@ -63,3 +65,5 @@ Vilnius Events imports can optionally download featured images. Enable “Downlo
 The **Dracula export** filter shows which events are ready for the client snapshot and why others are excluded. Ready events are marked Music and either have an unknown date or have not ended in Vilnius. Artist matches, images and an original event link are optional. The client snapshot is refreshed manually; its export uses the same selection rule.
 
 Assistant-reviewed events can be found with **Assistant review → Needs my check**. Their review notes are shown on each event; use **Mark as checked** after reviewing. Music events remain eligible for export before your check if they meet the existing date rules.
+
+Event prices are read from VN event pages during detail lookups. The displayed source text is saved with a free, paid or unknown classification; ambiguous, mixed or missing prices remain unknown. Use the Price filter to find free or paid events. To populate existing records, use **Refresh all event details** after restarting Seeker. Requests are paced, and unavailable pages cannot be refreshed.

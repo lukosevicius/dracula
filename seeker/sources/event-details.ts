@@ -18,6 +18,25 @@ export function extractDetails(html = '') {
   }
   return {event_date:unique.length===1?unique[0]:null,event_time:times.length===1 && unique.length===1?times[0]:null,venue,ticket_url:ticket};
 }
+export function classifyPrice(value: string | null): 'free' | 'paid' | 'unknown' {
+  const text = (value || '').trim();
+  if (!text) return 'unknown';
+  if (/\bne\s*mokam/i.test(text) && !/\d/.test(text)) return 'free';
+  const amounts = [...text.matchAll(/\d+(?:[.,]\d+)?/g)].map(match => Number(match[0].replace(',', '.')));
+  if (!amounts.length) return 'unknown';
+  if (amounts.every(amount => amount === 0)) return 'free';
+  if (amounts.every(amount => amount > 0) && !/\bne\s*mokam/i.test(text)) return 'paid';
+  return 'unknown';
+}
+
+export function extractEventPrice(html = ''): {price_text:string|null;price_type:'free'|'paid'|'unknown'} {
+  const section = html.match(/<div\b[^>]*class=["'][^"']*\bse-sidebar__price\b[^"']*["'][^>]*>([\s\S]*?)<!--\s*Upcoming dates/i)?.[1];
+  if (!section) return {price_text:null,price_type:'unknown'};
+  const line=section.match(/<div\b[^>]*class=["'][^"']*\bse-price-line\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i)?.[1];
+  if (!line) return {price_text:null,price_type:'unknown'};
+  const text=textFromHtml(line).replace(/&euro;/gi,'€').replace(/\s+/g,' ').trim() || null;
+  return {price_text:text,price_type:classifyPrice(text)};
+}
 export function extractPageDetails(html = '', sourceUrl = 'https://www.vilnius-events.lt/') {
   const calendars = [...html.matchAll(/<add-to-calendar-button\b([^>]*)>/gi)];
   const attrs = (tag: string) => Object.fromEntries([...tag.matchAll(/([\w-]+)\s*=\s*["']([^"']*)["']/g)].map(m=>[m[1].toLowerCase(),m[2].replace(/&amp;/g,'&')]));

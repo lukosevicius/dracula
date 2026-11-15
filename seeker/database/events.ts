@@ -23,6 +23,11 @@ export function migrateEventCatalogue(db: DatabaseSync): void {
       event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
       reviewed_at TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '', confirmed_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS event_prices (
+      event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+      price_text TEXT, price_type TEXT NOT NULL DEFAULT 'unknown' CHECK(price_type IN ('free','paid','unknown')),
+      manual INTEGER NOT NULL DEFAULT 0, checked_at TEXT
+    );
     CREATE INDEX IF NOT EXISTS idx_events_date_id ON events(event_date, id);
     CREATE INDEX IF NOT EXISTS idx_events_review_date_id ON events(review_status, event_date, id);
     CREATE INDEX IF NOT EXISTS idx_event_sources_event ON event_sources(event_id);

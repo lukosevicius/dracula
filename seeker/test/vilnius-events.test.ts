@@ -130,7 +130,7 @@ test('refresh all checks more than 10 events, reports progress and preserves man
     if(value.includes('/wp-json/')) return new Response(JSON.stringify(items),{headers:{'x-wp-totalpages':'1'}});
     if(redirectAt && value.endsWith(`/${redirectAt}/`)) return new Response('',{status:302,headers:{location:'/'}});
     if(failAt && value.endsWith(`/${failAt}/`)) return new Response('',{status:404});
-    return new Response('<add-to-calendar-button startDate="2026-12-01" startTime="20:00"></add-to-calendar-button><div class="se-date-card__time">20:00</div><div class="se-location__address">Source venue</div>');
+    return new Response('<div class="se-sidebar__section se-sidebar__price"><div class="se-price-line"><span class="se-price-amount">Nemokamas</span></div></div><!-- Upcoming dates --><add-to-calendar-button startDate="2026-12-01" startTime="20:00"></add-to-calendar-button><div class="se-date-card__time">20:00</div><div class="se-location__address">Source venue</div>');
   };
   try {
     const source=createVilniusEvents(db,'Seeker/test');
@@ -144,6 +144,7 @@ test('refresh all checks more than 10 events, reports progress and preserves man
     assert.equal(db.prepare('SELECT venue FROM vilnius_events WHERE source_id=1').get().venue,'Manual venue');
     assert.equal(db.prepare('SELECT review_status FROM vilnius_events WHERE source_id=1').get().review_status,'music');
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM vilnius_events WHERE details_checked_at IS NOT NULL').get().n,12);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM event_prices WHERE price_type='free' AND price_text='Nemokamas'").get().n,12);
 
     db.prepare('UPDATE vilnius_events SET details_checked_at=NULL').run(); redirectAt='2';
     const partial=await source.enrich(10,true,()=>{},undefined,true);

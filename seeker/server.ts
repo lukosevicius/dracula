@@ -11,6 +11,7 @@ import { createMusicBrainzImporter } from './sources/musicbrainz.js';
 import { createJobRunner } from './database/jobs.js';
 import { createAiEvaluation, MODELS, type Model } from './database/ai-evaluation.js';
 import { suggestEventMatches } from './database/event-matching.js';
+import { normalizeEventSearch } from './database/event-search.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const envFile = join(root, '.env');
@@ -34,6 +35,7 @@ await new Promise<void>((resolve, reject) => {
 mkdirSync(dataDir, { recursive: true });
 const databaseExisted = existsSync(databasePath);
 const db = new DatabaseSync(databasePath);
+db.function('normalize_event_search', {deterministic:true}, (value) => normalizeEventSearch(String(value || '')));
 const migrationTable = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'").get();
 const migrated = migrationTable && db.prepare('SELECT 1 FROM schema_migrations WHERE version=1').get();
 if (databaseExisted && !migrated) {
@@ -263,8 +265,12 @@ const server = createServer(async (request, response) => {
     const today=apiUrl.searchParams.get('today')||new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Vilnius',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
     const from=apiUrl.searchParams.get('from'),to=apiUrl.searchParams.get('to');
     const readiness=apiUrl.searchParams.get('readiness')||'all';
+    const search=normalizeEventSearch((apiUrl.searchParams.get('search')||'').slice(0,200));
     const assistantReview=apiUrl.searchParams.get('assistantReview')||'all';
+    const priceFilter=apiUrl.searchParams.get('price')||'all';
     const clauses:string[]=[], params:(string|number)[]=[];
+    if(search){clauses.push('substr(normalize_event_search(e.title),1,length(?))=?');params.push(search,search);}
+    if(['free','paid','unknown'].includes(priceFilter)){clauses.push("COALESCE((SELECT p.price_type FROM event_prices p WHERE p.event_id=e.id),'unknown')=?");params.push(priceFilter);}
     if(assistantReview==='pending') clauses.push('EXISTS (SELECT 1 FROM assistant_event_reviews ar WHERE ar.event_id=e.id AND ar.confirmed_at IS NULL)');
     if(readiness==='ready'){clauses.push(`(${readyForDracula})`);params.push(today);}
     if(readiness==='attention'){clauses.push(`NOT (${readyForDracula})`);params.push(today);}
@@ -279,17 +285,25 @@ const server = createServer(async (request, response) => {
     }
     const where=clauses.length?'WHERE '+clauses.join(' AND '):'';
     const count=Number(db.prepare(`SELECT COUNT(*) AS count FROM events e ${where}`).get(...params).count);
-    const records=db.prepare(`SELECT e.*,s.source_id,s.source_key,s.source_url,s.about_url,s.last_checked_at AS details_checked_at, ar.reviewed_at AS assistant_reviewed_at, ar.confirmed_at AS assistant_confirmed_at, ar.notes AS assistant_notes FROM events e LEFT JOIN assistant_event_reviews ar ON ar.event_id=e.id JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY id LIMIT 1) ${where} ORDER BY e.event_date IS NULL,e.event_date ${when==='past'?'DESC':'ASC'},e.event_time IS NULL,e.event_time ${when==='past'?'DESC':'ASC'},e.id LIMIT ? OFFSET ?`).all(...params,limit,(page-1)*limit);
+    const records=db.prepare(`SELECT e.*,s.source_id,s.source_key,s.source_url,s.about_url,s.last_checked_at AS details_checked_at, ar.reviewed_at AS assistant_reviewed_at, ar.confirmed_at AS assistant_confirmed_at, ar.notes AS assistant_notes, ep.price_text, COALESCE(ep.price_type,'unknown') AS price_type FROM events e LEFT JOIN event_prices ep ON ep.event_id=e.id LEFT JOIN assistant_event_reviews ar ON ar.event_id=e.id JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY id LIMIT 1) ${where} ORDER BY e.event_date IS NULL,e.event_date ${when==='past'?'DESC':'ASC'},e.event_time IS NULL,e.event_time ${when==='past'?'DESC':'ASC'},e.id LIMIT ? OFFSET ?`).all(...params,limit,(page-1)*limit);
     const counts=db.prepare("SELECT COUNT(*) AS total, SUM(review_status='music') AS music, SUM(review_status='not_music') AS not_music, SUM(review_status='unsure') AS unsure, SUM(event_date IS NULL) AS unknown FROM events").get();
     const readyCount=Number(db.prepare(`SELECT COUNT(*) AS count FROM events e WHERE ${readyForDracula}`).get(today).count);
     const source=db.prepare('SELECT next_offset FROM source_state WHERE source_key=?').get('vilnius-events');
     sendJson(response,200,{events:records,total:count,page,limit,counts,readyCount,nextPage:Number(source?.next_offset||0)+1,sources:db.prepare('SELECT DISTINCT source_key FROM event_sources ORDER BY source_key').all(),runs:db.prepare('SELECT * FROM vilnius_event_runs ORDER BY id DESC LIMIT 8').all()}); return;
   }
-  const eventPath=apiUrl.pathname.match(/^\/api\/events\/(\d+)(?:\/(review|details|artist|matches|confirm-assistant-review))?$/);
+  const eventPath=apiUrl.pathname.match(/^\/api\/events\/(\d+)(?:\/(review|details|artist|matches|price|confirm-assistant-review))?$/);
   if(eventPath) {
     const eventId=Number(eventPath[1]), event=db.prepare('SELECT id FROM events WHERE id=?').get(eventId);
     if(!event){sendJson(response,404,{error:'Event not found.'});return;}
     if(request.method==='POST' && eventPath[2]==='confirm-assistant-review') {const result=db.prepare('UPDATE assistant_event_reviews SET confirmed_at=? WHERE event_id=? AND confirmed_at IS NULL').run(new Date().toISOString(),eventId);if(!result.changes){sendJson(response,404,{error:'No pending assistant review.'});return;}sendJson(response,200,{id:eventId});return;}
+    if(request.method==='POST' && eventPath[2]==='price') {
+      let raw=''; for await(const chunk of request){raw+=chunk;if(raw.length>8192){sendJson(response,413,{error:'Request too large.'});return;}}
+      try { const body=JSON.parse(raw), text=typeof body.price_text==='string'?body.price_text.trim():'';
+        if(text.length>300 || !['free','paid','unknown'].includes(body.price_type)) throw new Error('Invalid price.');
+        db.prepare(`INSERT INTO event_prices(event_id,price_text,price_type,manual,checked_at) VALUES(?,?,?,1,?) ON CONFLICT(event_id) DO UPDATE SET price_text=excluded.price_text,price_type=excluded.price_type,manual=1,checked_at=excluded.checked_at`).run(eventId,text||null,body.price_type,new Date().toISOString());
+        sendJson(response,200,{id:eventId});
+      } catch(error){sendJson(response,400,{error:error.message});}return;
+    }
     if(request.method==='GET' && eventPath[2]==='matches') {sendJson(response,200,{matches:suggestEventMatches(db,eventId)});return;}
     const source=db.prepare("SELECT source_id FROM event_sources WHERE event_id=? AND source_key='vilnius-events'").get(eventId);
     if(!source){sendJson(response,404,{error:'This source does not support event details yet.'});return;}

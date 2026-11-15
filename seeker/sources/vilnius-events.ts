@@ -1,5 +1,5 @@
 import { createVilniusImages } from './vilnius-images.js';
-import { extractDetails, extractPageDetails, suggestArtists } from './event-details.js';
+import { extractDetails, extractPageDetails, extractEventPrice, suggestArtists } from './event-details.js';
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import type { Artist, ArtistDecision, EventDetails, EventRecord, ReviewStatus, SourceEvent } from '../types.js';
 import { migrateEventCatalogue, migrateSourceLinks } from '../database/events.js';
@@ -227,6 +227,11 @@ export function createVilniusEvents(db: DatabaseSync, userAgent: string, dataDir
           extract(event.source_id,{event_date:date,event_end_date:page.event_end_date,event_time:time,venue:page.venue||content.venue,ticket_url:page.ticket_url||content.ticket_url});
           db.prepare('UPDATE vilnius_events SET details_checked_at=?,details_version=1 WHERE source_id=?').run(new Date().toISOString(),event.source_id);
           db.prepare("UPDATE event_sources SET about_url=?,about_checked_at=? WHERE source_key='vilnius-events' AND source_id=?").run(page.about_url,new Date().toISOString(),String(event.source_id));
+          const price=extractEventPrice(html);
+          db.prepare(`INSERT INTO event_prices(event_id,price_text,price_type,checked_at)
+            SELECT event_id,?,?,? FROM event_sources WHERE source_key='vilnius-events' AND source_id=?
+            ON CONFLICT(event_id) DO UPDATE SET price_text=excluded.price_text,price_type=excluded.price_type,checked_at=excluded.checked_at WHERE event_prices.manual=0`)
+            .run(price.price_text,price.price_type,new Date().toISOString(),String(event.source_id));
           db.exec('COMMIT');
         } catch(error) { db.exec('ROLLBACK'); throw error; }
         checked++; if(page.event_date||page.venue||page.ticket_url||page.about_url) enriched++;

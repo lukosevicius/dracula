@@ -28,6 +28,8 @@ export interface EventRecord extends EventDetails {
   manual_fields: string;
   review_status: ReviewStatus;
   details_checked_at: string | null;
+  price_text?: string | null;
+  price_type?: 'free' | 'paid' | 'unknown';
   artist_links: { artist_mbid: string; name: string }[];
   artist_suggestions: ArtistSuggestion[];
 }
