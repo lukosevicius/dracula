@@ -166,7 +166,7 @@ function readDashboard() {
 
 function contentType(path) {
   const ext = extname(path);
-  return ({ '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8' })[ext] || 'application/octet-stream';
+  return ({ '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.png': 'image/png' })[ext] || 'application/octet-stream';
 }
 
 async function serveStatic(request, response) {
@@ -263,7 +263,9 @@ const server = createServer(async (request, response) => {
     const today=apiUrl.searchParams.get('today')||new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Vilnius',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
     const from=apiUrl.searchParams.get('from'),to=apiUrl.searchParams.get('to');
     const readiness=apiUrl.searchParams.get('readiness')||'all';
+    const assistantReview=apiUrl.searchParams.get('assistantReview')||'all';
     const clauses:string[]=[], params:(string|number)[]=[];
+    if(assistantReview==='pending') clauses.push('EXISTS (SELECT 1 FROM assistant_event_reviews ar WHERE ar.event_id=e.id AND ar.confirmed_at IS NULL)');
     if(readiness==='ready'){clauses.push(`(${readyForDracula})`);params.push(today);}
     if(readiness==='attention'){clauses.push(`NOT (${readyForDracula})`);params.push(today);}
     if(['music','not_music','unsure'].includes(review)){clauses.push('e.review_status=?');params.push(review);}
@@ -277,16 +279,17 @@ const server = createServer(async (request, response) => {
     }
     const where=clauses.length?'WHERE '+clauses.join(' AND '):'';
     const count=Number(db.prepare(`SELECT COUNT(*) AS count FROM events e ${where}`).get(...params).count);
-    const records=db.prepare(`SELECT e.*,s.source_id,s.source_key,s.source_url,s.about_url,s.last_checked_at AS details_checked_at FROM events e JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY id LIMIT 1) ${where} ORDER BY e.event_date IS NULL,e.event_date ${when==='past'?'DESC':'ASC'},e.event_time IS NULL,e.event_time ${when==='past'?'DESC':'ASC'},e.id LIMIT ? OFFSET ?`).all(...params,limit,(page-1)*limit);
+    const records=db.prepare(`SELECT e.*,s.source_id,s.source_key,s.source_url,s.about_url,s.last_checked_at AS details_checked_at, ar.reviewed_at AS assistant_reviewed_at, ar.confirmed_at AS assistant_confirmed_at, ar.notes AS assistant_notes FROM events e LEFT JOIN assistant_event_reviews ar ON ar.event_id=e.id JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY id LIMIT 1) ${where} ORDER BY e.event_date IS NULL,e.event_date ${when==='past'?'DESC':'ASC'},e.event_time IS NULL,e.event_time ${when==='past'?'DESC':'ASC'},e.id LIMIT ? OFFSET ?`).all(...params,limit,(page-1)*limit);
     const counts=db.prepare("SELECT COUNT(*) AS total, SUM(review_status='music') AS music, SUM(review_status='not_music') AS not_music, SUM(review_status='unsure') AS unsure, SUM(event_date IS NULL) AS unknown FROM events").get();
     const readyCount=Number(db.prepare(`SELECT COUNT(*) AS count FROM events e WHERE ${readyForDracula}`).get(today).count);
     const source=db.prepare('SELECT next_offset FROM source_state WHERE source_key=?').get('vilnius-events');
     sendJson(response,200,{events:records,total:count,page,limit,counts,readyCount,nextPage:Number(source?.next_offset||0)+1,sources:db.prepare('SELECT DISTINCT source_key FROM event_sources ORDER BY source_key').all(),runs:db.prepare('SELECT * FROM vilnius_event_runs ORDER BY id DESC LIMIT 8').all()}); return;
   }
-  const eventPath=apiUrl.pathname.match(/^\/api\/events\/(\d+)(?:\/(review|details|artist|matches))?$/);
+  const eventPath=apiUrl.pathname.match(/^\/api\/events\/(\d+)(?:\/(review|details|artist|matches|confirm-assistant-review))?$/);
   if(eventPath) {
     const eventId=Number(eventPath[1]), event=db.prepare('SELECT id FROM events WHERE id=?').get(eventId);
     if(!event){sendJson(response,404,{error:'Event not found.'});return;}
+    if(request.method==='POST' && eventPath[2]==='confirm-assistant-review') {const result=db.prepare('UPDATE assistant_event_reviews SET confirmed_at=? WHERE event_id=? AND confirmed_at IS NULL').run(new Date().toISOString(),eventId);if(!result.changes){sendJson(response,404,{error:'No pending assistant review.'});return;}sendJson(response,200,{id:eventId});return;}
     if(request.method==='GET' && eventPath[2]==='matches') {sendJson(response,200,{matches:suggestEventMatches(db,eventId)});return;}
     const source=db.prepare("SELECT source_id FROM event_sources WHERE event_id=? AND source_key='vilnius-events'").get(eventId);
     if(!source){sendJson(response,404,{error:'This source does not support event details yet.'});return;}

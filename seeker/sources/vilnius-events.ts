@@ -187,9 +187,9 @@ export function createVilniusEvents(db: DatabaseSync, userAgent: string, dataDir
       throw error;
     } finally { running = false; }
   }
-  async function enrich(limit = 10, refresh = false, progress: (value: {checked:number; enriched:number; total:number})=>void = ()=>{}, sourceId?: number, refreshAll = false) {
+  async function enrich(limit = 10, refresh = false, progress: (value: {checked:number; enriched:number; total:number; failed?:number})=>void = ()=>{}, sourceId?: number, refreshAll = false) {
     if (running) throw Object.assign(new Error('An event import is already running.'), {status:409});
-    running=true; let checked=0, enriched=0;
+    running=true; let checked=0, enriched=0, failed=0;
     try {
       const events=sourceId !== undefined
         ? db.prepare('SELECT source_id,source_url,content_html FROM vilnius_events WHERE source_id=?').all(sourceId)
@@ -201,6 +201,7 @@ export function createVilniusEvents(db: DatabaseSync, userAgent: string, dataDir
       const total=events.length;
       progress({checked,enriched,total});
       for (const event of events) {
+        try {
         const url=new URL(String(event.source_url));
         if (url.protocol!=='https:' || !['www.vilnius-events.lt','vilnius-events.lt'].includes(url.hostname)) throw new Error('Unexpected event URL.');
         let response;
@@ -208,9 +209,10 @@ export function createVilniusEvents(db: DatabaseSync, userAgent: string, dataDir
           const last=db.prepare('SELECT last_request_at FROM source_state WHERE source_key=?').get(SOURCE)?.last_request_at;
           const delay=Math.max(0,INTERVAL-(Date.now()-(Date.parse(String(last))||0))); if(delay) await pause(delay);
           db.prepare('UPDATE source_state SET last_request_at=? WHERE source_key=?').run(new Date().toISOString(),SOURCE);
-          try { response=await fetch(url,{headers:{'user-agent':userAgent,accept:'text/html'},redirect:'error',signal:AbortSignal.timeout(20000)}); }
+          try { response=await fetch(url,{headers:{'user-agent':userAgent,accept:'text/html'},redirect:'manual',signal:AbortSignal.timeout(20000)}); }
           catch(error) { if(attempt===3) throw new Error(`Event page request failed: ${error instanceof Error ? error.message : String(error)}`); await pause((attempt+1)*5000); continue; }
           if(response.ok) break;
+          if(response.status>=300 && response.status<400) throw Object.assign(new Error(`Event page redirected (HTTP ${response.status}).`),{unavailableEvent:true});
           if(![429,500,502,503,504].includes(response.status)||attempt===3) throw new Error(`Event page returned HTTP ${response.status}.`);
           const retry=response.headers.get('retry-after'), seconds=Number(retry), ms=retry && Number.isFinite(seconds)?seconds*1000:Math.max(0,Date.parse(retry||'')-Date.now())||0;
           if(ms>120000) throw new Error('Vilnius Events requested a longer pause. Please retry later.');
@@ -228,9 +230,15 @@ export function createVilniusEvents(db: DatabaseSync, userAgent: string, dataDir
           db.exec('COMMIT');
         } catch(error) { db.exec('ROLLBACK'); throw error; }
         checked++; if(page.event_date||page.venue||page.ticket_url||page.about_url) enriched++;
-        progress({checked,enriched,total});
+        progress({checked,enriched,total,failed});
+        } catch (error) {
+          if (sourceId !== undefined || !(error as {unavailableEvent?:boolean})?.unavailableEvent) throw error;
+          failed++;
+          console.error(`Event ${event.source_id} detail lookup failed:`, error instanceof Error ? error.message : String(error));
+          progress({checked,enriched,total,failed});
+        }
       }
-      return {checked,enriched,total};
+      return {checked,enriched,total,failed};
     } finally { running=false; }
   }
   async function downloadImages(progress:(value:{checked:number;downloaded:number;failed:number;total:number})=>void=()=>{}) {

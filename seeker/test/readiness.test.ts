@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { resolve } from 'node:path';
 
-test('Dracula readiness includes only current music events with known dates', () => {
+test('Dracula readiness includes music events with unknown or current dates', () => {
   const db = new DatabaseSync(':memory:');
   try {
     db.exec('CREATE TABLE events (id INTEGER, review_status TEXT, event_date TEXT, event_end_date TEXT)');
@@ -17,6 +17,6 @@ test('Dracula readiness includes only current music events with known dates', ()
     insert.run(6, 'not_music', '2026-11-16', null);
     const rule = readFileSync(resolve('database/ready-for-dracula.sql'), 'utf8').trim();
     const rows = db.prepare(`SELECT id FROM events e WHERE ${rule} ORDER BY id`).all('2026-11-15');
-    assert.deepEqual(rows.map(row => row.id), [1, 2]);
+    assert.deepEqual(rows.map(row => row.id), [1, 2, 4]);
   } finally { db.close(); }
 });

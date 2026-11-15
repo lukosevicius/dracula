@@ -122,12 +122,13 @@ test('refresh all checks more than 10 events, reports progress and preserves man
   db.exec(`CREATE TABLE source_state(source_key TEXT PRIMARY KEY,next_offset INTEGER,total_available INTEGER,updated_at TEXT,last_request_at TEXT);
     CREATE TABLE artists(mbid TEXT PRIMARY KEY,name TEXT);`);
   const originalFetch=globalThis.fetch,originalNow=Date.now;
-  let clock=Date.now(), failAt='';
+  let clock=Date.now(), failAt='', redirectAt='';
   Date.now=()=>clock+=4000;
   const items=Array.from({length:12},(_,index)=>({id:index+1,title:{rendered:`Event ${index+1}`},link:`https://www.vilnius-events.lt/renginiai/${index+1}/`,content:{rendered:'<p>Music</p>'},categories:[4],date:'2026-11-01',modified:'2026-11-01'}));
   globalThis.fetch=async url=>{
     const value=String(url);
     if(value.includes('/wp-json/')) return new Response(JSON.stringify(items),{headers:{'x-wp-totalpages':'1'}});
+    if(redirectAt && value.endsWith(`/${redirectAt}/`)) return new Response('',{status:302,headers:{location:'/'}});
     if(failAt && value.endsWith(`/${failAt}/`)) return new Response('',{status:404});
     return new Response('<add-to-calendar-button startDate="2026-12-01" startTime="20:00"></add-to-calendar-button><div class="se-date-card__time">20:00</div><div class="se-location__address">Source venue</div>');
   };
@@ -144,6 +145,11 @@ test('refresh all checks more than 10 events, reports progress and preserves man
     assert.equal(db.prepare('SELECT review_status FROM vilnius_events WHERE source_id=1').get().review_status,'music');
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM vilnius_events WHERE details_checked_at IS NOT NULL').get().n,12);
 
+    db.prepare('UPDATE vilnius_events SET details_checked_at=NULL').run(); redirectAt='2';
+    const partial=await source.enrich(10,true,()=>{},undefined,true);
+    assert.equal(partial.failed,1); assert.equal(partial.checked,11);
+    assert.equal(db.prepare('SELECT details_checked_at FROM vilnius_events WHERE source_id=2').get().details_checked_at,null);
+    redirectAt='';
     db.prepare('UPDATE vilnius_events SET details_checked_at=NULL').run(); failAt='2';
     await assert.rejects(source.enrich(10,true,()=>{},undefined,true),/HTTP 404/);
     assert.ok(db.prepare('SELECT details_checked_at FROM vilnius_events WHERE source_id=1').get().details_checked_at);
