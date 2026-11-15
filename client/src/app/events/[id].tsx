@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Image } from 'expo-image';
 import { Link, Stack, useLocalSearchParams } from 'expo-router';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
@@ -8,6 +8,7 @@ import snapshot from '../../data/events.json';
 import { eventImages } from '../../data/event-images';
 import { CalendarButton } from '../../components/calendar-button';
 import { displayDate, displayText, eventSource } from '../../utils/event-format';
+import { apiUrl, fetchEvent, type DisplayEvent } from '../../utils/events-api';
 
 const events: PublicEvent[] = snapshot;
 
@@ -17,16 +18,32 @@ export function generateStaticParams() {
 
 export default function EventPage() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const event = events.find(item => String(item.id) === id);
+  const [remoteEvent, setRemoteEvent] = useState<DisplayEvent | null>(null);
+  const [loading, setLoading] = useState(Boolean(apiUrl));
+  const [failed, setFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const event = apiUrl ? (String(remoteEvent?.id) === id ? remoteEvent : null) : events.find(item => String(item.id) === id);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const desktop = width >= 900;
   const [imageFailed, setImageFailed] = useState(false);
+  useEffect(() => {
+    setImageFailed(false);
+    if (!apiUrl) return;
+    const controller = new AbortController(); setRemoteEvent(null); setFailed(false); setLoading(true);
+    fetchEvent(id || '', controller.signal).then(result => { if (!controller.signal.aborted) setRemoteEvent(result); })
+      .catch(() => { if (!controller.signal.aborted) setFailed(true); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [id, retry]);
+
+  if (apiUrl && loading) return <View style={styles.empty}><Stack.Screen options={{ title: 'Renginys' }} /><Text style={styles.value}>Kraunamas renginys...</Text></View>;
+  if (apiUrl && failed) return <View style={styles.empty}><Stack.Screen options={{ title: 'Renginys' }} /><Text accessibilityRole="alert" style={styles.value}>Nepavyko įkelti renginio.</Text><Pressable accessibilityRole="button" onPress={() => setRetry(value => value + 1)}><Text style={styles.link}>Bandyti dar kartą</Text></Pressable><Link href="/" style={styles.link}>Grįžti į renginius</Link></View>;
 
   if (!event) return <View style={styles.empty}><Stack.Screen options={{ title: 'Renginys' }} /><Text style={styles.title}>Renginio neradome</Text><Link href="/" style={styles.link}>Grįžti į renginius</Link></View>;
 
   const title = displayText(event.title);
-  const image = event.image == null ? undefined : eventImages[event.image];
+  const image = 'image_url' in event && typeof event.image_url === 'string' && event.image_url ? { uri: event.image_url } : event.image == null ? undefined : eventImages[event.image];
   const source = eventSource(event.about_url, event.source_url);
   const date = `${displayDate(event.event_date)}${event.event_end_date && event.event_end_date !== event.event_date ? ` – ${displayDate(event.event_end_date)}` : ''}${event.event_time ? ` · ${event.event_time}` : ''}`;
 
@@ -42,6 +59,7 @@ export default function EventPage() {
 
   return <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={[styles.container, desktop && styles.containerDesktop, { paddingBottom: Math.max(insets.bottom, 32) }]}>
     <Stack.Screen options={{ title: 'Renginys', headerBackTitle: 'Renginiai' }} />
+    <Link href="/" style={styles.link}>← Visi renginiai</Link>
     <View style={[styles.hero, desktop && styles.heroDesktop]}>
       {image && !imageFailed ? <Image source={image} style={[styles.image, desktop && styles.imageDesktop]} contentFit="cover" onError={() => setImageFailed(true)} accessibilityLabel={`Renginio ${title} nuotrauka`} /> : <View style={[styles.image, desktop && styles.imageDesktop, styles.placeholder]}><Text style={styles.placeholderText}>DRACULA</Text></View>}
       <View style={[styles.summary, desktop && styles.summaryDesktop]}>

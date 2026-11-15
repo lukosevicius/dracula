@@ -43,10 +43,25 @@ test('catalogue retains public details, prices and accepted artists, with bounde
   } finally { db.close(); }
 });
 
+test('filtered pages apply date ranges before pagination', async () => {
+  const {db,catalogue}=fixture();
+  const page=(filter,from='',to='',offset=0)=>catalogue.page({filter,from,to,offset,limit:1},'2026-11-15');
+  try {
+    assert.deepEqual((await page('upcoming')).items.map(e=>e.id),[1]);
+    assert.deepEqual((await page('unknown')).items.map(e=>e.id),[2]);
+    assert.equal((await page('today')).total,0);
+    assert.equal((await page('custom','2026-11-20')).total,1);
+    assert.equal((await page('custom','2026-11-21')).total,0);
+    assert.equal((await page('past')).total,0);
+    const first=await page('all'); assert.equal(first.total,2); assert.equal(first.nextOffset,1);
+    assert.equal((await page('all','','',1)).items[0].id,2);
+  } finally {db.close();}
+});
+
 test('HTTP routes reject invalid pagination and never expose private events', async () => {
   const {db,catalogue}=fixture();
   // Fix the date so this test is independent of when it runs.
-  const fixed={list:(after,limit)=>catalogue.list(after,limit,'2026-11-15'),get:id=>catalogue.get(id,'2026-11-15'),hasImage:name=>catalogue.hasImage(name,'2026-11-15')};
+  const fixed={list:(after,limit)=>catalogue.list(after,limit,'2026-11-15'),page:options=>catalogue.page(options,'2026-11-15'),get:id=>catalogue.get(id,'2026-11-15'),hasImage:name=>catalogue.hasImage(name,'2026-11-15')};
   const app=createApp(fixed,'/nonexistent');
   await new Promise(resolve => app.listen(0,'127.0.0.1',resolve));
   try {
@@ -55,6 +70,8 @@ test('HTTP routes reject invalid pagination and never expose private events', as
     assert.equal((await fetch(`${url}/v1/events/4`)).status,404);
     assert.equal((await fetch(`${url}/v1/events`,{method:'POST'})).status,405);
     assert.equal((await fetch(`${url}/v1/images/no.jpg`)).status,404);
+    assert.equal((await fetch(`${url}/v1/events?filter=custom&from=2026-02-30`)).status,400);
+    assert.equal((await fetch(`${url}/v1/events?filter=unknown`)).status,200);
     const response=await fetch(`${url}/v1/events?limit=1`);
     assert.equal(response.headers.get('access-control-allow-origin'),'*');
     assert.equal((await response.json()).items[0].id,1);

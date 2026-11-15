@@ -4,6 +4,8 @@ import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const types = { '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.png':'image/png', '.webp':'image/webp', '.gif':'image/gif' };
+const filters = new Set(['upcoming','today','tomorrow','weekend','custom','all','past','unknown']);
+function validDate(value) { if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false; const date=new Date(`${value}T00:00:00Z`); return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0,10)===value; }
 export function createApp(catalogue, imageDir) {
   return createServer(async (req,res) => {
     res.setHeader('Access-Control-Allow-Origin','*');
@@ -14,6 +16,12 @@ export function createApp(catalogue, imageDir) {
     try {
       if (url.pathname === '/health') return json(200, {status:'ok'});
       if (url.pathname === '/v1/events') {
+        if (url.searchParams.has('filter') || url.searchParams.has('offset')) {
+          const filter=url.searchParams.get('filter') ?? 'upcoming', offset=url.searchParams.get('offset') ?? '0', limit=url.searchParams.get('limit') ?? '30';
+          const from=url.searchParams.get('from') ?? '', to=url.searchParams.get('to') ?? '';
+          if (!filters.has(filter) || !/^\d{1,8}$/.test(offset) || !/^\d{1,3}$/.test(limit) || Number(limit)<1 || Number(limit)>100 || (filter==='custom' && (!validDate(from) || (to && (!validDate(to) || to<from))))) return json(400,{error:'Invalid filter or pagination'});
+          return json(200, await catalogue.page({offset:Number(offset),limit:Number(limit),filter,from,to}));
+        }
         const after = url.searchParams.get('after') ?? '0';
         const limit = url.searchParams.get('limit') ?? '30';
         if (!/^\d{1,12}$/.test(after) || !/^\d{1,3}$/.test(limit) || Number(limit)<1 || Number(limit)>100) return json(400,{error:'Invalid pagination'});

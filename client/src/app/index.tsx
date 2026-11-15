@@ -8,6 +8,8 @@ import { matchesDate, selectedDates, vilniusDate } from '../shared/event-date-fi
 import type { DateFilter, PublicEvent } from '../../../seeker/types';
 import snapshot from '../data/events.json';
 import { eventImages } from '../data/event-images';
+import { apiUrl, type DisplayEvent } from '../utils/events-api';
+import { useEvents } from '../utils/use-events';
 
 const events: PublicEvent[] = snapshot;
 const filters: { id: DateFilter; label: string }[] = [
@@ -22,10 +24,10 @@ function validDate(value: string) {
   const date = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
 }
-function EventCard({ event, width }: { event: PublicEvent; width?: number }) {
+function EventCard({ event, width }: { event: DisplayEvent; width?: number }) {
   const [failed, setFailed] = useState(false);
   const title = displayText(event.title);
-  const source = event.image == null ? undefined : eventImages[event.image];
+  const source = event.image_url ? { uri: event.image_url } : event.image == null ? undefined : eventImages[event.image];
   return <View style={[styles.card, width != null && { width }]}><Link href={{ pathname: '/events/[id]', params: { id: String(event.id) } }} asChild>
     <Pressable accessibilityRole="link" accessibilityLabel={`${title}, atidaryti renginio puslapį`}>
     {source && !failed ? <Image source={source} style={styles.image} contentFit="cover" onError={() => setFailed(true)} accessibilityLabel={`Renginio ${title} nuotrauka`} /> : <View style={[styles.image, styles.placeholder]}><Text style={styles.placeholderText}>DRACULA</Text></View>}
@@ -51,6 +53,7 @@ export default function Home() {
   const contentWidth = Math.max(0, Math.min(width, 1264) - horizontalPadding * 2);
   const cardWidth = desktop ? (contentWidth - (columns - 1) * 20) / columns : undefined;
   const error = filter === 'custom' && (!validDate(from) || (to !== '' && !validDate(to))) ? 'Įveskite galiojančią datą formatu MMMM-MM-DD.' : filter === 'custom' && to && to < from ? 'Pabaigos data turi būti ne ankstesnė nei pradžios data.' : '';
+  const remote = useEvents(filter, from, to, Boolean(error));
   const visible = useMemo(() => {
     if (error) return [];
     const now = new Date();
@@ -58,13 +61,14 @@ export default function Home() {
     const range = selectedDates(filter, from, to, now);
     return events.filter(event => matchesDate(event, filter, range, today)).sort((a, b) => (a.event_date || '9999').localeCompare(b.event_date || '9999') || (a.event_time || '').localeCompare(b.event_time || '') || a.title.localeCompare(b.title, 'lt'));
   }, [filter, from, to, error]);
-  return <FlatList key={columns} numColumns={columns} data={visible} keyExtractor={item => String(item.id)} renderItem={({ item }) => <EventCard event={item} width={cardWidth} />} contentInsetAdjustmentBehavior="automatic" columnWrapperStyle={desktop ? { gap: 20 } : undefined} contentContainerStyle={{ width: '100%', maxWidth: 1264, alignSelf: 'center', paddingHorizontal: horizontalPadding, paddingBottom: Math.max(insets.bottom, 32), gap: desktop ? 20 : 18 }} ListHeaderComponent={<View style={[styles.header, desktop && styles.headerDesktop]}>
+  const displayed = apiUrl ? remote.items : visible;
+  return <FlatList key={columns} numColumns={columns} data={displayed} keyExtractor={item => String(item.id)} renderItem={({ item }) => <EventCard event={item} width={cardWidth} />} onEndReached={() => { if (apiUrl && !remote.error) remote.loadMore(); }} onEndReachedThreshold={0.5} contentInsetAdjustmentBehavior="automatic" columnWrapperStyle={desktop ? { gap: 20 } : undefined} contentContainerStyle={{ width: '100%', maxWidth: 1264, alignSelf: 'center', paddingHorizontal: horizontalPadding, paddingBottom: Math.max(insets.bottom, 32), gap: desktop ? 20 : 18 }} ListHeaderComponent={<View style={[styles.header, desktop && styles.headerDesktop]}>
     <Text style={styles.eyebrow}>VILNIAUS RENGINIAI</Text><Text style={[styles.heading, desktop && styles.headingDesktop]}>{'Atrask savo\nkitą vakarą.'}</Text>
     <Text style={styles.intro}>Muzika, žmonės ir vietos, kurias verta atrasti.</Text>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>{filters.map(option => <Pressable key={option.id} onPress={() => setFilter(option.id)} accessibilityRole="button" accessibilityState={{ selected: filter === option.id }} style={[styles.filter, filter === option.id && styles.selected]}><Text style={[styles.filterText, filter === option.id && styles.selectedText]}>{option.label}</Text></Pressable>)}</ScrollView>
     {filter === 'custom' ? <View style={[styles.dateInputs, desktop && { maxWidth: 520 }]}><View style={styles.inputGroup}><Text style={styles.label}>Nuo</Text><TextInput value={from} onChangeText={setFrom} placeholder="MMMM-MM-DD" placeholderTextColor="#8c8494" accessibilityLabel="Data nuo, metai mėnuo diena" style={styles.input} /></View><View style={styles.inputGroup}><Text style={styles.label}>Iki (nebūtina)</Text><TextInput value={to} onChangeText={setTo} placeholder="MMMM-MM-DD" placeholderTextColor="#8c8494" accessibilityLabel="Data iki, metai mėnuo diena" style={styles.input} /></View></View> : null}
-    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : <Text style={styles.count}>{visible.length} renginių</Text>}
-  </View>} ListEmptyComponent={!error ? <View style={styles.empty}><Text style={styles.emptyTitle}>Renginių neradome</Text><Text style={styles.venue}>Išbandykite kitą datų filtrą.</Text></View> : null} />;
+    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : !apiUrl || (!remote.loading && !remote.error) || remote.items.length ? <Text style={styles.count}>{apiUrl ? remote.total : visible.length} renginių</Text> : null}
+  </View>} ListEmptyComponent={!error && (!apiUrl || (!remote.loading && !remote.error)) ? <View style={styles.empty}><Text style={styles.emptyTitle}>Renginių neradome</Text><Text style={styles.venue}>Išbandykite kitą datų filtrą.</Text></View> : null} ListFooterComponent={apiUrl && !error ? <View style={styles.empty}>{remote.loading ? <Text style={styles.venue}>Kraunami renginiai...</Text> : null}{remote.error ? <><Text accessibilityRole="alert" style={styles.error}>Nepavyko įkelti renginių.</Text><Pressable accessibilityRole="button" onPress={remote.items.length ? remote.loadMore : remote.retry}><Text style={styles.link}>Bandyti dar kartą</Text></Pressable></> : null}{remote.next != null && !remote.loading && !remote.error ? <Pressable accessibilityRole="button" onPress={remote.loadMore}><Text style={styles.link}>Rodyti daugiau</Text></Pressable> : null}</View> : null} />;
 }
 const styles = StyleSheet.create({
   headerDesktop: { paddingTop: 48, paddingBottom: 12, gap: 16 }, headingDesktop: { fontSize: 58, lineHeight: 63, letterSpacing: -2 },

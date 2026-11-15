@@ -26,6 +26,25 @@ export function createCatalogue(db, publicBaseUrl) {
     }));
   }
   return {
+    async page({offset, limit, filter, from, to}, today = vilniusToday()) {
+      const shift = (date, days) => { const d = new Date(`${date}T00:00:00Z`); d.setUTCDate(d.getUTCDate()+days); return d.toISOString().slice(0,10); };
+      const end = "COALESCE(NULLIF(e.event_end_date,''),e.event_date)";
+      let clause = '', params = [];
+      if (filter === 'unknown') clause = " AND NULLIF(e.event_date,'') IS NULL";
+      else if (filter === 'past') { clause = ` AND NULLIF(e.event_date,'') IS NOT NULL AND ${end}<?`; params=[today]; }
+      else if (filter === 'upcoming') { clause = ` AND NULLIF(e.event_date,'') IS NOT NULL AND ${end}>=?`; params=[today]; }
+      else if (filter !== 'all') {
+        let start=from, finish=to || from;
+        if (filter==='today') start=finish=today;
+        if (filter==='tomorrow') start=finish=shift(today,1);
+        if (filter==='weekend') { const day=new Date(`${today}T00:00:00Z`).getUTCDay(); start=shift(today,day===0?-1:6-day); finish=shift(start,1); }
+        clause=` AND NULLIF(e.event_date,'') IS NOT NULL AND e.event_date<=? AND ${end}>=?`; params=[finish,start];
+      }
+      const [countRows] = await db.execute(`SELECT COUNT(*) AS total ${joins} WHERE ${ready}${clause}`, [today,...params]);
+      const [rows] = await db.execute(`SELECT ${columns} ${joins} WHERE ${ready}${clause} ORDER BY CASE WHEN NULLIF(e.event_date,'') IS NULL THEN 1 ELSE 0 END, e.event_date, COALESCE(e.event_time,''), e.id LIMIT ? OFFSET ?`, [today,...params,limit,offset]);
+      const items=await map(rows); const total=Number(countRows[0].total);
+      return {items,total,nextOffset:offset+items.length<total ? offset+items.length : null};
+    },
     async list(after, limit, today = vilniusToday()) {
       const [rows] = await db.execute(`SELECT ${columns} ${joins} WHERE ${ready} AND e.id>? ORDER BY e.id LIMIT ?`, [today,after,limit + 1]);
       const more = rows.length > limit;
