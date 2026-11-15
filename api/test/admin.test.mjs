@@ -84,6 +84,6 @@ test('admin endpoints are disabled without configuration', async () => {
   try {
     const response=await fetch(`http://127.0.0.1:${app.address().port}/v1/admin/events/1/review`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:'{"review_status":"music"}'});
     assert.equal(response.status,404);
-    assert.throws(()=>createAdmin({},'weak'),/at least 32 bytes/);
+    assert.throws(()=>createAdmin({},'weak'),/at least 32 URL-safe/);
   } finally {await new Promise(resolve=>app.close(resolve));}
 });

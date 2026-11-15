@@ -9,7 +9,7 @@ const digest = value => createHash('sha256').update(value).digest();
 function validDate(value) { if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false; const d=new Date(`${value}T00:00:00Z`); return !Number.isNaN(d.valueOf()) && d.toISOString().slice(0,10)===value; }
 
 export function createAdmin(pool, token) {
-  if (typeof token !== 'string' || Buffer.byteLength(token, 'utf8') < 32) throw new Error('ADMIN_TOKEN must be at least 32 bytes.');
+  if (typeof token !== 'string' || !/^[A-Za-z0-9._~-]{32,}$/.test(token)) throw new Error('ADMIN_TOKEN must be at least 32 URL-safe ASCII characters.');
   const tokenHash = digest(token);
   async function withEvent(id, fn) {
     const conn = await pool.getConnection();

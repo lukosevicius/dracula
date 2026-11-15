@@ -38,6 +38,8 @@ The first launch after upgrading creates and verifies a SQLite backup in `data/b
 
 For a backup of the database **and downloaded images**, run `npm run backup` from `seeker`. It saves a separate directory under `data/backups`, checks database integrity and foreign keys, and verifies image copies against SHA-256 hashes. The manifest records table counts and image hashes. The command refuses to proceed if a job is active at the time of the database snapshot. For a final migration or a point-in-time backup, stop Seeker before running it, so edits and new jobs cannot start during the copy. Backups contain private working data and are excluded from Git; keep an additional copy somewhere safe.
 
+The experimental `central-api.ts` provides a server-side client for the central API's event edits. It is not connected to the dashboard or jobs yet, so Seeker continues to use its local SQLite database. The client keeps the token out of browser code, requires HTTPS except on localhost, and never automatically retries an uncertain write. Do not configure it for production until central reads, imports, jobs, and the deployed API have been completed and tested together.
+
 ## AI event evaluation
 
 Add your Gemini API key to `seeker/.env` (this file is excluded from git):
