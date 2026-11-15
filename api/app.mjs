@@ -6,14 +6,27 @@ import { join } from 'node:path';
 const types = { '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.png':'image/png', '.webp':'image/webp', '.gif':'image/gif' };
 const filters = new Set(['upcoming','today','tomorrow','weekend','custom','all','past','unknown']);
 function validDate(value) { if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false; const date=new Date(`${value}T00:00:00Z`); return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0,10)===value; }
-export function createApp(catalogue, imageDir) {
+export function createApp(catalogue, imageDir, admin = null) {
   return createServer(async (req,res) => {
     res.setHeader('Access-Control-Allow-Origin','*');
     res.setHeader('X-Content-Type-Options','nosniff');
     const json = (status, body) => { res.writeHead(status, {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}); res.end(JSON.stringify(body)); };
-    if (req.method !== 'GET') return json(405, {error:'Method not allowed'});
     const url = new URL(req.url, 'http://localhost');
     try {
+      if (url.pathname.startsWith('/v1/admin/')) {
+        if (!admin) return json(404, {error:'Not found'});
+        if (!admin.authorized(req.headers.authorization)) return json(401, {error:'Unauthorized'});
+        if (req.method !== 'POST') return json(405, {error:'Method not allowed'});
+        const route = /^\/v1\/admin\/events\/(\d{1,12})\/(review|details|artist|price)$/.exec(url.pathname);
+        if (!route || !Number.isSafeInteger(Number(route[1])) || Number(route[1]) < 1) return json(404, {error:'Not found'});
+        if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')) return json(415, {error:'Expected JSON'});
+        let size = 0; const chunks = [];
+        for await (const chunk of req) { size += chunk.length; if (size > 8192) return json(413, {error:'Request too large'}); chunks.push(chunk); }
+        let body; try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return json(400, {error:'Invalid JSON'}); }
+        try { await admin[route[2]](Number(route[1]), body); return json(200, {ok:true}); }
+        catch (cause) { if (cause.status && cause.status < 500) return json(cause.status, {error:cause.message}); throw cause; }
+      }
+      if (req.method !== 'GET') return json(405, {error:'Method not allowed'});
       if (url.pathname === '/health') return json(200, {status:'ok'});
       if (url.pathname === '/v1/events') {
         if (url.searchParams.has('filter') || url.searchParams.has('offset')) {
