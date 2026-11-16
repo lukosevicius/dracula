@@ -2,7 +2,7 @@ import type { ArtistDecision, EventDetails, ReviewStatus } from './types.js';
 
 type Price = { price_text: string | null; price_type: 'free' | 'paid' | 'unknown' };
 type Details = EventDetails & { review_status: ReviewStatus };
-export type CentralEvent = { event: Record<string, unknown>; sources: Record<string, unknown>[]; price: Record<string, unknown> | null; artist_decisions: {artist_mbid:string;decision:string;name:string}[] };
+export type CentralEvent = { event: Record<string, unknown>; sources: Record<string, unknown>[]; price: Record<string, unknown> | null; artist_decisions: {artist_mbid:string;decision:string;name:string}[]; vilnius_event?:Record<string,unknown> | null; available_artists?:{mbid:string;name:string}[]; image?:Record<string,unknown> | null; match_candidates?:{id:number;title:string;event_date:string;venue:string|null}[] };
 export type CentralEventList = {events:Record<string,unknown>[];total:number;page:number;limit:number;counts:Record<string,number>;readyCount:number;nextPage:number;sources:Record<string,unknown>[];runs:Record<string,unknown>[]};
 export type VilniusImportItem = {source_id:number;title:string;source_url:string;content_html:string;categories:number[];featured_media:number | null;published_at:string | null;modified_at:string | null;details:Partial<EventDetails>};
 export type VilniusImportPage = {items:VilniusImportItem[];advance_cursor:boolean;expected_offset:number;next_offset:number;total_available:number | null};
@@ -35,7 +35,7 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
     if (!body || body.ok !== true) throw new Error('Central API returned an invalid response; check the event before retrying.');
     return body;
   }
-  async function edit(id: number, action: 'review' | 'details' | 'artist' | 'price', payload: object): Promise<void> {
+  async function edit(id: number, action: 'review' | 'details' | 'artist' | 'price' | 'confirm-assistant-review', payload: object): Promise<void> {
     validateId(id);
     await post(`/v1/admin/events/${id}/${action}`,payload);
   }
@@ -65,9 +65,25 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
       if(!body || !body.event || typeof body.event !== 'object' || !Array.isArray(body.sources) || !Array.isArray(body.artist_decisions) || !('price' in body)) throw new Error('Central API returned an invalid response.');
       return body;
     },
+    async getImage(id:number):Promise<{bytes:Uint8Array;type:string} | null> {
+      validateId(id);
+      let response:Response;
+      try {response=await fetch(new URL(`/v1/admin/images/${id}`,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}
+      catch {throw new Error('Central API request failed.');}
+      if(response.status===404)return null;
+      if(!response.ok)throw Object.assign(new Error(`Central API read failed (HTTP ${response.status}).`),{status:response.status});
+      const type=response.headers.get('content-type') || '';
+      if(!['image/jpeg','image/png','image/webp','image/gif'].includes(type))throw new Error('Central API returned an invalid image.');
+      const length=Number(response.headers.get('content-length'));
+      if(Number.isFinite(length) && length>12*1024*1024)throw new Error('Central API image is too large.');
+      const bytes=new Uint8Array(await response.arrayBuffer());
+      if(bytes.length>12*1024*1024)throw new Error('Central API image is too large.');
+      return {bytes,type};
+    },
     review: (id:number, review_status:ReviewStatus) => edit(id,'review',{review_status}),
     details: (id:number, details:Details) => edit(id,'details',details),
     artist: (id:number, mbid:string, decision:ArtistDecision) => edit(id,'artist',{mbid,decision}),
     price: (id:number, price:Price) => edit(id,'price',price),
+    confirmAssistantReview: (id:number) => edit(id,'confirm-assistant-review',{}),
   };
 }

@@ -16,6 +16,17 @@ export function createApp(catalogue, imageDir, admin = null) {
       if (url.pathname.startsWith('/v1/admin/')) {
         if (!admin) return json(404, {error:'Not found'});
         if (!admin.authorized(req.headers.authorization)) return json(401, {error:'Unauthorized'});
+        const privateImage=/^\/v1\/admin\/images\/(\d{1,12})$/.exec(url.pathname);
+        if (req.method==='GET' && privateImage) {
+          const record=await admin.getImage(Number(privateImage[1]));
+          if(!record || !/^\d+\.(jpg|png|webp|gif)$/.test(record.local_name)) return json(404,{error:'Not found'});
+          const ext=record.local_name.slice(record.local_name.lastIndexOf('.'));
+          if(record.mime_type!==types[ext]) return json(404,{error:'Not found'});
+          const file=join(imageDir,record.local_name), info=await lstat(file).catch(()=>null);
+          if(!info?.isFile()) return json(404,{error:'Not found'});
+          res.writeHead(200,{'Content-Type':types[ext],'Content-Length':info.size,'Cache-Control':'private, no-store'});
+          const stream=createReadStream(file); stream.on('error',()=>res.destroy()); stream.pipe(res); return;
+        }
         if (req.method === 'GET' && url.pathname === '/v1/admin/events') {
           try { return json(200, await admin.listEvents(url.searchParams)); }
           catch (cause) { if (cause.status && cause.status < 500) return json(cause.status,{error:cause.message}); throw cause; }
@@ -27,13 +38,13 @@ export function createApp(catalogue, imageDir, admin = null) {
         }
         if (req.method !== 'POST') return json(405, {error:'Method not allowed'});
         const isImport=url.pathname==='/v1/admin/imports/vilnius-events/page';
-        const route = /^\/v1\/admin\/events\/(\d{1,12})\/(review|details|artist|price)$/.exec(url.pathname);
+        const route = /^\/v1\/admin\/events\/(\d{1,12})\/(review|details|artist|price|confirm-assistant-review)$/.exec(url.pathname);
         if (!isImport && (!route || !Number.isSafeInteger(Number(route[1])) || Number(route[1]) < 1)) return json(404, {error:'Not found'});
         if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')) return json(415, {error:'Expected JSON'});
         let size = 0; const chunks = [];
         for await (const chunk of req) { size += chunk.length; if (size > (isImport ? 6*1024*1024 : 8192)) return json(413, {error:'Request too large'}); chunks.push(chunk); }
         let body; try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return json(400, {error:'Invalid JSON'}); }
-        try { if(isImport) return json(200,{ok:true,...await admin.importVilniusPage(body)}); await admin[route[2]](Number(route[1]), body); return json(200, {ok:true}); }
+        try { if(isImport) return json(200,{ok:true,...await admin.importVilniusPage(body)}); const method=route[2]==='confirm-assistant-review'?'confirmAssistantReview':route[2]; await admin[method](Number(route[1]), body); return json(200, {ok:true}); }
         catch (cause) { if (cause.status && cause.status < 500) return json(cause.status, {error:cause.message}); throw cause; }
       }
       if (req.method !== 'GET') return json(405, {error:'Method not allowed'});

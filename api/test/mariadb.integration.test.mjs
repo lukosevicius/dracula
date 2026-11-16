@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import mysql from 'mysql2/promise';
 import { createApp } from '../app.mjs';
 import { createAdmin } from '../admin.mjs';
@@ -12,7 +14,7 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
   const {MYSQL_TEST_HOST:host,MYSQL_TEST_PORT:port,MYSQL_TEST_USER:user,MYSQL_TEST_PASSWORD:password,MYSQL_TEST_DATABASE:database}=process.env;
   if (!host || !port || !user || !password || !database || !/^[A-Za-z0-9_]+_test$/.test(database)) throw new Error('Configure a disposable empty database ending in _test.');
   const pool=mysql.createPool({host,port:Number(port),user,password,database,charset:'utf8mb4',connectionLimit:5});
-  let app;
+  let app, imageDir;
   try {
     const [tables]=await pool.query('SHOW FULL TABLES');
     if(tables.length) throw new Error('Test database is not empty; refusing to alter it.');
@@ -24,8 +26,12 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     await pool.execute("INSERT INTO source_state(source_key,next_offset,total_available,updated_at) VALUES('vilnius-events',0,NULL,'now')");
     const mbid='f5e813d7-0f2e-499a-9d07-9c38d955837d';
     await pool.execute("INSERT INTO artists(mbid,name,aliases_json,source_url,first_seen_at,updated_at) VALUES(?,'Artist','[]','https://example.com','now','now')",[mbid]);
+    await pool.execute("INSERT INTO assistant_event_reviews(event_id,reviewed_at,notes) VALUES(1,'now','test')");
+    await pool.execute("INSERT INTO vilnius_images(media_id,source_url,local_name,mime_type,downloaded_at) VALUES(42,'https://example.com','42.jpg','image/jpeg','now')");
+    await pool.execute('UPDATE vilnius_events SET featured_media=42 WHERE source_id=11');
+    imageDir=await mkdtemp(join(tmpdir(),'dracula-api-test-')); await writeFile(join(imageDir,'42.jpg'),Buffer.from([1,2,3]));
     const token='0123456789abcdef0123456789abcdef';
-    app=createApp(createCatalogue(pool,'https://api.example.com'),'/nonexistent',createAdmin(pool,token));
+    app=createApp(createCatalogue(pool,'https://api.example.com'),imageDir,createAdmin(pool,token));
     await new Promise(resolve=>app.listen(0,'127.0.0.1',resolve));
     const root=`http://127.0.0.1:${app.address().port}`;
     const headers={authorization:`Bearer ${token}`,'content-type':'application/json'};
@@ -40,6 +46,10 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     assert.equal(result.items[0].price_type,'free'); assert.equal(result.items[0].artists[0].mbid,mbid);
     const privateEvent=await (await fetch(`${root}/v1/admin/events/1`,{headers})).json();
     assert.equal(privateEvent.event.review_status,'music');
+    assert.equal(privateEvent.vilnius_event.source_id,11); assert.equal(privateEvent.image.media_id,42); assert.equal(privateEvent.available_artists[0].mbid,mbid);
+    assert.equal((await fetch(`${root}/v1/admin/images/42`)).status,401);
+    const image=await fetch(`${root}/v1/admin/images/42`,{headers}); assert.equal(image.status,200); assert.equal(image.headers.get('content-type'),'image/jpeg'); assert.deepEqual([...new Uint8Array(await image.arrayBuffer())],[1,2,3]);
+    assert.equal((await post('confirm-assistant-review',{})).status,200); assert.equal((await post('confirm-assistant-review',{})).status,404);
     const importUrl=`${root}/v1/admin/imports/vilnius-events/page`;
     const item={source_id:12,title:'New event',source_url:'https://www.vilnius-events.lt/test',content_html:'source',categories:[4],featured_media:null,published_at:null,modified_at:'one',details:{event_date:'2099-11-20',venue:'Original'}};
     const payload={items:[item],advance_cursor:true,expected_offset:0,next_offset:1,total_available:null};
@@ -63,5 +73,6 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
   } finally {
     if(app) await new Promise(resolve=>app.close(resolve));
     await pool.end();
+    if(imageDir)await rm(imageDir,{recursive:true,force:true});
   }
 });

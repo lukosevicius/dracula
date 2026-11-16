@@ -33,6 +33,10 @@ export function createAdmin(pool, token) {
   }
   return {
     importVilniusPage: input => importVilniusPage(pool,input),
+    async getImage(mediaId) {
+      const [rows]=await pool.execute('SELECT local_name,mime_type FROM vilnius_images WHERE media_id=?',[mediaId]);
+      return rows[0] || null;
+    },
     authorized(header) {
       const match = /^Bearer ([^\s]+)$/.exec(header || '');
       return !!match && timingSafeEqual(tokenHash, digest(match[1]));
@@ -91,8 +95,13 @@ export function createAdmin(pool, token) {
           const [sources]=await conn.execute('SELECT * FROM event_sources WHERE event_id=? ORDER BY id',[id]);
           const [prices]=await conn.execute('SELECT * FROM event_prices WHERE event_id=?',[id]);
           const [artists]=await conn.execute('SELECT d.artist_mbid,d.decision,a.name FROM event_artist_decisions d JOIN artists a ON a.mbid=d.artist_mbid WHERE d.event_id=? ORDER BY a.name',[id]);
+          const vn=sources.find(source=>source.source_key==='vilnius-events');
+          const [legacy]=vn ? await conn.execute('SELECT * FROM vilnius_events WHERE source_id=?',[Number(vn.source_id)]) : [[]];
+          const [availableArtists]=await conn.execute('SELECT mbid,name FROM artists',[]);
+          const [images]=legacy[0]?.featured_media ? await conn.execute('SELECT media_id,width,height,source_url,local_name,mime_type FROM vilnius_images WHERE media_id=?',[legacy[0].featured_media]) : [[]];
+          const [candidates]=events[0].event_date ? await conn.execute('SELECT id,title,event_date,venue FROM events WHERE id<>? AND event_date=? LIMIT 500',[id,events[0].event_date]) : [[]];
           await conn.commit();
-          return {event:events[0],sources,price:prices[0] || null,artist_decisions:artists};
+          return {event:events[0],sources,price:prices[0] || null,artist_decisions:artists,vilnius_event:legacy[0] || null,available_artists:availableArtists,image:images[0] || null,match_candidates:candidates};
         } catch(cause) {await conn.rollback(); throw cause;}
       } finally {conn.release();}
     },
@@ -141,6 +150,10 @@ export function createAdmin(pool, token) {
         if (rows.length) await conn.execute('UPDATE event_prices SET price_text=?,price_type=?,manual=1,checked_at=? WHERE event_id=?', [text,body.price_type,new Date().toISOString(),id]);
         else await conn.execute('INSERT INTO event_prices(event_id,price_text,price_type,manual,checked_at) VALUES(?,?,?,1,?)', [id,text,body.price_type,new Date().toISOString()]);
       });
+    },
+    async confirmAssistantReview(id) {
+      const [result]=await pool.execute('UPDATE assistant_event_reviews SET confirmed_at=? WHERE event_id=? AND confirmed_at IS NULL',[new Date().toISOString(),id]);
+      if(!result.affectedRows)throw error(404,'No pending assistant review.');
     }
   };
 }
