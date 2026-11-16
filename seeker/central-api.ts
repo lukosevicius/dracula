@@ -40,6 +40,11 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
     await post(`/v1/admin/events/${id}/${action}`,payload);
   }
   return {
+    async reserveVilniusRequest():Promise<number> {
+      const body=await post('/v1/admin/imports/vilnius-events/reserve-request',{});
+      if(!Number.isSafeInteger(body.waitMs) || Number(body.waitMs)<0 || Number(body.waitMs)>3000)throw new Error('Central API returned an invalid request reservation.');
+      return Number(body.waitMs);
+    },
     async importVilniusPage(page:VilniusImportPage):Promise<{added:number;updated:number}> {
       const body=await post('/v1/admin/imports/vilnius-events/page',page);
       if(!Number.isSafeInteger(body.added) || !Number.isSafeInteger(body.updated)) throw new Error('Central API returned an invalid response; check the import before retrying.');

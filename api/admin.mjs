@@ -33,6 +33,20 @@ export function createAdmin(pool, token) {
   }
   return {
     importVilniusPage: input => importVilniusPage(pool,input),
+    async reserveVilniusRequest() {
+      const conn=await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        try {
+          const [rows]=await conn.execute('SELECT last_request_at FROM source_state WHERE source_key=? FOR UPDATE',['vilnius-events']);
+          if(rows.length!==1)throw error(409,'Source state is missing.');
+          const now=Date.now(),last=Date.parse(rows[0].last_request_at || '') || 0;
+          const waitMs=Math.max(0,last+3000-now);
+          if(!waitMs)await conn.execute('UPDATE source_state SET last_request_at=? WHERE source_key=?',[new Date(now).toISOString(),'vilnius-events']);
+          await conn.commit();return {waitMs};
+        } catch(cause){await conn.rollback();throw cause;}
+      } finally {conn.release();}
+    },
     async getImage(mediaId) {
       const [rows]=await pool.execute('SELECT local_name,mime_type FROM vilnius_images WHERE media_id=?',[mediaId]);
       return rows[0] || null;

@@ -40,6 +40,8 @@ For a backup of the database **and downloaded images**, run `npm run backup` fro
 
 The experimental `central-api.ts` provides a server-side client for event reads, edits and source-page imports. `sources/central-vilnius-events.ts` orchestrates Vilnius Events pages locally while the API commits them. A separate `npm run start:central:experimental` server connects the event dashboard and editor to the API using `CENTRAL_API_URL` and `CENTRAL_API_TOKEN`; it never opens SQLite, and unsupported routes fail closed. Imports, jobs, artist management and AI evaluation are not connected in this mode. The normal `npm start` continues to use local SQLite. The client keeps the token out of browser code, requires HTTPS except on localhost, and never automatically retries an uncertain write. Do not configure central mode for production until all central reads, imports, jobs, and the deployed API have been completed and tested together.
 
+The experimental `sources/central-vilnius-run.ts` combines source-page fetching with transactional API imports. It coordinates the minimum interval between requests through MariaDB and honors retry delays. It is not yet wired to dashboard jobs or image uploads. Its end-to-end path has been tested with a simulated source and disposable MariaDB, not against the live source.
+
 ## AI event evaluation
 
 Add your Gemini API key to `seeker/.env` (this file is excluded from git):

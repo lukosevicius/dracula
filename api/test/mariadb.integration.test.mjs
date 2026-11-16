@@ -50,6 +50,10 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     assert.equal((await fetch(`${root}/v1/admin/images/42`)).status,401);
     const image=await fetch(`${root}/v1/admin/images/42`,{headers}); assert.equal(image.status,200); assert.equal(image.headers.get('content-type'),'image/jpeg'); assert.deepEqual([...new Uint8Array(await image.arrayBuffer())],[1,2,3]);
     assert.equal((await post('confirm-assistant-review',{})).status,200); assert.equal((await post('confirm-assistant-review',{})).status,404);
+    const reserve=()=>fetch(`${root}/v1/admin/imports/vilnius-events/reserve-request`,{method:'POST',headers,body:'{}'});
+    const reservations=await Promise.all([reserve(),reserve()]);
+    const slots=await Promise.all(reservations.map(response=>response.json()));
+    assert.equal(slots.filter(slot=>slot.waitMs===0).length,1);assert.equal(slots.filter(slot=>slot.waitMs>0).length,1);
     const importUrl=`${root}/v1/admin/imports/vilnius-events/page`;
     const item={source_id:12,title:'New event',source_url:'https://www.vilnius-events.lt/test',content_html:'source',categories:[4],featured_media:null,published_at:null,modified_at:'one',details:{event_date:'2099-11-20',venue:'Original'}};
     const payload={items:[item],advance_cursor:true,expected_offset:0,next_offset:1,total_available:null};
