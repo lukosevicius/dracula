@@ -23,6 +23,10 @@ export async function importVilniusPage(pool, input) {
     try {
       const [state]=await conn.execute('SELECT next_offset FROM source_state WHERE source_key=? FOR UPDATE',['vilnius-events']);
       if(state.length!==1)throw problem(409,'Source state is missing.');
+      const [leases]=await conn.execute('SELECT job_id,owner_hash,expires_at FROM job_leases WHERE source_key=? FOR UPDATE',['vilnius-events']);
+      if(leases.length){const lease=leases[0],owner=input.job?.owner;
+        if(!Number.isSafeInteger(input.job?.id)||input.job.id!==Number(lease.job_id)||typeof owner!=='string'||!/^[a-f0-9]{64}$/.test(owner)||Number(lease.expires_at)<=Date.now()||!timingSafeEqual(Buffer.from(lease.owner_hash),Buffer.from(createHash('sha256').update(owner).digest('hex'))))throw problem(409,'An event import is already running or the import lease has expired.');
+      } else if(input.job)throw problem(409,'The import lease has expired.');
       if(input.advance_cursor && Number(state[0].next_offset)!==input.expected_offset)throw problem(409,'Source cursor changed; refresh before retrying.');
       const now=new Date().toISOString();
       for(const item of input.items){
@@ -52,3 +56,4 @@ export async function importVilniusPage(pool, input) {
     }catch(cause){await conn.rollback();throw cause;}
   }finally{conn.release();}
 }
+import {createHash, timingSafeEqual} from 'node:crypto';

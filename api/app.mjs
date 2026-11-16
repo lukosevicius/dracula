@@ -16,10 +16,20 @@ export function createApp(catalogue, imageDir, admin = null) {
       if (url.pathname.startsWith('/v1/admin/')) {
         if (!admin) return json(404, {error:'Not found'});
         if (!admin.authorized(req.headers.authorization)) return json(401, {error:'Unauthorized'});
+        if(req.method==='GET' && url.pathname==='/v1/admin/jobs')return json(200,{jobs:await admin.jobs.list()});
+        if(req.method==='GET' && url.pathname==='/v1/admin/artists')return json(200,await admin.artistsDashboard());
+        if(req.method==='GET' && url.pathname==='/v1/admin/enrichment'){
+          try{return json(200,{events:await admin.enrichmentCandidates(url.searchParams.get('mode'),Number(url.searchParams.get('after')||0),Number(url.searchParams.get('eventId')||0))});}catch(cause){if(cause.status&&cause.status<500)return json(cause.status,{error:cause.message});throw cause;}
+        }
+        if(req.method==='GET' && url.pathname==='/v1/admin/media'){
+          try{return json(200,{ids:await admin.listMedia(Number(url.searchParams.get('after')||0),Number(url.searchParams.get('limit')||100))});}catch(cause){if(cause.status&&cause.status<500)return json(cause.status,{error:cause.message});throw cause;}
+        }
+        const imageInfo=/^\/v1\/admin\/images\/(\d{1,12})\/info$/.exec(url.pathname);
+        if(req.method==='GET' && imageInfo){const record=await admin.getImage(Number(imageInfo[1]));if(!record || !/^\d+(?:-[a-f0-9]{64})?\.(jpg|png|webp|gif)$/.test(record.local_name))return json(404,{error:'Not found'});const info=await lstat(join(imageDir,record.local_name)).catch(()=>null);if(!info?.isFile())return json(404,{error:'Not found'});return json(200,{source_url:record.source_url,source_modified:record.source_modified});}
         const privateImage=/^\/v1\/admin\/images\/(\d{1,12})$/.exec(url.pathname);
         if (req.method==='GET' && privateImage) {
           const record=await admin.getImage(Number(privateImage[1]));
-          if(!record || !/^\d+\.(jpg|png|webp|gif)$/.test(record.local_name)) return json(404,{error:'Not found'});
+          if(!record || !/^\d+(?:-[a-f0-9]{64})?\.(jpg|png|webp|gif)$/.test(record.local_name)) return json(404,{error:'Not found'});
           const ext=record.local_name.slice(record.local_name.lastIndexOf('.'));
           if(record.mime_type!==types[ext]) return json(404,{error:'Not found'});
           const file=join(imageDir,record.local_name), info=await lstat(file).catch(()=>null);
@@ -39,13 +49,16 @@ export function createApp(catalogue, imageDir, admin = null) {
         if (req.method !== 'POST') return json(405, {error:'Method not allowed'});
         const isImport=url.pathname==='/v1/admin/imports/vilnius-events/page';
         const isReservation=url.pathname==='/v1/admin/imports/vilnius-events/reserve-request';
-        const route = /^\/v1\/admin\/events\/(\d{1,12})\/(review|details|artist|price|confirm-assistant-review)$/.exec(url.pathname);
-        if (!isImport && !isReservation && (!route || !Number.isSafeInteger(Number(route[1])) || Number(route[1]) < 1)) return json(404, {error:'Not found'});
+        const isJobStart=url.pathname==='/v1/admin/jobs/start';
+        const isImageUpload=url.pathname==='/v1/admin/images';
+        const jobUpdate=/^\/v1\/admin\/jobs\/(\d{1,12})$/.exec(url.pathname);
+        const route = /^\/v1\/admin\/events\/(\d{1,12})\/(review|details|artist|price|confirm-assistant-review|enrich)$/.exec(url.pathname);
+        if (!isImport && !isReservation && !isJobStart && !isImageUpload && !jobUpdate && (!route || !Number.isSafeInteger(Number(route[1])) || Number(route[1]) < 1)) return json(404, {error:'Not found'});
         if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')) return json(415, {error:'Expected JSON'});
         let size = 0; const chunks = [];
-        for await (const chunk of req) { size += chunk.length; if (size > (isImport ? 6*1024*1024 : 8192)) return json(413, {error:'Request too large'}); chunks.push(chunk); }
+        for await (const chunk of req) { size += chunk.length; if (size > (isImageUpload ? 17*1024*1024 : isImport ? 6*1024*1024 : route?.[2]==='enrich'?512*1024:8192)) return json(413, {error:'Request too large'}); chunks.push(chunk); }
         let body; try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return json(400, {error:'Invalid JSON'}); }
-        try { if(isImport) return json(200,{ok:true,...await admin.importVilniusPage(body)}); if(isReservation)return json(200,{ok:true,...await admin.reserveVilniusRequest()}); const method=route[2]==='confirm-assistant-review'?'confirmAssistantReview':route[2]; await admin[method](Number(route[1]), body); return json(200, {ok:true}); }
+        try { if(isImport) return json(200,{ok:true,...await admin.importVilniusPage(body)}); if(isReservation)return json(200,{ok:true,...await admin.reserveVilniusRequest()}); if(isJobStart)return json(200,{ok:true,...await admin.jobs.start(body.action)}); if(isImageUpload)return json(200,{ok:true,...await admin.saveImage(body)}); if(jobUpdate){await admin.jobs.update(Number(jobUpdate[1]),body);return json(200,{ok:true});} const method=route[2]==='confirm-assistant-review'?'confirmAssistantReview':route[2]==='enrich'?'enrichEvent':route[2]; await admin[method](Number(route[1]), body); return json(200, {ok:true}); }
         catch (cause) { if (cause.status && cause.status < 500) return json(cause.status, {error:cause.message}); throw cause; }
       }
       if (req.method !== 'GET') return json(405, {error:'Method not allowed'});

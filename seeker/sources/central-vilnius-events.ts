@@ -11,7 +11,8 @@ export async function runCentralVilniusImport(
   options:Options,
   fetchPage:(page:number,size:number)=>Promise<Page>,
   savePage:(page:VilniusImportPage)=>Promise<{added:number;updated:number}>,
-  progress:(value:Progress)=>void=()=>{}
+  progress:(value:Progress)=>void=()=>{},
+  afterPage:(items:VilniusImportPage['items'])=>Promise<void>=async()=>{}
 ):Promise<Progress> {
   const {pages,currentOffset,restart=false,sample=false,refresh=false}=options;
   if(!Number.isInteger(pages)||pages<1||pages>10||!Number.isSafeInteger(currentOffset)||currentOffset<0) throw new Error('Invalid import options.');
@@ -32,6 +33,7 @@ export async function runCentralVilniusImport(
     const result=await savePage({items,advance_cursor:advance,expected_offset:cursor,next_offset:next,total_available:response.pages});
     if(advance)cursor=next;
     fetched+=items.length;added+=result.added;updated+=result.updated;progress({fetched,added,updated});
+    await afterPage(items);
     if(sample||refresh||(!isOverlap&&next===0))break;
   }
   return {fetched,added,updated};

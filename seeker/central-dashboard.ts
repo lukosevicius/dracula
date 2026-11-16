@@ -2,17 +2,27 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { suggestArtists } from './sources/event-details.js';
 import type { createCentralApi } from './central-api.js';
 import type { ArtistDecision, EventDetails, ReviewStatus } from './types.js';
+import {createCentralJobs} from './central-jobs.js';
 
 type CentralApi = ReturnType<typeof createCentralApi>;
 const normalize=(value:string)=>value.normalize('NFKD').replace(/\p{Diacritic}/gu,'').toLocaleLowerCase('lt').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
 
 /** Dashboard adapter; unimplemented endpoints fail closed and never touch SQLite. */
-export function createCentralDashboard(api:CentralApi) {
+export function createCentralDashboard(api:CentralApi, userAgent='Seeker/0.1.0') {
+  const jobs=createCentralJobs(api,userAgent);
   return async (request:IncomingMessage,response:ServerResponse):Promise<boolean> => {
     const url=new URL(request.url || '/', 'http://localhost');
     if(!url.pathname.startsWith('/api/'))return false;
     const send=(status:number,body:unknown)=>{response.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});response.end(JSON.stringify(body));};
     try {
+      if(request.method==='GET' && url.pathname==='/api/dashboard'){send(200,await api.artistsDashboard());return true;}
+      if(request.method==='GET' && url.pathname==='/api/jobs'){send(200,{jobs:await jobs.list()});return true;}
+      if(request.method==='POST' && url.pathname==='/api/jobs'){
+        if(!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type'] || '')){send(415,{error:'Expected JSON.'});return true;}
+        let size=0;const chunks:Buffer[]=[];for await(const chunk of request){const value=Buffer.from(chunk);size+=value.length;if(size>8192){send(413,{error:'Request too large.'});return true;}chunks.push(value);}
+        let input;try{input=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{send(400,{error:'Invalid JSON.'});return true;}
+        send(202,{id:await jobs.start(input)});return true;
+      }
       if(request.method==='GET' && url.pathname==='/api/events') {send(200,await api.listEvents(url.searchParams));return true;}
       const image=/^\/api\/vilnius-images\/(\d{1,12})$/.exec(url.pathname);
       if(request.method==='GET' && image) {

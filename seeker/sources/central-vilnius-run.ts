@@ -2,13 +2,18 @@ import type { createCentralApi } from '../central-api.js';
 import type { SourceEvent } from '../types.js';
 import { runCentralVilniusImport } from './central-vilnius-events.js';
 import { createCentralVilniusRequest } from './central-vilnius-request.js';
+import { createCentralVilniusImages } from './central-vilnius-images.js';
 
 type Api=ReturnType<typeof createCentralApi>;
-type Options={pages:number;restart?:boolean;sample?:boolean;refresh?:boolean};
+type Options={pages:number;restart?:boolean;sample?:boolean;refresh?:boolean;includeImages?:boolean};
 
-/** A complete source-page import; jobs and image transfer are not connected yet. */
-export async function runCentralVilnius(api:Api,options:Options,userAgent:string,progress:(value:{fetched:number;added:number;updated:number})=>void=()=>{},fetchPage?:(page:number,size:number)=>Promise<{data:SourceEvent[];pages:number|null}>) {
+/** Runs source fetches locally and commits events and optional images through the API. */
+export async function runCentralVilnius(api:Api,options:Options,userAgent:string,progress:(value:{fetched:number;added:number;updated:number})=>void=()=>{},fetchPage?:(page:number,size:number)=>Promise<{data:SourceEvent[];pages:number|null}>,imageRequest?:typeof fetch) {
   const state=await api.listEvents(new URLSearchParams({when:'all',limit:'1'}));
   if(!Number.isSafeInteger(state.nextPage)||state.nextPage<1)throw new Error('Central API returned an invalid source cursor.');
-  return runCentralVilniusImport({...options,currentOffset:state.nextPage-1},fetchPage || createCentralVilniusRequest(api.reserveVilniusRequest,userAgent),api.importVilniusPage,progress);
+  const ensureImage=options.includeImages?createCentralVilniusImages(api,userAgent,imageRequest):null;
+  const result=await runCentralVilniusImport({...options,currentOffset:state.nextPage-1},fetchPage || createCentralVilniusRequest(api.reserveVilniusRequest,userAgent),api.importVilniusPage,progress,async items=>{
+    if(ensureImage)for(const id of new Set(items.map(item=>item.featured_media).filter((value):value is number=>value!==null)))await ensureImage(id,true);
+  });
+  return result;
 }

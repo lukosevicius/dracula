@@ -21,6 +21,6 @@ test('central dashboard reads and edits through the API, and rejects unfinished 
     const detail=await (await fetch(`${url}/api/events/1/details`)).json();assert.equal(detail.event.artist_suggestions[0].name,'My Band');assert.equal(detail.matches[0].venue_matches,true);
     const image=await fetch(`${url}/api/vilnius-images/7`);assert.equal(image.status,200);assert.equal(image.headers.get('content-type'),'image/jpeg');
     const update=await fetch(`${url}/api/events/1/review`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({review_status:'music'})});assert.equal(update.status,200);assert.deepEqual(calls,[[1,'music']]);
-    assert.equal((await fetch(`${url}/api/jobs`,{method:'POST',body:'{}'})).status,503);
+    assert.equal((await fetch(`${url}/api/jobs`,{method:'POST',headers:{'content-type':'application/json'},body:'{}'})).status,400);
   } finally {await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));}
 });

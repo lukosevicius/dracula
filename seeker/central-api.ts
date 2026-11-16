@@ -1,11 +1,12 @@
-import type { ArtistDecision, EventDetails, ReviewStatus } from './types.js';
+import type { ArtistDecision, ArtistsDashboard, EventDetails, ReviewStatus } from './types.js';
 
 type Price = { price_text: string | null; price_type: 'free' | 'paid' | 'unknown' };
 type Details = EventDetails & { review_status: ReviewStatus };
 export type CentralEvent = { event: Record<string, unknown>; sources: Record<string, unknown>[]; price: Record<string, unknown> | null; artist_decisions: {artist_mbid:string;decision:string;name:string}[]; vilnius_event?:Record<string,unknown> | null; available_artists?:{mbid:string;name:string}[]; image?:Record<string,unknown> | null; match_candidates?:{id:number;title:string;event_date:string;venue:string|null}[] };
 export type CentralEventList = {events:Record<string,unknown>[];total:number;page:number;limit:number;counts:Record<string,number>;readyCount:number;nextPage:number;sources:Record<string,unknown>[];runs:Record<string,unknown>[]};
 export type VilniusImportItem = {source_id:number;title:string;source_url:string;content_html:string;categories:number[];featured_media:number | null;published_at:string | null;modified_at:string | null;details:Partial<EventDetails>};
-export type VilniusImportPage = {items:VilniusImportItem[];advance_cursor:boolean;expected_offset:number;next_offset:number;total_available:number | null};
+export type VilniusImportPage = {items:VilniusImportItem[];advance_cursor:boolean;expected_offset:number;next_offset:number;total_available:number | null;job?:{id:number;owner:string}};
+export type CentralJob = {id:number;source:string;action:string;status:string;started_at:string;finished_at:string|null;progress_json:string;error_message:string|null};
 
 /** Server-side client only. Do not pass the token to the dashboard or browser. */
 export function createCentralApi(origin: string, token: string, timeoutMs = 15000) {
@@ -40,6 +41,44 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
     await post(`/v1/admin/events/${id}/${action}`,payload);
   }
   return {
+    async enrichmentCandidates(mode:'missing'|'oldest'|'all'|'event',after:number,eventId?:number):Promise<{event_id:number;source_url:string;content_html:string}[]> {
+      const params=new URLSearchParams({mode,after:String(after)});if(eventId!==undefined)params.set('eventId',String(eventId));
+      let response:Response;try{response=await fetch(new URL(`/v1/admin/enrichment?${params}`,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch{throw new Error('Central API request failed.');}
+      if(!response.ok)throw new Error(`Central API read failed (HTTP ${response.status}).`);const body=await response.json();if(!Array.isArray(body.events))throw new Error('Central API returned invalid events.');return body.events;
+    },
+    async enrichEvent(id:number,input:{details:Partial<EventDetails>;about_url:string|null;price_text:string|null;price_type:'free'|'paid'|'unknown';expected_source_url:string;expected_content_html:string;job?:{id:number;owner:string}}):Promise<void>{validateId(id);await post(`/v1/admin/events/${id}/enrich`,input);},
+    async listMedia(after:number):Promise<number[]>{
+      if(!Number.isSafeInteger(after)||after<0)throw new Error('Invalid media cursor.');
+      let response:Response;try{response=await fetch(new URL(`/v1/admin/media?after=${after}&limit=100`,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch{throw new Error('Central API request failed.');}
+      if(!response.ok)throw new Error(`Central API read failed (HTTP ${response.status}).`);const value=await response.json();if(!Array.isArray(value.ids)||!value.ids.every((id:unknown)=>Number.isSafeInteger(id)&&Number(id)>0))throw new Error('Central API returned invalid media.');return value.ids;
+    },
+    async artistsDashboard():Promise<ArtistsDashboard>{
+      let response:Response;try{response=await fetch(new URL('/v1/admin/artists',base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch{throw new Error('Central API request failed.');}
+      if(!response.ok)throw new Error(`Central API read failed (HTTP ${response.status}).`);const value=await response.json();if(!Array.isArray(value.artists)||!Array.isArray(value.recentRuns))throw new Error('Central API returned invalid artists.');return value;
+    },
+    async getImageInfo(id:number):Promise<{source_url:string;source_modified:string|null}|null> {
+      validateId(id);let response:Response;
+      try{response=await fetch(new URL(`/v1/admin/images/${id}/info`,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch{throw new Error('Central API request failed.');}
+      if(response.status===404)return null;if(!response.ok)throw new Error(`Central API read failed (HTTP ${response.status}).`);
+      const value=await response.json();if(typeof value.source_url!=='string'||(value.source_modified!==null&&typeof value.source_modified!=='string'))throw new Error('Central API returned invalid image metadata.');return value;
+    },
+    async uploadImage(image:{media_id:number;source_url:string;mime_type:string;width:number|null;height:number|null;source_modified:string|null;data:string;job?:{id:number;owner:string}}):Promise<void> {
+      await post('/v1/admin/images',image);
+    },
+    async listJobs():Promise<CentralJob[]> {
+      let response:Response;
+      try {response=await fetch(new URL('/v1/admin/jobs',base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch{throw new Error('Central API request failed.');}
+      if(!response.ok)throw new Error(`Central API read failed (HTTP ${response.status}).`);
+      const body=await response.json() as {jobs?:CentralJob[]};if(!Array.isArray(body.jobs))throw new Error('Central API returned invalid jobs.');return body.jobs;
+    },
+    async startJob(action:string):Promise<{id:number;owner:string}> {
+      const body=await post('/v1/admin/jobs/start',{action});
+      if(!Number.isSafeInteger(body.id)||typeof body.owner!=='string'||!/^[a-f0-9]{64}$/.test(body.owner))throw new Error('Central API returned an invalid job; check before retrying.');
+      return {id:body.id as number,owner:body.owner};
+    },
+    async updateJob(id:number,owner:string,status:'running'|'completed'|'failed',progress:{fetched:number;added:number;updated:number},error?:string):Promise<void>{
+      validateId(id);await post(`/v1/admin/jobs/${id}`,{owner,status,progress,error});
+    },
     async reserveVilniusRequest():Promise<number> {
       const body=await post('/v1/admin/imports/vilnius-events/reserve-request',{});
       if(!Number.isSafeInteger(body.waitMs) || Number(body.waitMs)<0 || Number(body.waitMs)>3000)throw new Error('Central API returned an invalid request reservation.');

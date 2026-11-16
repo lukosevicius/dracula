@@ -2,6 +2,9 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { normalizeEventSearch } from './event-search.mjs';
 import { vilniusToday } from './catalogue.mjs';
 import { importVilniusPage } from './import-vilnius.mjs';
+import {createJobs} from './jobs.mjs';
+import {saveImage} from './images.mjs';
+import {enrichEvent} from './enrich.mjs';
 
 const statuses = new Set(['music', 'not_music', 'unsure']);
 const decisions = new Set(['accepted', 'dismissed', 'remove']);
@@ -11,7 +14,7 @@ const error = (status, message) => Object.assign(new Error(message), { status })
 const digest = value => createHash('sha256').update(value).digest();
 function validDate(value) { if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false; const d=new Date(`${value}T00:00:00Z`); return !Number.isNaN(d.valueOf()) && d.toISOString().slice(0,10)===value; }
 
-export function createAdmin(pool, token) {
+export function createAdmin(pool, token, imageDir) {
   if (typeof token !== 'string' || !/^[A-Za-z0-9._~-]{32,}$/.test(token)) throw new Error('ADMIN_TOKEN must be at least 32 URL-safe ASCII characters.');
   const tokenHash = digest(token);
   async function withEvent(id, fn) {
@@ -32,6 +35,29 @@ export function createAdmin(pool, token) {
     } finally { conn.release(); }
   }
   return {
+    jobs:createJobs(pool),
+    enrichEvent:(id,input)=>enrichEvent(pool,id,input),
+    async enrichmentCandidates(mode,after,eventId){
+      if(!['missing','oldest','all','event'].includes(mode)||!Number.isSafeInteger(after)||after<0||(mode==='event'&&(!Number.isSafeInteger(eventId)||eventId<1)))throw error(400,'Invalid detail selection.');
+      const clauses=["s.source_key='vilnius-events'"],params=[];
+      if(mode==='missing')clauses.push('(v.details_checked_at IS NULL OR s.about_checked_at IS NULL)');
+      if(mode==='event'){clauses.push('s.event_id=?');params.push(eventId);}else if(mode==='all'){clauses.push('s.event_id>?');params.push(after);}
+      const order=mode==='oldest'?'v.details_checked_at ASC,v.published_at DESC':'s.event_id ASC';
+      const [rows]=await pool.execute(`SELECT s.event_id,s.source_url,s.content_html FROM event_sources s JOIN vilnius_events v ON CAST(v.source_id AS CHAR)=s.source_id WHERE ${clauses.join(' AND ')} ORDER BY ${order} LIMIT 10`,params);return rows;
+    },
+    async listMedia(after,limit){
+      if(!Number.isSafeInteger(after)||after<0||!Number.isSafeInteger(limit)||limit<1||limit>100)throw error(400,'Invalid media pagination.');
+      const [rows]=await pool.execute('SELECT DISTINCT featured_media AS id FROM vilnius_events WHERE featured_media>? ORDER BY featured_media LIMIT ?',[after,limit]);return rows.map(row=>Number(row.id));
+    },
+    async artistsDashboard(){
+      const conn=await pool.getConnection();try{await conn.beginTransaction();try{
+        const [artists]=await conn.execute('SELECT mbid,name,artist_type,area,country,source_url,first_seen_at FROM artists ORDER BY name',[]);
+        const [runs]=await conn.execute('SELECT * FROM import_runs ORDER BY id DESC LIMIT 8',[]);
+        const [state]=await conn.execute('SELECT next_offset,total_available FROM source_state WHERE source_key=?',['musicbrainz-lithuania-artists']);
+        await conn.commit();return {totalArtists:artists.length,lastRun:runs[0]||null,recentRuns:runs,artists,sourceState:state[0]||null,importInProgress:false};
+      }catch(cause){await conn.rollback();throw cause;}}finally{conn.release();}
+    },
+    saveImage:input=>saveImage(pool,imageDir,input),
     importVilniusPage: input => importVilniusPage(pool,input),
     async reserveVilniusRequest() {
       const conn=await pool.getConnection();
@@ -48,7 +74,7 @@ export function createAdmin(pool, token) {
       } finally {conn.release();}
     },
     async getImage(mediaId) {
-      const [rows]=await pool.execute('SELECT local_name,mime_type FROM vilnius_images WHERE media_id=?',[mediaId]);
+      const [rows]=await pool.execute('SELECT local_name,mime_type,source_url,source_modified FROM vilnius_images WHERE media_id=?',[mediaId]);
       return rows[0] || null;
     },
     authorized(header) {

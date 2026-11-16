@@ -12,6 +12,6 @@ const port=Number(process.env.DB_PORT || 3306);
 if (!Number.isInteger(port) || port<1 || port>65535) throw new Error('Invalid DB_PORT.');
 const pool = mysql.createPool({host:process.env.DB_HOST,port,user:process.env.DB_USER,password:process.env.DB_PASSWORD,database:process.env.DB_NAME,connectionLimit:5,charset:'utf8mb4'});
 await pool.query('SELECT 1');
-const admin = process.env.ADMIN_TOKEN ? createAdmin(pool,process.env.ADMIN_TOKEN) : null;
+const admin = process.env.ADMIN_TOKEN ? createAdmin(pool,process.env.ADMIN_TOKEN,process.env.IMAGE_DIR) : null;
 const app=createApp(createCatalogue(pool,base.origin),process.env.IMAGE_DIR,admin);
 app.listen(Number(process.env.PORT || 3000),'0.0.0.0',()=>console.log('Dracula public API listening'));

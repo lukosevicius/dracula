@@ -1,0 +1,1 @@
+CREATE TABLE job_leases (source_key VARCHAR(191) PRIMARY KEY, job_id BIGINT NOT NULL, run_id BIGINT, owner_hash CHAR(64) NOT NULL, expires_at BIGINT NOT NULL, FOREIGN KEY(job_id) REFERENCES jobs(id), FOREIGN KEY(run_id) REFERENCES vilnius_event_runs(id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
