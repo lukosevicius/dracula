@@ -24,6 +24,7 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     await pool.execute("INSERT INTO vilnius_events(source_id,title,source_url,content_html,categories_json,first_seen_at,updated_at,event_date,details_manual,review_status,details_version,manual_fields) VALUES(11,'Example','https://example.com','Hello','[]','now','now','2099-11-20',0,'unsure',0,'[]')");
     await pool.execute("INSERT INTO event_sources(id,event_id,source_key,source_id,source_url,content_html,source_data_json) VALUES(1,1,'vilnius-events','11','https://example.com','Hello','{}')");
     await pool.execute("INSERT INTO source_state(source_key,next_offset,total_available,updated_at) VALUES('vilnius-events',0,NULL,'now')");
+    await pool.execute("INSERT INTO source_state(source_key,next_offset,total_available,updated_at) VALUES('musicbrainz-lithuania-artists',0,NULL,'now')");
     const mbid='f5e813d7-0f2e-499a-9d07-9c38d955837d';
     await pool.execute("INSERT INTO artists(mbid,name,aliases_json,source_url,first_seen_at,updated_at) VALUES(?,'Artist','[]','https://example.com','now','now')",[mbid]);
     await pool.execute("INSERT INTO assistant_event_reviews(event_id,reviewed_at,notes) VALUES(1,'now','test')");
@@ -109,6 +110,21 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     assert.equal((await importPage({...fixture,job:{id:old.id,owner:old.owner}})).status,409);
     const [interrupted]=await pool.execute('SELECT status FROM jobs WHERE id=?',[old.id]);assert.equal(interrupted[0].status,'interrupted');
     assert.equal((await fetch(`${root}/v1/admin/jobs/${replacement.id}`,{method:'POST',headers,body:JSON.stringify({status:'completed',owner:replacement.owner,progress:{fetched:0,added:0,updated:0}})})).status,200);
+    const artistStart=await fetch(`${root}/v1/admin/jobs/start`,{method:'POST',headers,body:JSON.stringify({source:'musicbrainz',action:'next',limit:2})});assert.equal(artistStart.status,200);const artistJob=await artistStart.json();
+    const artistPayload={job:{id:artistJob.id,owner:artistJob.owner},expected_offset:0,next_offset:2,total_available:null,artists:[{id:mbid,name:'Updated artist',country:'LT',aliases:['Alias']}]};
+    const artistImport=body=>fetch(`${root}/v1/admin/imports/musicbrainz/page`,{method:'POST',headers,body:JSON.stringify(body)});
+    assert.equal((await artistImport({...artistPayload,job:{id:artistJob.id,owner:'0'.repeat(64)}})).status,409);
+    assert.deepEqual(await (await artistImport(artistPayload)).json(),{ok:true,added:0,updated:1});assert.equal((await artistImport(artistPayload)).status,409);
+    assert.equal((await fetch(`${root}/v1/admin/jobs/${artistJob.id}`,{method:'POST',headers,body:JSON.stringify({source:'musicbrainz',status:'completed',owner:artistJob.owner,progress:{fetched:1,added:0,updated:1}})})).status,200);
+    const [[artistRun]]=await pool.execute('SELECT status,updated_count FROM import_runs ORDER BY id DESC LIMIT 1');assert.equal(artistRun.status,'completed');assert.equal(artistRun.updated_count,1);
+    const aiStart=await fetch(`${root}/v1/admin/jobs/start`,{method:'POST',headers,body:JSON.stringify({source:'ai-evaluation',action:'analyze'})});assert.equal(aiStart.status,200);const aiJob=await aiStart.json();
+    const aiSave=body=>fetch(`${root}/v1/admin/ai/results`,{method:'POST',headers,body:JSON.stringify(body)});
+    const aiResult={job:{id:aiJob.id,owner:aiJob.owner},event_id:1,model:'gemini-3.5-flash-lite',classification:'music',explanation:'Test',performers:[],input_tokens:10,output_tokens:5,cost_usd:0.0001,status:'completed',error_message:null};
+    assert.equal((await aiSave({...aiResult,job:{id:aiJob.id,owner:'0'.repeat(64)}})).status,409);assert.equal((await aiSave(aiResult)).status,200);
+    const aiList=await (await fetch(`${root}/v1/admin/ai/results`,{headers})).json();assert.equal(aiList.results[0].classification,'music');
+    assert.equal((await fetch(`${root}/v1/admin/ai/results/${aiList.results[0].id}/decision`,{method:'POST',headers,body:JSON.stringify({decision:'accepted'})})).status,200);
+    assert.equal((await fetch(`${root}/v1/admin/jobs/${aiJob.id}`,{method:'POST',headers,body:JSON.stringify({source:'ai-evaluation',status:'completed',owner:aiJob.owner,progress:{fetched:1,added:1,updated:0,completed:1,total:1,failed:0,cost_usd:0.0001}})})).status,200);
+    const [[aiProgress]]=await pool.execute('SELECT progress_json FROM jobs WHERE id=?',[aiJob.id]);assert.equal(JSON.parse(aiProgress.progress_json).cost_usd,0.0001);
   } finally {
     if(app) await new Promise(resolve=>app.close(resolve));
     await pool.end();

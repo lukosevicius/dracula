@@ -7,6 +7,7 @@ export type CentralEventList = {events:Record<string,unknown>[];total:number;pag
 export type VilniusImportItem = {source_id:number;title:string;source_url:string;content_html:string;categories:number[];featured_media:number | null;published_at:string | null;modified_at:string | null;details:Partial<EventDetails>};
 export type VilniusImportPage = {items:VilniusImportItem[];advance_cursor:boolean;expected_offset:number;next_offset:number;total_available:number | null;job?:{id:number;owner:string}};
 export type CentralJob = {id:number;source:string;action:string;status:string;started_at:string;finished_at:string|null;progress_json:string;error_message:string|null};
+export type CentralArtist = {id:string;name:string;country:'LT';sort_name:string|null;artist_type:string|null;area:string|null;begin_area:string|null;begin_date:string|null;end_date:string|null;disambiguation:string|null;aliases:string[]};
 
 /** Server-side client only. Do not pass the token to the dashboard or browser. */
 export function createCentralApi(origin: string, token: string, timeoutMs = 15000) {
@@ -40,7 +41,16 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
     validateId(id);
     await post(`/v1/admin/events/${id}/${action}`,payload);
   }
+  async function get(path:string):Promise<any>{let response:Response;try{response=await fetch(new URL(path,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch{throw new Error('Central API request failed.');}if(!response.ok)throw Object.assign(new Error(`Central API read failed (HTTP ${response.status}).`),{status:response.status});return response.json();}
   return {
+    async aiIds(limit:number):Promise<number[]>{const value=await get(`/v1/admin/ai/events?limit=${limit}`);if(!Array.isArray(value.ids)||!value.ids.every((id:unknown)=>Number.isSafeInteger(id)))throw new Error('Invalid AI event list.');return value.ids;},
+    async aiArtists():Promise<{mbid:string;name:string;aliases_json:string}[]>{const value=await get('/v1/admin/ai/artists');if(!Array.isArray(value.artists))throw new Error('Invalid AI artist list.');return value.artists;},
+    async aiEvent(id:number):Promise<{title:string;content_html:string}|null>{validateId(id);try{const value=await get(`/v1/admin/ai/events/${id}`);return value.event;}catch(error){if((error as {status?:number}).status===404)return null;throw error;}},
+    async aiResults():Promise<Record<string,unknown>[]>{const value=await get('/v1/admin/ai/results');if(!Array.isArray(value.results))throw new Error('Invalid AI result list.');return value.results;},
+    async aiDecision(id:number,decision:string):Promise<void>{validateId(id);await post(`/v1/admin/ai/results/${id}/decision`,{decision});},
+    async aiSave(input:Record<string,unknown>):Promise<void>{await post('/v1/admin/ai/results',input);},
+    async reserveMusicBrainz():Promise<number>{const body=await post('/v1/admin/imports/musicbrainz/reserve-request',{});if(!Number.isSafeInteger(body.waitMs)||Number(body.waitMs)<0||Number(body.waitMs)>2000)throw new Error('Invalid MusicBrainz request reservation.');return Number(body.waitMs);},
+    async importMusicBrainzPage(page:{artists:CentralArtist[];expected_offset:number;next_offset:number;total_available:number|null;job:{id:number;owner:string}}):Promise<{added:number;updated:number}>{const body=await post('/v1/admin/imports/musicbrainz/page',page);if(!Number.isSafeInteger(body.added)||!Number.isSafeInteger(body.updated))throw new Error('Invalid import response; check before retrying.');return {added:Number(body.added),updated:Number(body.updated)};},
     async enrichmentCandidates(mode:'missing'|'oldest'|'all'|'event',after:number,eventId?:number):Promise<{event_id:number;source_url:string;content_html:string}[]> {
       const params=new URLSearchParams({mode,after:String(after)});if(eventId!==undefined)params.set('eventId',String(eventId));
       let response:Response;try{response=await fetch(new URL(`/v1/admin/enrichment?${params}`,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch{throw new Error('Central API request failed.');}
@@ -71,13 +81,13 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
       if(!response.ok)throw new Error(`Central API read failed (HTTP ${response.status}).`);
       const body=await response.json() as {jobs?:CentralJob[]};if(!Array.isArray(body.jobs))throw new Error('Central API returned invalid jobs.');return body.jobs;
     },
-    async startJob(action:string):Promise<{id:number;owner:string}> {
-      const body=await post('/v1/admin/jobs/start',{action});
+    async startJob(action:string,source:'vilnius-events'|'musicbrainz'|'ai-evaluation'='vilnius-events',limit=0):Promise<{id:number;owner:string}> {
+      const body=await post('/v1/admin/jobs/start',{action,source,limit});
       if(!Number.isSafeInteger(body.id)||typeof body.owner!=='string'||!/^[a-f0-9]{64}$/.test(body.owner))throw new Error('Central API returned an invalid job; check before retrying.');
       return {id:body.id as number,owner:body.owner};
     },
-    async updateJob(id:number,owner:string,status:'running'|'completed'|'failed',progress:{fetched:number;added:number;updated:number},error?:string):Promise<void>{
-      validateId(id);await post(`/v1/admin/jobs/${id}`,{owner,status,progress,error});
+    async updateJob(id:number,owner:string,status:'running'|'completed'|'failed',progress:{fetched:number;added:number;updated:number},error?:string,source:'vilnius-events'|'musicbrainz'|'ai-evaluation'='vilnius-events'):Promise<void>{
+      validateId(id);await post(`/v1/admin/jobs/${id}`,{owner,status,progress,error,source});
     },
     async reserveVilniusRequest():Promise<number> {
       const body=await post('/v1/admin/imports/vilnius-events/reserve-request',{});

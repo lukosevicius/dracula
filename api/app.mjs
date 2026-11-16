@@ -18,6 +18,13 @@ export function createApp(catalogue, imageDir, admin = null) {
         if (!admin.authorized(req.headers.authorization)) return json(401, {error:'Unauthorized'});
         if(req.method==='GET' && url.pathname==='/v1/admin/jobs')return json(200,{jobs:await admin.jobs.list()});
         if(req.method==='GET' && url.pathname==='/v1/admin/artists')return json(200,await admin.artistsDashboard());
+        if(req.method==='GET' && url.pathname==='/v1/admin/ai/artists')return json(200,{artists:await admin.ai.artists()});
+        if(req.method==='GET' && url.pathname==='/v1/admin/ai/results')return json(200,{results:await admin.ai.list()});
+        if(req.method==='GET' && url.pathname==='/v1/admin/ai/events'){
+          try{return json(200,{ids:await admin.ai.eventIds(Number(url.searchParams.get('limit')||1))});}catch(cause){if(cause.status&&cause.status<500)return json(cause.status,{error:cause.message});throw cause;}
+        }
+        const aiEvent=/^\/v1\/admin\/ai\/events\/(\d{1,12})$/.exec(url.pathname);
+        if(req.method==='GET' && aiEvent){const event=await admin.ai.event(Number(aiEvent[1]));return event?json(200,{event}):json(404,{error:'Not found'});}
         if(req.method==='GET' && url.pathname==='/v1/admin/enrichment'){
           try{return json(200,{events:await admin.enrichmentCandidates(url.searchParams.get('mode'),Number(url.searchParams.get('after')||0),Number(url.searchParams.get('eventId')||0))});}catch(cause){if(cause.status&&cause.status<500)return json(cause.status,{error:cause.message});throw cause;}
         }
@@ -49,16 +56,20 @@ export function createApp(catalogue, imageDir, admin = null) {
         if (req.method !== 'POST') return json(405, {error:'Method not allowed'});
         const isImport=url.pathname==='/v1/admin/imports/vilnius-events/page';
         const isReservation=url.pathname==='/v1/admin/imports/vilnius-events/reserve-request';
+        const isArtistImport=url.pathname==='/v1/admin/imports/musicbrainz/page';
+        const isArtistReservation=url.pathname==='/v1/admin/imports/musicbrainz/reserve-request';
+        const isAiSave=url.pathname==='/v1/admin/ai/results';
+        const aiDecision=/^\/v1\/admin\/ai\/results\/(\d{1,12})\/decision$/.exec(url.pathname);
         const isJobStart=url.pathname==='/v1/admin/jobs/start';
         const isImageUpload=url.pathname==='/v1/admin/images';
         const jobUpdate=/^\/v1\/admin\/jobs\/(\d{1,12})$/.exec(url.pathname);
         const route = /^\/v1\/admin\/events\/(\d{1,12})\/(review|details|artist|price|confirm-assistant-review|enrich)$/.exec(url.pathname);
-        if (!isImport && !isReservation && !isJobStart && !isImageUpload && !jobUpdate && (!route || !Number.isSafeInteger(Number(route[1])) || Number(route[1]) < 1)) return json(404, {error:'Not found'});
+        if (!isImport && !isReservation && !isArtistImport && !isArtistReservation && !isAiSave && !aiDecision && !isJobStart && !isImageUpload && !jobUpdate && (!route || !Number.isSafeInteger(Number(route[1])) || Number(route[1]) < 1)) return json(404, {error:'Not found'});
         if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')) return json(415, {error:'Expected JSON'});
         let size = 0; const chunks = [];
-        for await (const chunk of req) { size += chunk.length; if (size > (isImageUpload ? 17*1024*1024 : isImport ? 6*1024*1024 : route?.[2]==='enrich'?512*1024:8192)) return json(413, {error:'Request too large'}); chunks.push(chunk); }
+        for await (const chunk of req) { size += chunk.length; if (size > (isImageUpload ? 17*1024*1024 : isImport||isArtistImport ? 6*1024*1024 : isAiSave||route?.[2]==='enrich'?512*1024:8192)) return json(413, {error:'Request too large'}); chunks.push(chunk); }
         let body; try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return json(400, {error:'Invalid JSON'}); }
-        try { if(isImport) return json(200,{ok:true,...await admin.importVilniusPage(body)}); if(isReservation)return json(200,{ok:true,...await admin.reserveVilniusRequest()}); if(isJobStart)return json(200,{ok:true,...await admin.jobs.start(body.action)}); if(isImageUpload)return json(200,{ok:true,...await admin.saveImage(body)}); if(jobUpdate){await admin.jobs.update(Number(jobUpdate[1]),body);return json(200,{ok:true});} const method=route[2]==='confirm-assistant-review'?'confirmAssistantReview':route[2]==='enrich'?'enrichEvent':route[2]; await admin[method](Number(route[1]), body); return json(200, {ok:true}); }
+        try { if(isImport) return json(200,{ok:true,...await admin.importVilniusPage(body)}); if(isArtistImport)return json(200,{ok:true,...await admin.importMusicBrainzPage(body)}); if(isReservation)return json(200,{ok:true,...await admin.reserveVilniusRequest()}); if(isArtistReservation)return json(200,{ok:true,...await admin.reserveMusicBrainz()}); if(isJobStart)return json(200,{ok:true,...await admin.jobs.start(body.action,body.source,body.limit)}); if(isImageUpload)return json(200,{ok:true,...await admin.saveImage(body)}); if(isAiSave){await admin.ai.save(body);return json(200,{ok:true});} if(aiDecision){await admin.ai.decision(Number(aiDecision[1]),body.decision);return json(200,{ok:true});} if(jobUpdate){await admin.jobs.update(Number(jobUpdate[1]),body);return json(200,{ok:true});} const method=route[2]==='confirm-assistant-review'?'confirmAssistantReview':route[2]==='enrich'?'enrichEvent':route[2]; await admin[method](Number(route[1]), body); return json(200, {ok:true}); }
         catch (cause) { if (cause.status && cause.status < 500) return json(cause.status, {error:cause.message}); throw cause; }
       }
       if (req.method !== 'GET') return json(405, {error:'Method not allowed'});

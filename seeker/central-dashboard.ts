@@ -16,6 +16,13 @@ export function createCentralDashboard(api:CentralApi, userAgent='Seeker/0.1.0')
     const send=(status:number,body:unknown)=>{response.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});response.end(JSON.stringify(body));};
     try {
       if(request.method==='GET' && url.pathname==='/api/dashboard'){send(200,await api.artistsDashboard());return true;}
+      if(request.method==='GET' && url.pathname==='/api/ai-evaluations/events'){send(200,{ids:await api.aiIds(Number(url.searchParams.get('limit')||1))});return true;}
+      if(request.method==='GET' && url.pathname==='/api/ai-evaluations'){send(200,{results:await api.aiResults(),configured:!!process.env.GEMINI_API_KEY});return true;}
+      if(request.method==='POST' && url.pathname==='/api/ai-evaluations/decision'){
+        if(!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type']||'')){send(415,{error:'Expected JSON.'});return true;}
+        let size=0;const chunks:Buffer[]=[];for await(const chunk of request){const part=Buffer.from(chunk);size+=part.length;if(size>4096){send(413,{error:'Request too large.'});return true;}chunks.push(part);}
+        let input;try{input=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{send(400,{error:'Invalid JSON.'});return true;}await api.aiDecision(input.id,input.decision);send(200,{ok:true});return true;
+      }
       if(request.method==='GET' && url.pathname==='/api/jobs'){send(200,{jobs:await jobs.list()});return true;}
       if(request.method==='POST' && url.pathname==='/api/jobs'){
         if(!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type'] || '')){send(415,{error:'Expected JSON.'});return true;}

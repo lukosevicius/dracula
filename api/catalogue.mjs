@@ -3,7 +3,7 @@ import { descriptionText } from './description.mjs';
 const columns = `e.id,e.title,e.event_date,e.event_end_date,e.event_time,e.venue,e.ticket_url,
  s.source_url,s.about_url,s.content_html,i.local_name,p.price_text,p.price_type`;
 const joins = `FROM events e JOIN event_sources s ON s.event_id=e.id AND s.source_key='vilnius-events'
- LEFT JOIN vilnius_events v ON CAST(v.source_id AS CHAR)=s.source_id
+ LEFT JOIN vilnius_events v ON v.source_id=CAST(s.source_id AS UNSIGNED)
  LEFT JOIN vilnius_images i ON i.media_id=v.featured_media
  LEFT JOIN event_prices p ON p.event_id=e.id`;
 const ready = `e.review_status='music' AND (NULLIF(e.event_date,'') IS NULL OR COALESCE(NULLIF(e.event_end_date,''),e.event_date)>=?)`;

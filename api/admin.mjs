@@ -5,6 +5,8 @@ import { importVilniusPage } from './import-vilnius.mjs';
 import {createJobs} from './jobs.mjs';
 import {saveImage} from './images.mjs';
 import {enrichEvent} from './enrich.mjs';
+import {reserveMusicBrainz,importMusicBrainzPage} from './musicbrainz.mjs';
+import {createAi} from './ai.mjs';
 
 const statuses = new Set(['music', 'not_music', 'unsure']);
 const decisions = new Set(['accepted', 'dismissed', 'remove']);
@@ -36,6 +38,9 @@ export function createAdmin(pool, token, imageDir) {
   }
   return {
     jobs:createJobs(pool),
+    ai:createAi(pool),
+    reserveMusicBrainz:()=>reserveMusicBrainz(pool),
+    importMusicBrainzPage:input=>importMusicBrainzPage(pool,input),
     enrichEvent:(id,input)=>enrichEvent(pool,id,input),
     async enrichmentCandidates(mode,after,eventId){
       if(!['missing','oldest','all','event'].includes(mode)||!Number.isSafeInteger(after)||after<0||(mode==='event'&&(!Number.isSafeInteger(eventId)||eventId<1)))throw error(400,'Invalid detail selection.');
@@ -43,7 +48,7 @@ export function createAdmin(pool, token, imageDir) {
       if(mode==='missing')clauses.push('(v.details_checked_at IS NULL OR s.about_checked_at IS NULL)');
       if(mode==='event'){clauses.push('s.event_id=?');params.push(eventId);}else if(mode==='all'){clauses.push('s.event_id>?');params.push(after);}
       const order=mode==='oldest'?'v.details_checked_at ASC,v.published_at DESC':'s.event_id ASC';
-      const [rows]=await pool.execute(`SELECT s.event_id,s.source_url,s.content_html FROM event_sources s JOIN vilnius_events v ON CAST(v.source_id AS CHAR)=s.source_id WHERE ${clauses.join(' AND ')} ORDER BY ${order} LIMIT 10`,params);return rows;
+      const [rows]=await pool.execute(`SELECT s.event_id,s.source_url,s.content_html FROM event_sources s JOIN vilnius_events v ON v.source_id=CAST(s.source_id AS UNSIGNED) WHERE ${clauses.join(' AND ')} ORDER BY ${order} LIMIT 10`,params);return rows;
     },
     async listMedia(after,limit){
       if(!Number.isSafeInteger(after)||after<0||!Number.isSafeInteger(limit)||limit<1||limit>100)throw error(400,'Invalid media pagination.');
