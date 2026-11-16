@@ -2,7 +2,7 @@
   "name": "dracula-public-api",
   "private": true,
   "type": "module",
-  "scripts": { "start": "node server.mjs", "test": "node --test test/*.test.mjs", "migrate:staging": "node migrate-staging.mjs", "export:staging": "node export-staging-sql.mjs", "prepare:images": "node prepare-staging-images.mjs" },
+  "scripts": { "start": "node server.mjs", "test": "node --test test/*.test.mjs", "test:mariadb": "RUN_MARIADB_INTEGRATION=1 node --test test/mariadb.integration.test.mjs", "migrate:staging": "node migrate-staging.mjs", "export:staging": "node export-staging-sql.mjs", "prepare:images": "node prepare-staging-images.mjs", "verify:images": "node verify-staging-images.mjs" },
   "engines": { "node": ">=22.16.0" },
   "dependencies": {
     "mysql2": "^3.24.6"

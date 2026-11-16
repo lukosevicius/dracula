@@ -22,7 +22,9 @@ try {
   if (source.prepare("SELECT id FROM jobs WHERE status IN ('running','queued') LIMIT 1").get()) throw new Error('Backup contains an active job.');
   const actual=source.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all().map(x=>x.name).sort();
   if (JSON.stringify(actual)!==JSON.stringify([...tables].sort())) throw new Error('Source tables have changed; review the migration before continuing.');
-  conn=await mysql.createConnection({host:process.env.DB_HOST,user:process.env.DB_USER,password:process.env.DB_PASSWORD,database:process.env.DB_NAME,charset:'utf8mb4'});
+  const port=Number(process.env.DB_PORT || 3306);
+  if (!Number.isInteger(port) || port<1 || port>65535) throw new Error('Invalid DB_PORT.');
+  conn=await mysql.createConnection({host:process.env.DB_HOST,port,user:process.env.DB_USER,password:process.env.DB_PASSWORD,database:process.env.DB_NAME,charset:'utf8mb4'});
   const [existing]=await conn.query('SHOW FULL TABLES');
   if (existing.length) throw new Error('Staging database is not empty; refusing to alter it.');
   const schema=await readFile(new URL('./schema.sql',import.meta.url),'utf8');

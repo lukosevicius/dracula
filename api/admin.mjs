@@ -1,4 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { normalizeEventSearch } from './event-search.mjs';
+import { vilniusToday } from './catalogue.mjs';
+import { importVilniusPage } from './import-vilnius.mjs';
 
 const statuses = new Set(['music', 'not_music', 'unsure']);
 const decisions = new Set(['accepted', 'dismissed', 'remove']);
@@ -29,9 +32,69 @@ export function createAdmin(pool, token) {
     } finally { conn.release(); }
   }
   return {
+    importVilniusPage: input => importVilniusPage(pool,input),
     authorized(header) {
       const match = /^Bearer ([^\s]+)$/.exec(header || '');
       return !!match && timingSafeEqual(tokenHash, digest(match[1]));
+    },
+    async listEvents(query) {
+      const page=Number(query.get('page') || 1), limit=Number(query.get('limit') || 25);
+      const review=query.get('review') || 'all', when=query.get('when') || 'upcoming', source=query.get('source') || 'all';
+      const readiness=query.get('readiness') || 'all', assistantReview=query.get('assistantReview') || 'all', price=query.get('price') || 'all';
+      const from=query.get('from'),to=query.get('to'),today=vilniusToday(),search=normalizeEventSearch((query.get('search') || '').slice(0,200));
+      if(!Number.isSafeInteger(page)||page<1||page>1000000||!Number.isSafeInteger(limit)||limit<1||limit>100 || !['all','music','not_music','unsure'].includes(review) || !['all','upcoming','past','unknown','today','tomorrow','weekend','custom'].includes(when) || !['all','ready','attention'].includes(readiness) || !['all','pending'].includes(assistantReview) || !['all','free','paid','unknown'].includes(price) || source.length>191) throw error(400,'Invalid filters.');
+      if(['today','tomorrow','weekend','custom'].includes(when) && (!from || !to || !validDate(from) || !validDate(to) || to<from)) throw error(400,'Choose a valid date range.');
+      const clauses=[],params=[];
+      const ready="e.review_status='music' AND (NULLIF(e.event_date,'') IS NULL OR COALESCE(NULLIF(e.event_end_date,''),e.event_date)>=?)";
+      if(price!=='all'){clauses.push("COALESCE((SELECT p.price_type FROM event_prices p WHERE p.event_id=e.id),'unknown')=?");params.push(price);}
+      if(assistantReview==='pending') clauses.push('EXISTS (SELECT 1 FROM assistant_event_reviews ar WHERE ar.event_id=e.id AND ar.confirmed_at IS NULL)');
+      if(readiness!=='all'){clauses.push(`${readiness==='attention'?'NOT ':''}(${ready})`);params.push(today);}
+      if(review!=='all'){clauses.push('e.review_status=?');params.push(review);}
+      if(source!=='all'){clauses.push('EXISTS (SELECT 1 FROM event_sources sf WHERE sf.event_id=e.id AND sf.source_key=?)');params.push(source);}
+      if(when==='upcoming'||when==='past'){clauses.push(`e.event_date IS NOT NULL AND COALESCE(e.event_end_date,e.event_date)${when==='past'?'<':'>='}?`);params.push(today);}
+      if(when==='unknown') clauses.push('e.event_date IS NULL');
+      if(['today','tomorrow','weekend','custom'].includes(when)){clauses.push('e.event_date<=? AND COALESCE(e.event_end_date,e.event_date)>=?');params.push(to,from);}
+      let where=clauses.length?`WHERE ${clauses.join(' AND ')}`:'';
+      const conn=await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        try {
+          let searchTotal=null;
+          const order=when==='past'?'DESC':'ASC';
+          // Seeker strips HTML/entities before prefix matching. Searching titles in JS preserves that behavior.
+          if(search){
+            const [titles]=await conn.execute(`SELECT e.id,e.title FROM events e ${where} ORDER BY e.event_date IS NULL,e.event_date ${order},e.event_time IS NULL,e.event_time ${order},e.id`,params);
+            const matches=titles.filter(row=>normalizeEventSearch(row.title).startsWith(search));
+            searchTotal=matches.length;
+            const ids=matches.slice((page-1)*limit,page*limit).map(row=>row.id);
+            if(ids.length){where+=`${where?' AND':'WHERE'} e.id IN (${ids.map(()=>'?').join(',')})`;params.push(...ids);} else where+=`${where?' AND':'WHERE'} 1=0`;
+          }
+          const [totals]=await conn.execute(`SELECT COUNT(*) AS count FROM events e ${where}`,params);
+          const [events]=await conn.execute(`SELECT e.*,s.source_id,s.source_key,s.source_url,s.about_url,s.last_checked_at AS details_checked_at,ar.reviewed_at AS assistant_reviewed_at,ar.confirmed_at AS assistant_confirmed_at,ar.notes AS assistant_notes,ep.price_text,COALESCE(ep.price_type,'unknown') AS price_type FROM events e LEFT JOIN event_prices ep ON ep.event_id=e.id LEFT JOIN assistant_event_reviews ar ON ar.event_id=e.id JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY id LIMIT 1) ${where} ORDER BY e.event_date IS NULL,e.event_date ${order},e.event_time IS NULL,e.event_time ${order},e.id LIMIT ? OFFSET ?`,[...params,limit,search?0:(page-1)*limit]);
+          const [counts]=await conn.execute("SELECT COUNT(*) AS total, COALESCE(SUM(review_status='music'),0) AS music, COALESCE(SUM(review_status='not_music'),0) AS not_music, COALESCE(SUM(review_status='unsure'),0) AS unsure, COALESCE(SUM(event_date IS NULL),0) AS unknown FROM events",[]);
+          const [readyRows]=await conn.execute(`SELECT COUNT(*) AS count FROM events e WHERE ${ready}`,[today]);
+          const [states]=await conn.execute('SELECT next_offset FROM source_state WHERE source_key=?',['vilnius-events']);
+          const [sources]=await conn.execute('SELECT DISTINCT source_key FROM event_sources ORDER BY source_key',[]);
+          const [runs]=await conn.execute('SELECT * FROM vilnius_event_runs ORDER BY id DESC LIMIT 8',[]);
+          await conn.commit();
+          return {events,total:searchTotal ?? Number(totals[0].count),page,limit,counts:Object.fromEntries(Object.entries(counts[0]).map(([key,value])=>[key,Number(value)])),readyCount:Number(readyRows[0].count),nextPage:Number(states[0]?.next_offset || 0)+1,sources,runs};
+        } catch(cause){await conn.rollback();throw cause;}
+      } finally {conn.release();}
+    },
+    async getEvent(id) {
+      const conn=await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+        try {
+          const [events]=await conn.execute('SELECT * FROM events WHERE id=?',[id]);
+          if (events.length!==1) throw error(404,'Event not found.');
+          const [sources]=await conn.execute('SELECT * FROM event_sources WHERE event_id=? ORDER BY id',[id]);
+          const [prices]=await conn.execute('SELECT * FROM event_prices WHERE event_id=?',[id]);
+          const [artists]=await conn.execute('SELECT d.artist_mbid,d.decision,a.name FROM event_artist_decisions d JOIN artists a ON a.mbid=d.artist_mbid WHERE d.event_id=? ORDER BY a.name',[id]);
+          await conn.commit();
+          return {event:events[0],sources,price:prices[0] || null,artist_decisions:artists};
+        } catch(cause) {await conn.rollback(); throw cause;}
+      } finally {conn.release();}
     },
     async review(id, body) {
       if (!statuses.has(body?.review_status)) throw error(400, 'Invalid review status.');

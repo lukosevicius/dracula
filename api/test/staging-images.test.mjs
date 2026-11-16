@@ -6,6 +6,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { prepareStagingImages } from '../prepare-staging-images.mjs';
+import { verifyStagingImages } from '../verify-staging-images.mjs';
 
 test('prepares verified images and refuses corrupt input or existing output', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dracula-images-'));
@@ -21,10 +22,13 @@ test('prepares verified images and refuses corrupt input or existing output', as
     await writeFile(join(backup, 'manifest.json'), JSON.stringify({ databaseSha256:digest(await readFile(dbPath)), images:[{ name:'vilnius-events/12.jpg', sha256:digest('image') }] }));
     const output = join(root, 'output');
     assert.equal((await prepareStagingImages(backup, output)).imageCount, 1);
+    assert.equal((await verifyStagingImages(output)).imageCount,1);
     assert.equal(await readFile(join(output,'images','12.jpg'),'utf8'), 'image');
     await assert.rejects(prepareStagingImages(backup, output), { code:'EEXIST' });
     await writeFile(join(dir, '12.jpg'), 'changed');
     await assert.rejects(prepareStagingImages(backup, join(root,'bad')), /hash mismatch/);
     assert.equal(await readFile(join(output,'images','12.jpg'),'utf8'), 'image');
+    await writeFile(join(output,'images','12.jpg'),'corrupted');
+    await assert.rejects(verifyStagingImages(output),/hash mismatch/);
   } finally { await rm(root, { recursive:true, force:true }); }
 });

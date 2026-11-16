@@ -11,14 +11,17 @@ const artist = 'f5e813d7-0f2e-499a-9d07-9c38d955837d';
 function setup() {
   const db = new DatabaseSync(':memory:');
   db.exec(`CREATE TABLE events(id INTEGER PRIMARY KEY,review_status TEXT,title TEXT,event_date TEXT,event_end_date TEXT,event_time TEXT,venue TEXT,ticket_url TEXT,manual_fields TEXT);
-    CREATE TABLE event_sources(event_id INTEGER,source_key TEXT,source_id TEXT,source_url TEXT,about_url TEXT,content_html TEXT);
+    CREATE TABLE event_sources(id INTEGER PRIMARY KEY,event_id INTEGER,source_key TEXT,source_id TEXT,source_url TEXT,about_url TEXT,content_html TEXT,last_checked_at TEXT);
     CREATE TABLE vilnius_events(source_id INTEGER PRIMARY KEY,review_status TEXT,featured_media INTEGER,event_date TEXT,event_end_date TEXT,event_time TEXT,venue TEXT,ticket_url TEXT,manual_fields TEXT,details_manual INTEGER);
     CREATE TABLE vilnius_images(media_id INTEGER,local_name TEXT);
     CREATE TABLE artists(mbid TEXT PRIMARY KEY,name TEXT);
     CREATE TABLE vilnius_event_artists(event_id INTEGER,artist_mbid TEXT,decision TEXT,PRIMARY KEY(event_id,artist_mbid));
     CREATE TABLE event_artist_decisions(event_id INTEGER,artist_mbid TEXT,decision TEXT,PRIMARY KEY(event_id,artist_mbid));
     CREATE TABLE event_prices(event_id INTEGER PRIMARY KEY,price_text TEXT,price_type TEXT,manual INTEGER,checked_at TEXT);
-    INSERT INTO events VALUES(1,'unsure','Test','2026-11-20',NULL,NULL,NULL,NULL,'[]'); INSERT INTO event_sources VALUES(1,'vilnius-events','99','https://example.com',NULL,'Description');
+    CREATE TABLE assistant_event_reviews(event_id INTEGER,reviewed_at TEXT,confirmed_at TEXT,notes TEXT);
+    CREATE TABLE source_state(source_key TEXT,next_offset INTEGER);
+    CREATE TABLE vilnius_event_runs(id INTEGER);
+    INSERT INTO events VALUES(1,'unsure','Tést &amp; show','2026-11-20',NULL,NULL,NULL,NULL,'[]'); INSERT INTO event_sources VALUES(1,1,'vilnius-events','99','https://example.com',NULL,'Description',NULL);
     INSERT INTO vilnius_events VALUES(99,'unsure',NULL,'2026-11-20',NULL,NULL,NULL,NULL,'[]',0); INSERT INTO artists VALUES('${artist}','Artist');`);
   const connection = {
     async beginTransaction() { db.exec('BEGIN'); }, async commit() { db.exec('COMMIT'); },
@@ -38,7 +41,9 @@ test('admin edits update both representations and roll back on error', async () 
   try {
     assert.equal(await catalogue.get(1,'2026-11-15'),null);
     await admin.review(1,{review_status:'music'});
-    assert.equal((await catalogue.get(1,'2026-11-15')).title,'Test');
+    assert.equal((await catalogue.get(1,'2026-11-15')).title,'Tést &amp; show');
+    const list=await admin.listEvents(new URLSearchParams({when:'all',search:'test &'}));
+    assert.equal(list.total,1); assert.equal(list.events[0].id,1);
     assert.equal(db.prepare('SELECT review_status FROM events').get().review_status,'music');
     assert.equal(db.prepare('SELECT review_status FROM vilnius_events').get().review_status,'music');
     await admin.artist(1,{mbid:artist,decision:'accepted'});
@@ -67,6 +72,12 @@ test('admin routes require a bearer token and validate requests', async () => {
   await new Promise(resolve=>app.listen(0,'127.0.0.1',resolve));
   try {
     const url=`http://127.0.0.1:${app.address().port}/v1/admin/events/1/review`;
+    const read=`http://127.0.0.1:${app.address().port}/v1/admin/events/1`;
+    assert.equal((await fetch(read)).status,401);
+    const privateEvent=await fetch(read,{headers:{authorization:`Bearer ${token}`}});
+    assert.equal((await privateEvent.json()).event.review_status,'unsure');
+    const missing=await fetch(`http://127.0.0.1:${app.address().port}/v1/admin/events/999`,{headers:{authorization:`Bearer ${token}`}});
+    assert.equal(missing.status,404);
     const post=(authorization,body,contentType='application/json')=>fetch(url,{method:'POST',headers:{authorization,'content-type':contentType},body});
     assert.equal((await post('Bearer wrong',JSON.stringify({review_status:'music'}))).status,401);
     assert.equal(db.prepare('SELECT review_status FROM events').get().review_status,'unsure');

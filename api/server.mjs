@@ -8,7 +8,9 @@ for (const name of required) if (!process.env[name]) throw new Error(`Missing ${
 const base = new URL(process.env.PUBLIC_BASE_URL);
 if (!['https:','http:'].includes(base.protocol) || base.pathname !== '/' || base.search || base.hash) throw new Error('PUBLIC_BASE_URL must be an HTTP(S) origin');
 if (process.env.ADMIN_TOKEN && base.protocol !== 'https:' && !['localhost','127.0.0.1','[::1]'].includes(base.hostname)) throw new Error('Admin access requires HTTPS outside local development.');
-const pool = mysql.createPool({host:process.env.DB_HOST,user:process.env.DB_USER,password:process.env.DB_PASSWORD,database:process.env.DB_NAME,connectionLimit:5,charset:'utf8mb4'});
+const port=Number(process.env.DB_PORT || 3306);
+if (!Number.isInteger(port) || port<1 || port>65535) throw new Error('Invalid DB_PORT.');
+const pool = mysql.createPool({host:process.env.DB_HOST,port,user:process.env.DB_USER,password:process.env.DB_PASSWORD,database:process.env.DB_NAME,connectionLimit:5,charset:'utf8mb4'});
 await pool.query('SELECT 1');
 const admin = process.env.ADMIN_TOKEN ? createAdmin(pool,process.env.ADMIN_TOKEN) : null;
 const app=createApp(createCatalogue(pool,base.origin),process.env.IMAGE_DIR,admin);
