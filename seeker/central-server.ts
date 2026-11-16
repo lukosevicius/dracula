@@ -8,6 +8,8 @@ import { createCentralApi } from './central-api.js';
 import { createCentralDashboard } from './central-dashboard.js';
 
 const root=dirname(dirname(fileURLToPath(import.meta.url)));
+// Keep the central connection in a separate ignored file from source API keys.
+if(existsSync(join(root,'.env.central')))loadEnvFile(join(root,'.env.central'));
 if(existsSync(join(root,'.env')))loadEnvFile(join(root,'.env'));
 if(!process.env.CENTRAL_API_URL || !process.env.CENTRAL_API_TOKEN)throw new Error('Set CENTRAL_API_URL and CENTRAL_API_TOKEN.');
 const port=Number(process.env.PORT || 4177);
@@ -30,4 +32,4 @@ const server=createServer(async(req,res)=>{
   try {const data=await readFile(file);res.writeHead(200,{'content-type':types[extname(file)] || 'application/octet-stream','cache-control':'no-cache','x-content-type-options':'nosniff'});res.end(data);}
   catch {res.writeHead(404);res.end();}
 });
-server.listen(port,'127.0.0.1',()=>console.log(`Experimental central Seeker at http://127.0.0.1:${port}; unsupported features are disabled.`));
+server.listen(port,'127.0.0.1',()=>console.log(`Seeker at http://127.0.0.1:${port} (central database; unsupported features are disabled).`));
