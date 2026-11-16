@@ -46,7 +46,7 @@
     "preandroid": "node ./scripts/sync-date-filters.mjs",
     "pretypecheck": "node ./scripts/sync-date-filters.mjs",
     "prebuild": "node ./scripts/sync-date-filters.mjs",
-    "build": "expo export --platform web && node ./scripts/configure-web-output.mjs"
+    "build": "expo export --platform web --clear && node ./scripts/configure-web-output.mjs"
   },
   "private": true,
   "overrides": {
