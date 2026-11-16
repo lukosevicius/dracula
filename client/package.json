@@ -38,7 +38,6 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "export:events": "node ./scripts/export-events.mjs",
     "typecheck": "tsc --noEmit",
     "prestart": "node ./scripts/sync-date-filters.mjs",
     "preweb": "node ./scripts/sync-date-filters.mjs",

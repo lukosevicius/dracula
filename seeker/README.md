@@ -16,7 +16,7 @@ npm start
 
 Open <http://127.0.0.1:4177>.
 
-The dashboard uses React, TypeScript and Vite. `npm start` builds the server and dashboard before starting the local Node server. Run `npm run typecheck` to check types, or `npm test` to build and run the tests. The previous SQLite database remains in `data` as a local recovery copy.
+The dashboard uses React, TypeScript and Vite. `npm start` builds the server and dashboard before starting the local Node server. Run `npm run typecheck` to check types, or `npm test` to build and run the tests.
 
 For dashboard development, run the backend on port 4177 and then run `npm run dev:client` in a second terminal. Vite forwards `/api` calls to the backend.
 
@@ -36,11 +36,9 @@ The catalogue stores canonical `events` and linked `event_sources`. Original Vil
 
 Import and detail jobs are recorded centrally and run while the dashboard is closed as long as the local Node server remains running. An expired job lease is marked interrupted when another job starts; completed pages remain saved. Each source retains its own pacing and retry behavior.
 
-Hostinger shows daily automated backups and lists `u334322641_d_staging` among databases available for backup. On 2026-11-16 the latest available backup was from 12:01; the next automatic backup was scheduled for 2026-11-17, and another manual backup was unavailable until 12:01 that day. Confirm a post-migration backup includes the image directory and test restoration before relying on it for recovery. `npm run backup` backs up only the **old local SQLite database and its local images**; it does not back up current central data. Old backups are in `data/backups`, excluded from Git, and contain private working data.
+Hostinger shows daily automated backups and lists `u334322641_d_staging` among databases available for backup. On 2026-11-16 the latest available backup was from 12:01; the next automatic backup was scheduled for 2026-11-17, and another manual backup was unavailable until 12:01 that day. Confirm a post-migration backup includes the image directory and test restoration before relying on it for recovery.
 
 `npm start` runs Seeker locally against the central API using `CENTRAL_API_URL` and `CENTRAL_API_TOKEN`. These settings are stored in the ignored `.env.central` file, which central mode loads before `.env`; shell environment variables take precedence. Keep that file and its token private. The server connects event and artist dashboards, event imports, detail refresh, image jobs, MusicBrainz imports and AI evaluations to the API; unsupported routes fail closed and it never opens SQLite. Seeker keeps the token out of browser code, requires HTTPS except on localhost, and never automatically retries an uncertain write. Hosted event and artist reads and an idempotent event review write have been verified. Live source imports and AI runs have not yet been verified end to end against Hostinger.
-
-`npm run start:sqlite` starts the old local-database server for recovery. It writes to the old SQLite database and does not sync changes to the central database. The old database and its backup are retained; do not use it for routine updates.
 
 The experimental `sources/central-vilnius-run.ts` combines source-page fetching with transactional API imports and optional image uploads. It coordinates the minimum interval between requests through MariaDB and honors retry delays. Dashboard jobs use a lease and save progress centrally; an expired lease is marked interrupted when another job starts. If an image fails, the job fails visibly while already imported pages remain saved. The job path has been tested with a simulated source and disposable MariaDB, not against the live source.
 

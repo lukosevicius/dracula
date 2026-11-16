@@ -1,7 +1,7 @@
 import type { PublicEvent } from '../../../seeker/types';
 
 export type DisplayEvent = PublicEvent & { image_url?: string | null };
-export const apiUrl = (process.env.EXPO_PUBLIC_API_URL || '').replace(/\/$/, '');
+export const apiUrl = (process.env.EXPO_PUBLIC_API_URL || 'https://api.dracula.lt').replace(/\/$/, '');
 export type EventPage = { items: DisplayEvent[]; total: number; nextOffset: number | null };
 
 async function request<T>(path: string, signal: AbortSignal): Promise<T | null> {

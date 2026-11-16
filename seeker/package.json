@@ -5,9 +5,6 @@
   "type": "module",
   "scripts": {
     "start": "npm run build && node dist/central-server.js",
-    "start:sqlite": "npm run build && node dist/server.js",
-    "start:central:experimental": "npm run build && node dist/central-server.js",
-    "backup": "node scripts/backup.mjs",
     "build": "npm run build:server && npm run build:client",
     "build:server": "tsc -p tsconfig.json",
     "build:client": "vite build --config client/vite.config.ts",
