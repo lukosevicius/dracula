@@ -24,3 +24,19 @@ test('central image importer avoids re-uploading unchanged media',async()=>{
   const request=async()=>{requests++;return new Response(JSON.stringify({id:42,source_url:'https://www.vilnius-events.lt/wp-content/uploads/a.png',modified:'same',media_details:{width:1,height:1}}));};
   assert.equal(await createCentralVilniusImages(api,'Test/1',request as typeof fetch)(42,true),'existing');assert.equal(requests,1);
 });
+
+test('identifies JPEG content even when the source labels it PNG',async()=>{
+  let uploaded:Record<string,unknown>|undefined,calls=0;
+  const api={reserveVilniusRequest:async()=>0,getImageInfo:async()=>null,uploadImage:async(value:Record<string,unknown>)=>{uploaded=value;}} as unknown as ReturnType<typeof createCentralApi>;
+  const image=Buffer.from([0xff,0xd8,0xff,0xe0,0,0]);
+  const request=async()=>++calls===1?new Response(JSON.stringify({id:42,source_url:'https://www.vilnius-events.lt/wp-content/uploads/a.png',media_details:{width:1,height:1}})):new Response(image,{headers:{'content-type':'image/png'}});
+  assert.equal(await createCentralVilniusImages(api,'Test/1',request as typeof fetch)(42),'downloaded');
+  assert.equal(uploaded?.mime_type,'image/jpeg');
+});
+
+test('rejects content that is not a supported image',async()=>{
+  let calls=0;
+  const api={reserveVilniusRequest:async()=>0,getImageInfo:async()=>null} as unknown as ReturnType<typeof createCentralApi>;
+  const request=async()=>++calls===1?new Response(JSON.stringify({id:42,source_url:'https://www.vilnius-events.lt/wp-content/uploads/a.png',media_details:{width:1,height:1}})):new Response('not an image',{headers:{'content-type':'image/png'}});
+  await assert.rejects(createCentralVilniusImages(api,'Test/1',request as typeof fetch)(42),/Unsupported image content/);
+});

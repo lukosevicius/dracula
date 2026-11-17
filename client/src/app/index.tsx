@@ -12,7 +12,7 @@ const filters: { id: DateFilter; label: string }[] = [
   { id: 'upcoming', label: 'Artėjantys' }, { id: 'today', label: 'Šiandien' },
   { id: 'tomorrow', label: 'Rytoj' }, { id: 'weekend', label: 'Šį savaitgalį' },
   { id: 'custom', label: 'Pasirinkti datas' }, { id: 'all', label: 'Visi' },
-  { id: 'past', label: 'Praėję' }, { id: 'unknown', label: 'Data nežinoma' },
+  { id: 'unknown', label: 'Data nežinoma' },
 ];
 
 function validDate(value: string) {

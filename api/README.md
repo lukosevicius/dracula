@@ -1,6 +1,6 @@
 # Dracula public API (migration in progress)
 
-The API is deployed at `https://api.dracula.lt` against the Hostinger MariaDB database. The live Dracula client reads its public endpoints, and local Seeker uses bearer-token-protected administrative endpoints. Hosted event and artist reads and an idempotent event review write have been verified; live source imports and AI jobs have not yet been verified end to end.
+The API is deployed at `https://api.dracula.lt` against the Hostinger MariaDB database. The live Dracula client reads its public endpoints, and local Seeker uses bearer-token-protected administrative endpoints. Hosted event and artist reads, review writes, and a bounded live import of 20 new Vilnius Events records have been verified. The bounded import left the normal import cursor unchanged; the standard next-page workflow and live AI jobs have not yet been verified end to end.
 
 The API expects MariaDB tables equivalent to the current Seeker catalogue. `GET /v1/events?filter=upcoming&offset=0&limit=30` returns `{items, total, nextOffset}` with filtering before pagination. Filters are `upcoming`, `today`, `tomorrow`, `weekend`, `custom`, `all`, `past`, and `unknown`. A custom filter requires `from=YYYY-MM-DD` and accepts an optional `to`. The legacy `after` cursor form remains available. `GET /v1/events/:id` returns a single public event. `GET /v1/images/:filename` serves an image only while it belongs to a currently public event. `GET /health` reports that the process is running; it does not verify an ongoing database connection.
 
