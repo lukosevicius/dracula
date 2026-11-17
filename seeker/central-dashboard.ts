@@ -3,6 +3,7 @@ import { suggestArtists } from './sources/event-details.js';
 import type { createCentralApi } from './central-api.js';
 import type { ArtistDecision, EventDetails, ReviewStatus } from './types.js';
 import {createCentralJobs} from './central-jobs.js';
+import {fetchAvilysPage} from './sources/avilys.js';
 
 type CentralApi = ReturnType<typeof createCentralApi>;
 const normalize=(value:string)=>value.normalize('NFKD').replace(/\p{Diacritic}/gu,'').toLocaleLowerCase('lt').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
@@ -15,6 +16,11 @@ export function createCentralDashboard(api:CentralApi, userAgent='Seeker/0.1.0')
     if(!url.pathname.startsWith('/api/'))return false;
     const send=(status:number,body:unknown)=>{response.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});response.end(JSON.stringify(body));};
     try {
+      if(request.method==='GET' && url.pathname==='/api/avilys/preview') {
+        const raw=url.searchParams.get('page') || '1';
+        if(!/^\d{1,5}$/.test(raw)||Number(raw)<1||Number(raw)>10000){send(400,{error:'Invalid Avilys page.'});return true;}
+        send(200,await fetchAvilysPage(Number(raw)));return true;
+      }
       if(request.method==='GET' && url.pathname==='/api/dashboard'){send(200,await api.artistsDashboard());return true;}
       if(request.method==='GET' && url.pathname==='/api/ai-evaluations/events'){send(200,{ids:await api.aiIds(Number(url.searchParams.get('limit')||1))});return true;}
       if(request.method==='GET' && url.pathname==='/api/ai-evaluations'){send(200,{results:await api.aiResults(),configured:!!process.env.GEMINI_API_KEY});return true;}

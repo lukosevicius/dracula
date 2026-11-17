@@ -34,6 +34,8 @@ Event details also include the source's optional “Apie renginį” link, which
 
 The catalogue stores canonical `events` and linked `event_sources`. Original Vilnius Events records are also retained and central writes update both representations. The current importer and editor operate on Vilnius Events; additional source adapters and a merge workflow are future work. Potential matching events can be queried, but are never merged automatically.
 
+The events page includes a read-only Avilys preview for Vilnius music. It queries Avilys in pages of 20 and does not save events or images to the central database. Avilys timestamps are displayed as supplied because their timezone semantics are not yet verified. Importing, source-independent editing, duplicate handling and publication of Avilys events are not implemented yet.
+
 Import and detail jobs are recorded centrally and run while the dashboard is closed as long as the local Node server remains running. An expired job lease is marked interrupted when another job starts; completed pages remain saved. Each source retains its own pacing and retry behavior.
 
 Hostinger shows daily automated backups and lists `u334322641_d_staging` among databases available for backup. On 2026-11-17, a database backup shown as 2026-11-16 21:00 was downloaded and restored into a separate local MariaDB 11.4 schema: 17 tables, 100 events, 3,012 artists, 100 event sources and 100 image records were present. A local API returned the restored public catalogue. This did not test image recovery: the image directory is outside the API site's `public_html`, and its inclusion in Hostinger backups remains unverified. Confirm image backup coverage and test restoration before relying on it for recovery.
