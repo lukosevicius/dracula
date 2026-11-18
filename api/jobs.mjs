@@ -9,9 +9,9 @@ export function createJobs(pool) {
   return {
     async list(){const [rows]=await pool.execute('SELECT * FROM jobs ORDER BY id DESC LIMIT 20',[]);return rows;},
     async start(action,kind='vilnius-events',limit=0){
-      if(!['vilnius-events','musicbrainz','ai-evaluation'].includes(kind))throw fail(400,'Invalid job source.');
+      if(!['vilnius-events','avilys','musicbrainz','ai-evaluation'].includes(kind))throw fail(400,'Invalid job source.');
       const source=kind==='musicbrainz'?artistSource:eventSource;
-      if(kind==='musicbrainz'?(!['next','start','all'].includes(action)||(action!=='all'&&(!Number.isInteger(limit)||limit<1||limit>1000))):kind==='ai-evaluation'?action!=='analyze':!['next','start','sample','refresh','download-images','details','refresh-details','details-event','refresh-all-details'].includes(action))throw fail(400,'Invalid job action.');
+      if(kind==='musicbrainz'?(!['next','start','all'].includes(action)||(action!=='all'&&(!Number.isInteger(limit)||limit<1||limit>1000))):kind==='ai-evaluation'?action!=='analyze':kind==='avilys'?(action!=='import'||!Number.isInteger(limit)||limit<1||limit>200):!['next','start','sample','refresh','download-images','details','refresh-details','details-event','refresh-all-details'].includes(action))throw fail(400,'Invalid job action.');
       return locked(source,async conn=>{
         const [existing]=await conn.execute('SELECT * FROM job_leases WHERE source_key=? FOR UPDATE',[source]);
         const now=Date.now(),date=new Date(now).toISOString();

@@ -49,13 +49,16 @@ export function createCentralDashboard(api:CentralApi, userAgent='Seeker/0.1.0')
         if(request.method==='GET' && (!action || action==='details' || action==='matches')) {
           const result=await api.getEvent(id);
           if(!result){send(404,{error:'Event not found.'});return true;}
-          if(!result.vilnius_event || !Array.isArray(result.available_artists) || !Array.isArray(result.match_candidates)){send(503,{error:'Central event details are not available.'});return true;}
-          const event=result.vilnius_event;
+          if((!result.vilnius_event && !result.sources.length) || !Array.isArray(result.available_artists) || !Array.isArray(result.match_candidates)){send(503,{error:'Central event details are not available.'});return true;}
+          const source=result.sources[0] || {};
+          let sourceTimestamp:string|null=null;
+          if(source.source_key==='avilys' && typeof source.source_data_json==='string'){try{const data=JSON.parse(source.source_data_json);if(typeof data.startTime==='string')sourceTimestamp=data.startTime;}catch{/* malformed source metadata stays unavailable */}}
+          const event=result.vilnius_event || {...result.event,content_html:source.content_html,source_timestamp:sourceTimestamp};
           if(typeof event.title!=='string' || typeof event.content_html!=='string')throw new Error('Central event details are invalid.');
           const accepted=result.artist_decisions.filter(a=>a.decision==='accepted');
           const suggestions=suggestArtists({title:event.title,content_html:event.content_html},result.available_artists,new Set(result.artist_decisions.map(a=>a.artist_mbid)));
           const title=normalize(String(result.event.title || '')),venue=normalize(String(result.event.venue || ''));
-          const matches=result.match_candidates.filter(candidate=>title && normalize(candidate.title)===title).map(candidate=>({...candidate,venue_matches:Boolean(venue && candidate.venue && normalize(candidate.venue)===venue)})).sort((a,b)=>Number(b.venue_matches)-Number(a.venue_matches));
+          const matches=result.match_candidates.filter(candidate=>{const other=normalize(candidate.title);if(!title||!other)return false;const a=new Set(title.split(' ').filter(v=>v.length>2)),b=new Set(other.split(' ').filter(v=>v.length>2));const shared=[...a].filter(v=>b.has(v)).length;return other===title || (shared>=2 && shared/Math.max(a.size,b.size)>=0.6);}).map(candidate=>({...candidate,venue_matches:Boolean(venue && candidate.venue && normalize(candidate.venue)===venue)})).sort((a,b)=>Number(b.venue_matches)-Number(a.venue_matches));
           if(action==='matches')send(200,{matches});
           else send(200,{event:{...event,artist_links:accepted,artist_suggestions:suggestions},image:result.image || null,sources:result.sources,matches});
           return true;

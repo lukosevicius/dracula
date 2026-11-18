@@ -1,3 +1,4 @@
+import type {AvilysEvent} from './sources/avilys.js';
 import type { ArtistDecision, ArtistsDashboard, EventDetails, ReviewStatus } from './types.js';
 
 type Price = { price_text: string | null; price_type: 'free' | 'paid' | 'unknown' };
@@ -81,12 +82,12 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
       if(!response.ok)throw new Error(`Central API read failed (HTTP ${response.status}).`);
       const body=await response.json() as {jobs?:CentralJob[]};if(!Array.isArray(body.jobs))throw new Error('Central API returned invalid jobs.');return body.jobs;
     },
-    async startJob(action:string,source:'vilnius-events'|'musicbrainz'|'ai-evaluation'='vilnius-events',limit=0):Promise<{id:number;owner:string}> {
+    async startJob(action:string,source:'vilnius-events'|'avilys'|'musicbrainz'|'ai-evaluation'='vilnius-events',limit=0):Promise<{id:number;owner:string}> {
       const body=await post('/v1/admin/jobs/start',{action,source,limit});
       if(!Number.isSafeInteger(body.id)||typeof body.owner!=='string'||!/^[a-f0-9]{64}$/.test(body.owner))throw new Error('Central API returned an invalid job; check before retrying.');
       return {id:body.id as number,owner:body.owner};
     },
-    async updateJob(id:number,owner:string,status:'running'|'completed'|'failed',progress:{fetched:number;added:number;updated:number},error?:string,source:'vilnius-events'|'musicbrainz'|'ai-evaluation'='vilnius-events'):Promise<void>{
+    async updateJob(id:number,owner:string,status:'running'|'completed'|'failed',progress:{fetched:number;added:number;updated:number},error?:string,source:'vilnius-events'|'avilys'|'musicbrainz'|'ai-evaluation'='vilnius-events'):Promise<void>{
       validateId(id);await post(`/v1/admin/jobs/${id}`,{owner,status,progress,error,source});
     },
     async reserveVilniusRequest():Promise<number> {
@@ -94,6 +95,7 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
       if(!Number.isSafeInteger(body.waitMs) || Number(body.waitMs)<0 || Number(body.waitMs)>3000)throw new Error('Central API returned an invalid request reservation.');
       return Number(body.waitMs);
     },
+    async importAvilysPage(items:AvilysEvent[],job:{id:number;owner:string}):Promise<{added:number;updated:number}>{const body=await post('/v1/admin/imports/avilys/page',{items,job});if(!Number.isSafeInteger(body.added)||!Number.isSafeInteger(body.updated))throw new Error('Invalid import response; check before retrying.');return {added:Number(body.added),updated:Number(body.updated)};},
     async importVilniusPage(page:VilniusImportPage):Promise<{added:number;updated:number}> {
       const body=await post('/v1/admin/imports/vilnius-events/page',page);
       if(!Number.isSafeInteger(body.added) || !Number.isSafeInteger(body.updated)) throw new Error('Central API returned an invalid response; check the import before retrying.');

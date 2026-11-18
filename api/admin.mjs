@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { normalizeEventSearch } from './event-search.mjs';
 import { vilniusToday } from './catalogue.mjs';
 import { importVilniusPage } from './import-vilnius.mjs';
+import { importAvilysPage } from './import-avilys.mjs';
 import {createJobs} from './jobs.mjs';
 import {saveImage} from './images.mjs';
 import {enrichEvent} from './enrich.mjs';
@@ -24,14 +25,14 @@ export function createAdmin(pool, token, imageDir) {
     try {
       await conn.beginTransaction();
       try {
-        // Serialize edits to both copies of the source event.
-        const [rows] = await conn.execute("SELECT e.id,s.source_id FROM events e JOIN event_sources s ON s.event_id=e.id AND s.source_key='vilnius-events' WHERE e.id=? FOR UPDATE", [id]);
-        if (rows.length !== 1 || !/^\d+$/.test(String(rows[0].source_id))) throw error(404, 'Event not found.');
-        const sourceId = Number(rows[0].source_id);
-        if (!Number.isSafeInteger(sourceId) || sourceId < 1) throw error(409, 'Event source is inconsistent.');
-        const [source] = await conn.execute('SELECT source_id,event_date,event_end_date,event_time,venue,ticket_url,manual_fields FROM vilnius_events WHERE source_id=? FOR UPDATE', [sourceId]);
-        if (source.length !== 1) throw error(409, 'Event source is inconsistent.');
-        await fn(conn, sourceId, source[0]);
+        const [events] = await conn.execute('SELECT * FROM events WHERE id=? FOR UPDATE', [id]);
+        if(events.length!==1) throw error(404,'Event not found.');
+        const [vn] = await conn.execute("SELECT source_id FROM event_sources WHERE event_id=? AND source_key='vilnius-events'", [id]);
+        const sourceId=vn.length?Number(vn[0].source_id):null;
+        if(vn.length && (!Number.isSafeInteger(sourceId)||sourceId<1)) throw error(409,'Event source is inconsistent.');
+        const [source] = sourceId ? await conn.execute('SELECT source_id,event_date,event_end_date,event_time,venue,ticket_url,manual_fields FROM vilnius_events WHERE source_id=? FOR UPDATE',[sourceId]) : [events];
+        if(source.length!==1)throw error(409,'Event source is inconsistent.');
+        await fn(conn,sourceId,source[0]);
         await conn.commit();
       } catch (cause) { await conn.rollback(); throw cause; }
     } finally { conn.release(); }
@@ -64,6 +65,7 @@ export function createAdmin(pool, token, imageDir) {
     },
     saveImage:input=>saveImage(pool,imageDir,input),
     importVilniusPage: input => importVilniusPage(pool,input),
+    importAvilysPage: input => importAvilysPage(pool,input),
     async reserveVilniusRequest() {
       const conn=await pool.getConnection();
       try {
@@ -153,7 +155,7 @@ export function createAdmin(pool, token, imageDir) {
     async review(id, body) {
       if (!statuses.has(body?.review_status)) throw error(400, 'Invalid review status.');
       await withEvent(id, async (conn, sourceId) => {
-        await conn.execute('UPDATE vilnius_events SET review_status=? WHERE source_id=?', [body.review_status, sourceId]);
+        if(sourceId) await conn.execute('UPDATE vilnius_events SET review_status=? WHERE source_id=?', [body.review_status, sourceId]);
         await conn.execute('UPDATE events SET review_status=? WHERE id=?', [body.review_status, id]);
       });
     },
@@ -171,7 +173,7 @@ export function createAdmin(pool, token, imageDir) {
         const locked=new Set(parsed); const values=[date,end,time,venue,ticket];
         detailFields.forEach((field,index)=>{ if (values[index] !== existing[field]) locked.add(field); });
         const fields=JSON.stringify([...locked]);
-        await conn.execute('UPDATE vilnius_events SET event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=?,review_status=?,manual_fields=?,details_manual=? WHERE source_id=?', [...values,body.review_status,fields,locked.size?1:0,sourceId]);
+        if(sourceId) await conn.execute('UPDATE vilnius_events SET event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=?,review_status=?,manual_fields=?,details_manual=? WHERE source_id=?', [...values,body.review_status,fields,locked.size?1:0,sourceId]);
         await conn.execute('UPDATE events SET event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=?,review_status=?,manual_fields=? WHERE id=?', [...values,body.review_status,fields,id]);
       });
     },
@@ -180,7 +182,7 @@ export function createAdmin(pool, token, imageDir) {
       await withEvent(id, async (conn, sourceId) => {
         const [artists] = await conn.execute('SELECT mbid FROM artists WHERE mbid=?', [body.mbid]);
         if (!artists.length) throw error(404, 'Artist not found.');
-        for (const [table, key] of [['vilnius_event_artists', sourceId], ['event_artist_decisions', id]]) {
+        for (const [table, key] of [...(sourceId ? [['vilnius_event_artists', sourceId]] : []), ['event_artist_decisions', id]]) {
           await conn.execute(`DELETE FROM ${table} WHERE event_id=? AND artist_mbid=?`, [key, body.mbid]);
           if (body.decision !== 'remove') await conn.execute(`INSERT INTO ${table}(event_id,artist_mbid,decision) VALUES(?,?,?)`, [key, body.mbid, body.decision]);
         }
