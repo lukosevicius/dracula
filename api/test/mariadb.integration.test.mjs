@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { readFile, mkdtemp, writeFile, rm, copyFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import mysql from 'mysql2/promise';
@@ -8,12 +8,13 @@ import { createApp } from '../app.mjs';
 import { createAdmin } from '../admin.mjs';
 import { createCatalogue } from '../catalogue.mjs';
 import { importVilniusPage } from '../import-vilnius.mjs';
+import { migrate } from '../migrate.mjs';
 
 // This deliberately refuses existing data and never targets staging or production.
 test('MariaDB: authenticated edits, private reads and public pagination', {skip:process.env.RUN_MARIADB_INTEGRATION !== '1'}, async () => {
   const {MYSQL_TEST_HOST:host,MYSQL_TEST_PORT:port,MYSQL_TEST_USER:user,MYSQL_TEST_PASSWORD:password,MYSQL_TEST_DATABASE:database}=process.env;
   if (!host || !port || !user || !password || !database || !/^[A-Za-z0-9_]+_test$/.test(database)) throw new Error('Configure a disposable empty database ending in _test.');
-  const pool=mysql.createPool({host,port:Number(port),user,password,database,charset:'utf8mb4',connectionLimit:5});
+  const pool=mysql.createPool({host,port:Number(port),user,password,database,charset:'utf8mb4',connectionLimit:5,multipleStatements:true});
   let app, imageDir;
   try {
     const [tables]=await pool.query('SHOW FULL TABLES');
@@ -125,6 +126,25 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     assert.equal((await fetch(`${root}/v1/admin/ai/results/${aiList.results[0].id}/decision`,{method:'POST',headers,body:JSON.stringify({decision:'accepted'})})).status,200);
     assert.equal((await fetch(`${root}/v1/admin/jobs/${aiJob.id}`,{method:'POST',headers,body:JSON.stringify({source:'ai-evaluation',status:'completed',owner:aiJob.owner,progress:{fetched:1,added:1,updated:0,completed:1,total:1,failed:0,cost_usd:0.0001}})})).status,200);
     const [[aiProgress]]=await pool.execute('SELECT progress_json FROM jobs WHERE id=?',[aiJob.id]);assert.equal(JSON.parse(aiProgress.progress_json).cost_usd,0.0001);
+
+    // Exercise baseline, idempotence, checksum protection, and a partial DDL failure.
+    const migrationDir=await mkdtemp(join(tmpdir(),'dracula-migrations-'));
+    const migrationDb=await pool.getConnection();
+    try {
+      for (const name of ['001-auto-increment.sql','002-job-leases.sql','003-musicbrainz-jobs.sql']) await copyFile(new URL(`../migrations/${name}`,import.meta.url),join(migrationDir,name));
+      await assert.rejects(migrate(migrationDb,'up',migrationDir),/not baselined/);
+      await migrate(migrationDb,'baseline',migrationDir);
+      await writeFile(join(migrationDir,'004-test.sql'),'CREATE TABLE migration_test (id INT PRIMARY KEY);');
+      await migrate(migrationDb,'up',migrationDir);
+      await migrate(migrationDb,'up',migrationDir);
+      await writeFile(join(migrationDir,'004-test.sql'),'SELECT 1;');
+      await assert.rejects(migrate(migrationDb,'status',migrationDir),/Checksum mismatch/);
+      await writeFile(join(migrationDir,'004-test.sql'),'CREATE TABLE migration_test (id INT PRIMARY KEY);');
+      await writeFile(join(migrationDir,'005-failure.sql'),'CREATE TABLE migration_partial (id INT); INVALID SQL;');
+      await assert.rejects(migrate(migrationDb,'up',migrationDir));
+      await assert.rejects(migrate(migrationDb,'up',migrationDir),/is applying/);
+    } finally { migrationDb.release(); await rm(migrationDir,{recursive:true,force:true}); }
+
   } finally {
     if(app) await new Promise(resolve=>app.close(resolve));
     await pool.end();

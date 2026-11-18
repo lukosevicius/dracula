@@ -1,0 +1,75 @@
+name: Database migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'status, baseline existing schema, or apply pending migrations'
+        required: true
+        type: choice
+        options: [status, baseline, up]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dracula-production-migrations
+  cancel-in-progress: false
+
+jobs:
+  validate-ref:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require main
+        env:
+          SELECTED_REF: ${{ github.ref }}
+        run: test "$SELECTED_REF" = refs/heads/main
+  checks:
+    needs: validate-ref
+    uses: ./.github/workflows/checks.yml
+  migrate:
+    needs: checks
+    runs-on: ubuntu-latest
+    environment: production-api-migrations
+    env:
+      SSH_HOST: ${{ vars.HOSTINGER_SSH_HOST }}
+      SSH_PORT: ${{ vars.HOSTINGER_SSH_PORT }}
+      SSH_USER: ${{ vars.HOSTINGER_SSH_USER }}
+      SSH_FINGERPRINT: ${{ vars.HOSTINGER_SSH_FINGERPRINT }}
+      DB_USER: ${{ secrets.MIGRATION_DB_USER }}
+      DB_PASSWORD: ${{ secrets.MIGRATION_DB_PASSWORD }}
+      DB_NAME: ${{ secrets.MIGRATION_DB_NAME }}
+      ACTION: ${{ inputs.action }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - name: Install dependencies
+        working-directory: api
+        run: npm ci
+      - name: Run migration through Hostinger SSH tunnel
+        working-directory: api
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$SSH_HOST" =~ ^[a-zA-Z0-9.-]+$ ]]
+          [[ "$SSH_PORT" =~ ^[0-9]+$ ]] && (( SSH_PORT >= 1 && SSH_PORT <= 65535 ))
+          [[ "$SSH_USER" =~ ^[a-zA-Z0-9_-]+$ ]]
+          [[ "$SSH_FINGERPRINT" =~ ^SHA256:[a-zA-Z0-9+/]+$ ]]
+          [[ "$ACTION" == status || "$ACTION" == baseline || "$ACTION" == up ]]
+          test -n "$SSH_PRIVATE_KEY" && test -n "$DB_USER" && test -n "$DB_PASSWORD" && test -n "$DB_NAME"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/dracula_migrate"
+          chmod 600 "$HOME/.ssh/dracula_migrate"
+          ssh-keyscan -T 10 -p "$SSH_PORT" -t ed25519 "$SSH_HOST" > "$HOME/.ssh/known_hosts"
+          actual=$(ssh-keygen -lf "$HOME/.ssh/known_hosts" -E sha256 | awk '{print $2}')
+          test "$actual" = "$SSH_FINGERPRINT"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          ssh -f -N -M -S "$HOME/.ssh/dracula-tunnel" -L 127.0.0.1:13306:127.0.0.1:3306 -p "$SSH_PORT" -i "$HOME/.ssh/dracula_migrate" -o BatchMode=yes -o StrictHostKeyChecking=yes -o ExitOnForwardFailure=yes "$SSH_USER@$SSH_HOST"
+          trap 'ssh -S "$HOME/.ssh/dracula-tunnel" -O exit -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" >/dev/null 2>&1 || true' EXIT
+          DB_HOST=127.0.0.1 DB_PORT=13306 npm run migrate -- "$ACTION"

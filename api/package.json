@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test test/*.test.mjs",
-    "test:mariadb": "RUN_MARIADB_INTEGRATION=1 node --test test/mariadb.integration.test.mjs"
+    "test:mariadb": "RUN_MARIADB_INTEGRATION=1 node --test test/mariadb.integration.test.mjs",
+    "migrate": "node migrate.mjs"
   },
   "engines": {
     "node": ">=22.16.0"
