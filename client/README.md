@@ -17,4 +17,12 @@ The app reads event data from `https://api.dracula.lt` by default. Set `EXPO_PUB
 
 Run `npm run build` to build the web app. It uses single-page routing and writes an Apache rewrite rule for direct event URLs. Hostinger challenged image requests from a localhost preview, while images loaded on the live app domain with CDN security at Medium.
 
+## Web deployment
+
+The `Deploy web app` GitHub Actions workflow runs on pushes to `main` and can also be started manually for `main`. It runs the project checks, builds the web app, and uploads it to Hostinger over SSH. It uploads assets before `index.html` and retains older assets so existing visitors can continue using cached pages. It does not deploy the API, run database migrations, or modify event images.
+
+The workflow requires a `production-web` GitHub environment configured with these variables: `HOSTINGER_SSH_HOST`, `HOSTINGER_SSH_PORT`, `HOSTINGER_SSH_USER`, `HOSTINGER_WEB_ROOT` (the confirmed absolute directory for app.dracula.lt), and `HOSTINGER_SSH_FINGERPRINT` (the ED25519 host-key fingerprint shown in Hostinger). Add `HOSTINGER_SSH_PRIVATE_KEY` as an environment secret. The workflow checks the server's scanned host key against the configured fingerprint. Use a dedicated deployment key and understand which files its Hostinger account can access.
+
+Before the first deployment, verify the web root in Hostinger and create an empty `.dracula-client-deploy-target` file in that directory. The workflow refuses to upload without it. After the workflow and configuration are in place, open GitHub **Actions → Deploy web app → Run workflow**, select `main`, and inspect the result and the live site. A successful HTTP check only confirms that the homepage responds; also check event pages, images, and direct links. Old assets are not automatically deleted and may need planned cleanup later.
+
 The public app currently displays events marked Music that have an unknown date or have not ended. Check event classifications, artist matches, and image reuse permissions before a public release.
