@@ -1,0 +1,51 @@
+name: Publish API release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - '.github/workflows/checks.yml'
+      - '.github/workflows/deploy-api.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-api-release
+  cancel-in-progress: false
+
+jobs:
+  validate-ref:
+    name: Require main branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify selected branch
+        env:
+          SELECTED_REF: ${{ github.ref }}
+        run: test "$SELECTED_REF" = refs/heads/main
+
+  checks:
+    needs: validate-ref
+    uses: ./.github/workflows/checks.yml
+
+  publish:
+    name: Publish tested API revision
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Advance API deployment branch
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          # A non-force push prevents an older run from replacing a newer release.
+          git push origin "$RELEASE_SHA:refs/heads/api-deploy"
