@@ -1,0 +1,85 @@
+name: Deploy web app
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-web-production
+  cancel-in-progress: false
+
+jobs:
+  validate-ref:
+    name: Require main branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify selected branch
+        env:
+          SELECTED_REF: ${{ github.ref }}
+        run: test "$SELECTED_REF" = refs/heads/main
+
+  checks:
+    needs: validate-ref
+    uses: ./.github/workflows/checks.yml
+
+  deploy:
+    name: Deploy app.dracula.lt
+    needs: checks
+    runs-on: ubuntu-latest
+    environment: production-web
+    env:
+      EXPO_PUBLIC_API_URL: https://api.dracula.lt
+      DEPLOY_HOST: ${{ vars.HOSTINGER_SSH_HOST }}
+      DEPLOY_PORT: ${{ vars.HOSTINGER_SSH_PORT }}
+      DEPLOY_USER: ${{ vars.HOSTINGER_SSH_USER }}
+      DEPLOY_PATH: ${{ vars.HOSTINGER_WEB_ROOT }}
+      SSH_HOST_FINGERPRINT: ${{ vars.HOSTINGER_SSH_FINGERPRINT }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - name: Build web app
+        working-directory: client
+        run: |
+          npm ci
+          npm run build
+          test -s dist/index.html
+          test -s dist/.htaccess
+      - name: Configure SSH
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9.-]+$ ]]
+          [[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]] && (( DEPLOY_PORT >= 1 && DEPLOY_PORT <= 65535 ))
+          [[ "$DEPLOY_USER" =~ ^[a-zA-Z0-9_-]+$ ]]
+          [[ "$DEPLOY_PATH" =~ ^/[a-zA-Z0-9_./-]+$ ]]
+          [[ "$DEPLOY_PATH" != *..* && "$DEPLOY_PATH" != / ]]
+          test -n "$SSH_PRIVATE_KEY"
+          [[ "$SSH_HOST_FINGERPRINT" =~ ^SHA256:[a-zA-Z0-9+/]+$ ]]
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/dracula_deploy"
+          ssh-keyscan -T 10 -p "$DEPLOY_PORT" -t ed25519 "$DEPLOY_HOST" > "$HOME/.ssh/known_hosts"
+          actual_fingerprint=$(ssh-keygen -lf "$HOME/.ssh/known_hosts" -E sha256 | awk '{print $2}')
+          test "$actual_fingerprint" = "$SSH_HOST_FINGERPRINT"
+          chmod 600 "$HOME/.ssh/dracula_deploy" "$HOME/.ssh/known_hosts"
+      - name: Upload assets and publish the app
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote="$DEPLOY_USER@$DEPLOY_HOST"
+          ssh_options="-p $DEPLOY_PORT -i $HOME/.ssh/dracula_deploy -o BatchMode=yes -o StrictHostKeyChecking=yes"
+          # The marker must be created deliberately in the confirmed web root.
+          ssh $ssh_options "$remote" "test -f '$DEPLOY_PATH/.dracula-client-deploy-target'"
+          # Retain old assets for visitors with a previously cached index page.
+          # Publish index.html last so it never references files not yet uploaded.
+          rsync -az --delay-updates --exclude=/index.html -e "ssh $ssh_options" client/dist/ "$remote:$DEPLOY_PATH/"
+          rsync -az --delay-updates -e "ssh $ssh_options" client/dist/index.html "$remote:$DEPLOY_PATH/index.html"
+      - name: Check the public app
+        run: curl --fail --silent --show-error --location --retry 3 https://app.dracula.lt/ --output /dev/null
