@@ -155,6 +155,7 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
 
     // Recreate the pre-city schema to exercise the real upgrade against existing imports.
     await pool.query('ALTER TABLE events DROP COLUMN city');
+    await pool.query('DROP TABLE event_images');
     await pool.query(`INSERT INTO events(id,title,review_status,manual_fields,created_at,updated_at)
       VALUES(10001,'Kaunas fixture','unsure','[]','now','now'),(10002,'Unknown city fixture','unsure','[]','now','now');
       INSERT INTO event_sources(event_id,source_key,source_id,source_url,content_html,source_data_json)
@@ -171,11 +172,11 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
       const [cities]=await migrationDb.query<RowDataPacket[]>('SELECT city FROM events WHERE id IN (?) ORDER BY id',[[1,avilysEvent.id,10001,10002]]);
       assert.deepEqual(cities.map(row=>row.city),['Vilnius','Vilnius','Kaunas',null]);
 
-      for (const name of ['001-auto-increment.sql','002-job-leases.sql','003-musicbrainz-jobs.sql','004-event-city.sql']) await copyFile(new URL(`../migrations/${name}`,import.meta.url),join(migrationDir,name));
+      for (const name of ['001-auto-increment.sql','002-job-leases.sql','003-musicbrainz-jobs.sql','004-event-city.sql','005-event-images.sql']) await copyFile(new URL(`../migrations/${name}`,import.meta.url),join(migrationDir,name));
       await writeFile(join(migrationDir,'004-event-city.sql'),'SELECT 1;');
       await assert.rejects(migrate(migrationDb,'status',migrationDir),/Checksum mismatch/);
       await copyFile(new URL('../migrations/004-event-city.sql',import.meta.url),join(migrationDir,'004-event-city.sql'));
-      await writeFile(join(migrationDir,'005-failure.sql'),'CREATE TABLE migration_partial (id INT); INVALID SQL;');
+      await writeFile(join(migrationDir,'006-failure.sql'),'CREATE TABLE migration_partial (id INT); INVALID SQL;');
       await assert.rejects(migrate(migrationDb,'up',migrationDir));
       await assert.rejects(migrate(migrationDb,'up',migrationDir),/is applying/);
     } finally { migrationDb.release(); await rm(migrationDir,{recursive:true,force:true}); }

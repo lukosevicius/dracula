@@ -33,7 +33,7 @@ export function createCentralJobs(api:Api,userAgent:string,run:typeof runCentral
             await pending;if(failure)throw failure;
             const saved=await api.importAvilysPage(items,job);
             progress={fetched:progress.fetched+items.length,added:progress.added+saved.added,updated:progress.updated+saved.updated};heartbeat();
-            for(const item of items){await pending;if(failure)throw failure;try{if(await ensureImage(item,job)==='downloaded')progress.images=(progress.images||0)+1;}catch(error){progress.image_failed=(progress.image_failed||0)+1;console.error(`Avilys image download failed for event ${item.id}:`,error instanceof Error?error.message:String(error));}heartbeat();}
+            for(const item of items){await pending;if(failure)throw failure;try{if(await ensureImage(item,job)==='downloaded')progress.images=(progress.images||0)+1;}catch(error){progress.image_failed=(progress.image_failed||0)+1;console.error(`Avilys image download failed for event ${item.id}:`,error instanceof Error?error.message:String(error));}}
             if(page*batch.pageSize>=batch.total)break;
           }
           result=progress;

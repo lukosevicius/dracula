@@ -13,6 +13,7 @@ test('Avilys imports are idempotent, reviewable, and preserve edits on refresh',
     CREATE TABLE job_leases(source_key TEXT,job_id INTEGER,owner_hash TEXT,expires_at INTEGER);
     CREATE TABLE vilnius_events(source_id INTEGER,featured_media INTEGER);
     CREATE TABLE vilnius_images(media_id INTEGER,local_name TEXT);
+    CREATE TABLE event_images(event_id INTEGER,local_name TEXT);
     CREATE TABLE event_prices(event_id INTEGER,price_text TEXT,price_type TEXT,manual INTEGER,checked_at TEXT);
     CREATE TABLE event_artist_decisions(event_id INTEGER,artist_mbid TEXT,decision TEXT);
     CREATE TABLE artists(mbid TEXT,name TEXT);`);
