@@ -39,6 +39,14 @@ This workflow publishes the release branch; Hostinger's GitHub integration must 
 
 Authenticated endpoints cover the private event list, editor data, image reads and uploads, reviews, details, artist decisions, manual prices, assistant-review confirmation, job leases, MusicBrainz and Vilnius Events imports, and AI evaluation results. They are disabled unless a server-side `ADMIN_TOKEN` is configured, require a bearer token, and update related records in a transaction. Use a long, randomly generated URL-safe ASCII token, never expose it in Expo or browser code, and require HTTPS outside local development. Dedicated rate limiting for administrative requests is not yet implemented; protect and rotate the token if exposed.
 
+## User authentication
+
+User authentication is separate from the Seeker admin token. It remains disabled unless both `GOOGLE_CLIENT_ID` and `AUTH_ORIGINS` are set, and requires migrations `006` and `007`. Set `AUTH_ORIGINS=https://app.dracula.lt` in production. For a local API use `AUTH_ORIGINS=http://localhost:8081` and a localhost `PUBLIC_BASE_URL`. Do not add local development origins to production. Configure the same Google web client ID in the API and the future web client.
+
+The web client must send requests with credentials. It calls `POST /v1/auth/challenge` and passes the returned nonce to Google Identity Services, then posts `{ "credential": "<Google ID token>" }` as JSON to `/v1/auth/google`. A short-lived HttpOnly challenge cookie binds the nonce to the browser; the API verifies the Google ID token and consumes the challenge once. A successful login sets an HttpOnly, host-only session cookie, secure when the API origin uses HTTPS. `GET /v1/me` reads the profile, `PATCH /v1/me` accepts `{ "displayName": "..." }`, and `POST /v1/auth/logout` revokes the current session. Mutating routes require an allowed `Origin`; authenticated responses are not cached. The Google client secret is not needed for this flow.
+
+This is backend groundwork: the client UI and real Google sign-in have not yet been verified. Account deletion, production abuse controls and privacy information remain to be implemented before opening accounts to users.
+
 The hosted image files are stored outside the deployment directory. One image was retrieved successfully after a redeployment; the files have not been individually verified against a checksum manifest. Verify that Hostinger backups include the image directory and test restoration.
 
 ## Database migrations

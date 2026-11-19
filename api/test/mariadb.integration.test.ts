@@ -187,11 +187,51 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
       const [[remainingSessions]]=await migrationDb.execute<RowDataPacket[]>('SELECT COUNT(*) AS n FROM user_sessions WHERE user_id=?',[userId]);
       assert.equal(remainingIdentities.n,0); assert.equal(remainingSessions.n,0);
 
-      for (const name of ['001-auto-increment.sql','002-job-leases.sql','003-musicbrainz-jobs.sql','004-event-city.sql','005-event-images.sql','006-user-accounts.sql']) await copyFile(new URL(`../migrations/${name}`,import.meta.url),join(migrationDir,name));
+      // Exercise real sessions and nonce consumption with a stubbed Google verifier.
+      const { AuthService } = await import('../dist/auth/auth.service.js');
+      const { DatabaseService } = await import('../dist/database/database.service.js');
+      const { loadConfig } = await import('../dist/config/config.js');
+      const authConfig=loadConfig({DB_HOST:host,DB_PORT:port,DB_USER:user,DB_PASSWORD:password,DB_NAME:database,PUBLIC_BASE_URL:'http://localhost:3000',IMAGE_DIR:imageDir,GOOGLE_CLIENT_ID:'123-test.apps.googleusercontent.com',AUTH_ORIGINS:'http://localhost:8081'});
+      const authModule=await Test.createTestingModule({imports:[AppModule]}).overrideProvider(APP_CONFIG).useValue(authConfig).overrideProvider(DatabaseService).useValue({pool}).compile();
+      const authApp=authModule.createNestApplication({logger:false,bodyParser:false});
+      const authService=authApp.get(AuthService);
+      let googleNonce='';
+      Object.assign(authService, {google:{verifyIdToken:async ({idToken}: {idToken:string})=>{
+        if(idToken!=='valid') throw new Error('Invalid token');
+        return {getPayload:()=>({sub:'google-test-subject',name:'Test name',nonce:googleNonce})};
+      }}});
+      await authApp.listen(0,'127.0.0.1');
+      try {
+        const authRoot=`http://127.0.0.1:${authApp.getHttpServer().address().port}`;
+        const origin='http://localhost:8081';
+        const challenge=async()=>{const response=await fetch(`${authRoot}/v1/auth/challenge`,{method:'POST',headers:{origin}});assert.equal(response.status,200);assert.equal(response.headers.get('access-control-allow-origin'),origin);assert.equal(response.headers.get('access-control-allow-credentials'),'true');assert.equal(response.headers.get('cache-control'),'no-store');const result=await response.json();googleNonce=result.nonce;return response.headers.getSetCookie()[0].split(';')[0];};
+        const login=(challengeCookie:string,credential='valid',requestOrigin=origin)=>fetch(`${authRoot}/v1/auth/google`,{method:'POST',headers:{origin:requestOrigin,cookie:challengeCookie,'content-type':'application/json'},body:JSON.stringify({credential})});
+        assert.equal((await fetch(`${authRoot}/v1/auth/challenge`,{method:'POST',headers:{origin:'https://attacker.example'}})).status,403);
+        const preflight=await fetch(`${authRoot}/v1/me`,{method:'OPTIONS',headers:{origin,'access-control-request-method':'PATCH'}});
+        assert.equal(preflight.status,204);assert.equal(preflight.headers.get('access-control-allow-origin'),origin);assert.equal(preflight.headers.get('access-control-allow-credentials'),'true');
+        const challengeCookie=await challenge();
+        assert.equal((await login(challengeCookie,'invalid')).status,401);
+        const signedIn=await login(challengeCookie);assert.equal(signedIn.status,200);
+        const authCookies=signedIn.headers.getSetCookie();
+        const sessionCookie=authCookies.find(value=>value.startsWith('dracula_session='));assert.ok(sessionCookie);assert.match(sessionCookie,/HttpOnly/);assert.match(sessionCookie,/SameSite=Lax/);
+        const session=sessionCookie.split(';')[0];
+        assert.equal((await login(challengeCookie)).status,401);
+        assert.equal((await fetch(`${authRoot}/v1/me`,{headers:{cookie:session}})).status,200);
+        const profileBody=JSON.stringify({displayName:'Edited name'});
+        assert.equal((await fetch(`${authRoot}/v1/me`,{method:'PATCH',headers:{origin:'https://attacker.example',cookie:session,'content-type':'application/json'},body:profileBody})).status,403);
+        const profile=await fetch(`${authRoot}/v1/me`,{method:'PATCH',headers:{origin,cookie:session,'content-type':'application/json'},body:profileBody});
+        assert.equal(profile.status,200);assert.equal((await profile.json()).user.displayName,'Edited name');
+        assert.equal((await fetch(`${authRoot}/v1/auth/logout`,{method:'POST',headers:{origin,cookie:session}})).status,200);
+        assert.equal((await fetch(`${authRoot}/v1/me`,{headers:{cookie:session}})).status,401);
+        const expired=await challenge();await pool.query('UPDATE auth_challenges SET expires_at=DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 1 SECOND)');
+        assert.equal((await login(expired)).status,401);
+      } finally {await authApp.close();}
+
+      for (const name of ['001-auto-increment.sql','002-job-leases.sql','003-musicbrainz-jobs.sql','004-event-city.sql','005-event-images.sql','006-user-accounts.sql','007-auth-challenges.sql']) await copyFile(new URL(`../migrations/${name}`,import.meta.url),join(migrationDir,name));
       await writeFile(join(migrationDir,'004-event-city.sql'),'SELECT 1;');
       await assert.rejects(migrate(migrationDb,'status',migrationDir),/Checksum mismatch/);
       await copyFile(new URL('../migrations/004-event-city.sql',import.meta.url),join(migrationDir,'004-event-city.sql'));
-      await writeFile(join(migrationDir,'007-failure.sql'),'CREATE TABLE migration_partial (id INT); INVALID SQL;');
+      await writeFile(join(migrationDir,'008-failure.sql'),'CREATE TABLE migration_partial (id INT); INVALID SQL;');
       await assert.rejects(migrate(migrationDb,'up',migrationDir));
       await assert.rejects(migrate(migrationDb,'up',migrationDir),/is applying/);
     } finally { migrationDb.release(); await rm(migrationDir,{recursive:true,force:true}); }
