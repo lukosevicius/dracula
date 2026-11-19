@@ -30,18 +30,25 @@ export function createCentralAvilysImages(api:Api,userAgent:string,request:typeo
   return async(event:AvilysEvent,job:{id:number;owner:string}):Promise<'existing'|'downloaded'|'missing'>=>{
     if(!Number.isSafeInteger(event.id)||event.id<1)throw new Error('Invalid Avilys event ID.');
     if(!event.imageUrl)return 'missing';
-    const url=await validateImageUrl(event.imageUrl);
-    const existing=await api.getAvilysImageInfo(event.id);if(existing?.source_url===url.href)return 'existing';
+    const sourceUrl=await validateImageUrl(event.imageUrl);
+    const existing=await api.getAvilysImageInfo(event.id);if(existing?.source_url===sourceUrl.href)return 'existing';
     await pause(250);
-    let response:Response;
-    try{response=await request(url,{headers:{accept:'image/*','user-agent':userAgent},redirect:'error',signal:AbortSignal.timeout(20000)});}catch{throw new Error('Could not download the Avilys image.');}
+    let url=sourceUrl,response:Response,redirects=0;
+    while(true){
+      try{response=await request(url,{headers:{accept:'image/*','user-agent':userAgent},redirect:'manual',signal:AbortSignal.timeout(20000)});}catch{throw new Error('Could not download the Avilys image.');}
+      if(response.status<300||response.status>=400)break;
+      const location=response.headers.get('location');await response.body?.cancel().catch(()=>{});
+      if(!location||redirects>=3)throw new Error('Avilys image redirect is invalid or exceeded the limit.');
+      try{url=await validateImageUrl(new URL(location,url).href);}catch{throw new Error('Avilys image redirect is invalid.');}
+      redirects++;
+    }
     if(!response.ok)throw new Error(`Avilys image returned HTTP ${response.status}.`);
     const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>limit)throw new Error('Avilys image exceeds 12 MB.');
     const reader=response.body?.getReader();if(!reader)throw new Error('Avilys image response was empty.');
     const chunks:Uint8Array[]=[];let size=0;while(true){const part=await reader.read();if(part.done)break;size+=part.value.length;if(size>limit){await reader.cancel();throw new Error('Avilys image exceeds 12 MB.');}chunks.push(part.value);}
     if(!size)throw new Error('Avilys image response was empty.');
     const bytes=Buffer.concat(chunks),mime=imageMime(bytes);if(!mime)throw new Error('Avilys returned unsupported image content.');
-    await api.uploadAvilysImage({source_id:event.id,source_url:url.href,mime_type:mime,width:null,height:null,data:bytes.toString('base64'),job});
+    await api.uploadAvilysImage({source_id:event.id,source_url:sourceUrl.href,mime_type:mime,width:null,height:null,data:bytes.toString('base64'),job});
     return 'downloaded';
   };
 }
