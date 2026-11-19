@@ -4,16 +4,17 @@
   "type": "module",
   "scripts": {
     "start": "node dist/main.js",
-    "test": "npm run build && node --test test/*.test.mjs",
-    "test:mariadb": "npm run build:nest && RUN_MARIADB_INTEGRATION=1 node --test test/mariadb.integration.test.mjs",
-    "migrate": "node migrate.mjs",
+    "test": "npm run build && node --import tsx --test test/*.test.ts",
+    "test:mariadb": "npm run build && RUN_MARIADB_INTEGRATION=1 node --import tsx --test test/mariadb.integration.test.ts",
+    "migrate": "node dist/migrate.js",
     "build:nest": "npm run build",
     "typecheck:nest": "tsc -p tsconfig.json --noEmit",
     "dev:nest": "tsx watch src/main.ts",
     "start:nest": "node dist/main.js",
-    "test:nest": "npm run build:nest && node --test test-nest/*.test.mjs",
+    "test:nest": "npm run build && node --import tsx --test test-nest/*.test.ts",
     "build": "tsc -p tsconfig.json",
-    "test:production": "node test/production-smoke.mjs"
+    "test:production": "node --import tsx test/production-smoke.ts",
+    "premigrate": "npm run build"
   },
   "engines": {
     "node": ">=22.16.0"

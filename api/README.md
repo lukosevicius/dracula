@@ -2,7 +2,7 @@
 
 ## NestJS foundation
 
-The deployed NestJS app exposes `GET /health`, public event and image endpoints, and authenticated Seeker routes, and checks the MariaDB connection at startup. NestJS uses TypeScript implementations for admin operations, imports, jobs, image uploads, enrichment and AI. The independently runnable JavaScript migration runner remains in use.
+The deployed NestJS app exposes `GET /health`, public event and image endpoints, and authenticated Seeker routes, and checks the MariaDB connection at startup. NestJS uses TypeScript implementations for admin operations, imports, jobs, image uploads, enrichment and AI. The TypeScript migration runner is compiled with the API and runs independently.
 
 Configure the environment variables in `.env.example` before starting the NestJS app. From `api/`:
 
@@ -11,6 +11,8 @@ Configure the environment variables in `.env.example` before starting the NestJS
 - `npm run dev:nest` runs the NestJS app with source watching.
 - `npm run typecheck:nest` checks TypeScript without emitting files.
 - `npm run test:nest` builds and runs the NestJS checks, including public and admin route contract checks and admin edits using isolated fixtures. For a real MariaDB connection, use `npm run test:mariadb` as described below.
+
+The TypeScript test files run through `tsx`; `typecheck:nest` checks the API and migration runner, but does not currently type-check the test files.
 
 The NestJS health endpoint reports process health, not ongoing database connectivity. The database connection is checked at startup and the pool is closed on application shutdown.
 

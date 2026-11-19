@@ -4,7 +4,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {createHash} from 'node:crypto';
 import {importAvilysPage} from '../dist/imports/avilys.js';
 import {createAdmin} from '../dist/admin/admin.js';
-import {createCatalogue} from '../test-support/nest.mjs';
+import {createCatalogue} from '../test-support/nest.ts';
 
 test('Avilys imports are idempotent, reviewable, and preserve edits on refresh',async()=>{
   const db=new DatabaseSync(':memory:');

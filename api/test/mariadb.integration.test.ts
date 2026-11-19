@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import mysql from 'mysql2/promise';
 import { importVilniusPage } from '../dist/imports/vilnius.js';
-import { migrate } from '../migrate.mjs';
+import { migrate } from '../dist/migrate.js';
 
 // This deliberately refuses existing data and never targets staging or production.
 test('MariaDB: authenticated edits, private reads and public pagination', {skip:process.env.RUN_MARIADB_INTEGRATION !== '1'}, async () => {

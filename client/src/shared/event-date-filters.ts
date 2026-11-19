@@ -1,4 +1,4 @@
-// Generated from Seeker by scripts/sync-date-filters.mjs. Do not edit.
+// Generated from Seeker by scripts/sync-date-filters.ts. Do not edit.
 import type { DateFilter, EventDetails } from '../../../seeker/types';
 
 export function vilniusDate(now = new Date()) {

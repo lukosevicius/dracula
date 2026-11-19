@@ -29,26 +29,29 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "@types/node": "26.6.6"
   },
   "scripts": {
     "start": "expo start",
-    "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "prestart": "node ./scripts/sync-date-filters.mjs",
-    "preweb": "node ./scripts/sync-date-filters.mjs",
-    "preios": "node ./scripts/sync-date-filters.mjs",
-    "preandroid": "node ./scripts/sync-date-filters.mjs",
-    "pretypecheck": "node ./scripts/sync-date-filters.mjs",
-    "prebuild": "node ./scripts/sync-date-filters.mjs",
-    "build": "expo export --platform web --clear && node ./scripts/configure-web-output.mjs"
+    "prestart": "node --experimental-strip-types ./scripts/sync-date-filters.ts",
+    "preweb": "node --experimental-strip-types ./scripts/sync-date-filters.ts",
+    "preios": "node --experimental-strip-types ./scripts/sync-date-filters.ts",
+    "preandroid": "node --experimental-strip-types ./scripts/sync-date-filters.ts",
+    "pretypecheck": "node --experimental-strip-types ./scripts/sync-date-filters.ts",
+    "prebuild": "node --experimental-strip-types ./scripts/sync-date-filters.ts",
+    "build": "expo export --platform web --clear && node --experimental-strip-types ./scripts/configure-web-output.ts"
   },
   "private": true,
   "overrides": {
     "@expo/cli": "56.1.15"
+  },
+  "engines": {
+    "node": ">=22.16.0"
   }
 }

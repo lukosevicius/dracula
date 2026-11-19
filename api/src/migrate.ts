@@ -3,12 +3,20 @@ import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join } from 'node:path';
+import type { Connection, RowDataPacket } from 'mysql2/promise';
+
+type Migration = { name: string; sql: string; checksum: string };
+interface MigrationRow extends RowDataPacket { name: string; checksum: string; state: string }
+interface CountRow extends RowDataPacket { n: number }
+interface LockRow extends RowDataPacket { acquired: number }
+interface ColumnRow extends RowDataPacket { table_name: string; column_name: string; data_type: string; is_nullable: string; extra: string; column_key: string }
+interface ForeignKeyRow extends RowDataPacket { column_name: string; referenced_table_name: string; referenced_column_name: string }
 
 const historical = ['001-auto-increment.sql', '002-job-leases.sql', '003-musicbrainz-jobs.sql'];
 const historicalChecksums = ['6f147fe566d9b0d504393a4b971e37d2eccad12ee406869f78642a7338b73024', '2db942ba3943f03a7315c5d15ee8600e3ce2f22838141260560210fd1fc77648', '91ab4c090488c7fb62a56c57e00183263fdeb95ba42a0740ebf82cfe6471088c'];
 const table = 'api_schema_migrations';
 
-export async function loadMigrations(directory = fileURLToPath(new URL('./migrations/', import.meta.url))) {
+export async function loadMigrations(directory = fileURLToPath(new URL('../migrations/', import.meta.url))) {
   const names = (await readdir(directory)).filter(name => name.endsWith('.sql')).sort();
   const seen = new Set();
   return Promise.all(names.map(async name => {
@@ -20,20 +28,20 @@ export async function loadMigrations(directory = fileURLToPath(new URL('./migrat
   }));
 }
 
-async function exists(db) {
-  const [rows] = await db.query('SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?', [table]);
+async function exists(db: Connection) {
+  const [rows] = await db.query<CountRow[]>('SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?', [table]);
   return Number(rows[0].n) === 1;
 }
-async function records(db) {
+async function records(db: Connection): Promise<MigrationRow[]> {
   if (!await exists(db)) return [];
-  const [rows] = await db.query(`SELECT name, checksum, state FROM ${table} ORDER BY name`);
+  const [rows] = await db.query<MigrationRow[]>(`SELECT name, checksum, state FROM ${table} ORDER BY name`);
   return rows;
 }
-function validate(migrations, rows) {
+function validate(migrations: Migration[], rows: MigrationRow[]) {
   const byName = new Map(migrations.map(m => [m.name, m]));
   for (const row of rows) {
     if (!byName.has(row.name)) throw new Error(`Applied migration ${row.name} is missing from this checkout`);
-    if (byName.get(row.name).checksum !== row.checksum) throw new Error(`Checksum mismatch: ${row.name}`);
+    if (byName.get(row.name)?.checksum !== row.checksum) throw new Error(`Checksum mismatch: ${row.name}`);
     if (row.state !== 'applied') throw new Error(`Migration ${row.name} is ${row.state}; inspect and recover manually before retrying`);
   }
   const applied = new Set(rows.map(r => r.name));
@@ -43,9 +51,9 @@ function validate(migrations, rows) {
     else if (gap) throw new Error(`Out-of-order migration history at ${migration.name}`);
   }
 }
-async function verifyHistoricalSchema(db) {
+async function verifyHistoricalSchema(db: Connection) {
   const idTables = ['events', 'event_sources', 'jobs', 'ai_evaluations', 'import_runs', 'vilnius_event_runs'];
-  const [columns] = await db.query("SELECT table_name, column_name, data_type, is_nullable, extra, column_key FROM information_schema.columns WHERE table_schema=DATABASE() AND ((column_name='id' AND table_name IN (?)) OR table_name='job_leases')", [idTables]);
+  const [columns] = await db.query<ColumnRow[]>("SELECT table_name, column_name, data_type, is_nullable, extra, column_key FROM information_schema.columns WHERE table_schema=DATABASE() AND ((column_name='id' AND table_name IN (?)) OR table_name='job_leases')", [idTables]);
   for (const name of idTables) {
     const col = columns.find(c => c.table_name === name && c.column_name === 'id');
     if (!col || col.data_type !== 'bigint' || col.is_nullable !== 'NO' || !col.extra.toLowerCase().includes('auto_increment')) throw new Error(`Historical schema check failed: ${name}.id`);
@@ -55,20 +63,20 @@ async function verifyHistoricalSchema(db) {
     const col = columns.find(c => c.table_name === 'job_leases' && c.column_name === name);
     if (!col || col.data_type !== type || col.is_nullable !== nullable || (name === 'source_key' && col.column_key !== 'PRI')) throw new Error(`Historical schema check failed: job_leases.${name}`);
   }
-  const [fks] = await db.query("SELECT column_name, referenced_table_name, referenced_column_name FROM information_schema.key_column_usage WHERE table_schema=DATABASE() AND table_name='job_leases' AND referenced_table_name IS NOT NULL");
+  const [fks] = await db.query<ForeignKeyRow[]>("SELECT column_name, referenced_table_name, referenced_column_name FROM information_schema.key_column_usage WHERE table_schema=DATABASE() AND table_name='job_leases' AND referenced_table_name IS NOT NULL");
   for (const [column, target] of Object.entries({job_id:'jobs',run_id:'vilnius_event_runs',import_run_id:'import_runs'})) {
     if (!fks.some(f => f.column_name === column && f.referenced_table_name === target && f.referenced_column_name === 'id')) throw new Error(`Historical schema check failed: job_leases.${column} foreign key`);
   }
 }
-async function createTracking(db) {
+async function createTracking(db: Connection) {
   await db.query(`CREATE TABLE IF NOT EXISTS ${table} (name VARCHAR(191) PRIMARY KEY, checksum CHAR(64) NOT NULL, state VARCHAR(16) NOT NULL, applied_at TIMESTAMP NULL DEFAULT NULL) ENGINE=InnoDB`);
 }
 
-export async function migrate(db, action, directory) {
+export async function migrate(db: Connection, action: string, directory?: string) {
   if (!['status','baseline','up'].includes(action)) throw new Error('Choose status, baseline, or up');
   const migrations = await loadMigrations(directory);
   if (historical.some((name, i) => migrations[i]?.name !== name || migrations[i]?.checksum !== historicalChecksums[i])) throw new Error('Historical migrations are missing, changed, or out of order');
-  const [[lock]] = await db.query("SELECT GET_LOCK(CONCAT('dracula-api-migrate:', DATABASE()), 0) AS acquired");
+  const [[lock]] = await db.query<LockRow[]>("SELECT GET_LOCK(CONCAT('dracula-api-migrate:', DATABASE()), 0) AS acquired");
   if (Number(lock.acquired) !== 1) throw new Error('Another migration is running');
   try {
     let rows = await records(db);
@@ -109,4 +117,4 @@ async function main() {
   const db = await mysql.createConnection({host:DB_HOST, port:Number(DB_PORT), user:DB_USER, password:DB_PASSWORD, database:DB_NAME, multipleStatements:true});
   try { await migrate(db, action); } finally { await db.end(); }
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch(error => { console.error(error.message); process.exitCode = 1; });
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch((error: unknown) => { console.error(error instanceof Error ? error.message : error); process.exitCode = 1; });
