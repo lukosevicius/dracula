@@ -44,6 +44,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run typecheck:nest
+      - run: npm run typecheck:tests
       - run: npm run test:nest
 
   mariadb:

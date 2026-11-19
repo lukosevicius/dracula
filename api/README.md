@@ -10,9 +10,10 @@ Configure the environment variables in `.env.example` before starting the NestJS
 - `npm start` runs the built NestJS app; build first.
 - `npm run dev:nest` runs the NestJS app with source watching.
 - `npm run typecheck:nest` checks TypeScript without emitting files.
+- `npm run typecheck:tests` builds API declarations and strictly checks the TypeScript test files against them.
 - `npm run test:nest` builds and runs the NestJS checks, including public and admin route contract checks and admin edits using isolated fixtures. For a real MariaDB connection, use `npm run test:mariadb` as described below.
 
-The TypeScript test files run through `tsx`; `typecheck:nest` checks the API and migration runner, but does not currently type-check the test files.
+The TypeScript test files run through `tsx` and are checked separately using `typecheck:tests`.
 
 The NestJS health endpoint reports process health, not ongoing database connectivity. The database connection is checked at startup and the pool is closed on application shutdown.
 

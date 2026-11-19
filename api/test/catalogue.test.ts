@@ -21,7 +21,7 @@ function fixture() {
     INSERT INTO vilnius_events VALUES(1,5); INSERT INTO vilnius_images VALUES(5,'5.jpg');
     INSERT INTO event_prices VALUES(1,'Nemokama','free'); INSERT INTO artists VALUES('artist-1','Artist');
     INSERT INTO event_artist_decisions VALUES(1,'artist-1','accepted');`);
-  return { db, catalogue:createCatalogue({execute:async (sql,params) => [db.prepare(sql).all(...params)]},'https://api.example.com') };
+  return { db, catalogue:createCatalogue({execute:async (sql: string,params: import('node:sqlite').SQLInputValue[]) => [db.prepare(sql).all(...params)]},'https://api.example.com') };
 }
 
 test('catalogue retains public details, prices and accepted artists, with bounded pages', async () => {
@@ -45,7 +45,7 @@ test('catalogue retains public details, prices and accepted artists, with bounde
 
 test('filtered pages apply date ranges before pagination', async () => {
   const {db,catalogue}=fixture();
-  const page=(filter,from='',to='',offset=0)=>catalogue.page({filter,from,to,offset,limit:1},'2026-11-15');
+  const page=(filter: import('../dist/catalogue/catalogue.service.js').DateFilter,from='',to='',offset=0)=>catalogue.page({filter,from,to,offset,limit:1},'2026-11-15');
   try {
     assert.deepEqual((await page('upcoming')).items.map(e=>e.id),[1]);
     assert.deepEqual((await page('unknown')).items.map(e=>e.id),[2]);
@@ -61,9 +61,9 @@ test('filtered pages apply date ranges before pagination', async () => {
 test('HTTP routes reject invalid pagination and never expose private events', async () => {
   const {db,catalogue}=fixture();
   // Fix the date so this test is independent of when it runs.
-  const fixed={list:(after,limit)=>catalogue.list(after,limit,'2026-11-15'),page:options=>catalogue.page(options,'2026-11-15'),get:id=>catalogue.get(id,'2026-11-15'),hasImage:name=>catalogue.hasImage(name,'2026-11-15')};
+  const fixed={list:(after: number,limit: number)=>catalogue.list(after,limit,'2026-11-15'),page:(options: import('../dist/catalogue/catalogue.service.js').PageOptions)=>catalogue.page(options,'2026-11-15'),get:(id: number)=>catalogue.get(id,'2026-11-15'),hasImage:(name: string)=>catalogue.hasImage(name,'2026-11-15')};
   const app=createApp(fixed,'/nonexistent');
-  await new Promise(resolve => app.listen(0,'127.0.0.1',resolve));
+  await new Promise<void>(resolve => app.listen(0,'127.0.0.1',resolve));
   try {
     const url=`http://127.0.0.1:${app.address().port}`;
     assert.equal((await fetch(`${url}/v1/events?limit=101`)).status,400);
@@ -75,7 +75,7 @@ test('HTTP routes reject invalid pagination and never expose private events', as
     const response=await fetch(`${url}/v1/events?limit=1`);
     assert.equal(response.headers.get('access-control-allow-origin'),'*');
     assert.equal((await response.json()).items[0].id,1);
-  } finally { await new Promise(resolve=>app.close(resolve)); db.close(); }
+  } finally { await new Promise<void>((resolve,reject)=>app.close(error=>error ? reject(error) : resolve())); db.close(); }
 });
 
 test('image endpoint only serves files belonging to a public event', async () => {
@@ -83,8 +83,8 @@ test('image endpoint only serves files belonging to a public event', async () =>
   const directory=await mkdtemp(join(tmpdir(),'dracula-api-'));
   await writeFile(join(directory,'5.jpg'),'public-image');
   await writeFile(join(directory,'secret.jpg'),'not-public');
-  const app=createApp({hasImage:name=>catalogue.hasImage(name,'2026-11-15')},directory);
-  await new Promise(resolve=>app.listen(0,'127.0.0.1',resolve));
+  const app=createApp({hasImage:(name: string)=>catalogue.hasImage(name,'2026-11-15')},directory);
+  await new Promise<void>(resolve=>app.listen(0,'127.0.0.1',resolve));
   try {
     const base=`http://127.0.0.1:${app.address().port}`;
     const image=await fetch(`${base}/v1/images/5.jpg`);
@@ -93,5 +93,5 @@ test('image endpoint only serves files belonging to a public event', async () =>
     assert.equal(await image.text(),'public-image');
     assert.equal((await fetch(`${base}/v1/images/secret.jpg`)).status,404);
     assert.equal((await fetch(`${base}/v1/images/%2e%2e%2fsecret.jpg`)).status,404);
-  } finally { await new Promise(resolve=>app.close(resolve)); db.close(); await rm(directory,{recursive:true,force:true}); }
+  } finally { await new Promise<void>((resolve,reject)=>app.close(error=>error ? reject(error) : resolve())); db.close(); await rm(directory,{recursive:true,force:true}); }
 });

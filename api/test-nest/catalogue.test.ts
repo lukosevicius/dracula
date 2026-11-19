@@ -27,7 +27,7 @@ function fixture() {
     INSERT INTO vilnius_events VALUES(1,5); INSERT INTO vilnius_images VALUES(5,'5.jpg');
     INSERT INTO event_prices VALUES(1,'Nemokama','free'); INSERT INTO artists VALUES('artist-1','Artist');
     INSERT INTO event_artist_decisions VALUES(1,'artist-1','accepted');`);
-  const pool={ execute: async (sql,params) => [db.prepare(sql).all(...params)] };
+  const pool={ execute: async (sql: string,params: import('node:sqlite').SQLInputValue[]) => [db.prepare(sql).all(...params)] };
   return { db, pool };
 }
 
@@ -38,8 +38,8 @@ test('Nest public endpoints preserve the existing API contract', async () => {
   await writeFile(join(directory,'secret.jpg'),'private-image');
   await symlink(join(directory,'secret.jpg'),join(directory,'link.jpg'));
   const config=loadConfig({...env,IMAGE_DIR:directory});
-  const nestCatalogue=new CatalogueService({pool},config);
-  const fixed=c=>({list:(after,limit)=>c.list(after,limit,'2026-11-15'),page:options=>c.page(options,'2026-11-15'),get:id=>c.get(id,'2026-11-15'),hasImage:name=>c.hasImage(name,'2026-11-15')});
+  const nestCatalogue=new CatalogueService({pool} as unknown as DatabaseService,config);
+  const fixed=(c: CatalogueService)=>({list:(after: number,limit: number)=>c.list(after,limit,'2026-11-15'),page:(options: import('../dist/catalogue/catalogue.service.js').PageOptions)=>c.page(options,'2026-11-15'),get:(id: number)=>c.get(id,'2026-11-15'),hasImage:(name: string)=>c.hasImage(name,'2026-11-15')});
   const module=await Test.createTestingModule({imports:[AppModule]}).overrideProvider(APP_CONFIG).useValue(config)
     .overrideProvider(DatabaseService).useValue({pool}).overrideProvider(CatalogueService).useValue(fixed(nestCatalogue)).compile();
   const app=module.createNestApplication({logger:false});

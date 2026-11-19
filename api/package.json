@@ -9,6 +9,7 @@
     "migrate": "node dist/migrate.js",
     "build:nest": "npm run build",
     "typecheck:nest": "tsc -p tsconfig.json --noEmit",
+    "typecheck:tests": "npm run build && tsc -p tsconfig.test.json",
     "dev:nest": "tsx watch src/main.ts",
     "start:nest": "node dist/main.js",
     "test:nest": "npm run build && node --import tsx --test test-nest/*.test.ts",

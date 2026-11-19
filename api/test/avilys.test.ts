@@ -18,8 +18,8 @@ test('Avilys imports are idempotent, reviewable, and preserve edits on refresh',
     CREATE TABLE artists(mbid TEXT,name TEXT);`);
   const owner='a'.repeat(64),job={id:1,owner};
   db.prepare('INSERT INTO job_leases VALUES(?,?,?,?)').run('vilnius-events',1,createHash('sha256').update(owner).digest('hex'),Date.now()+60000);
-  const connection={async beginTransaction(){db.exec('BEGIN');},async commit(){db.exec('COMMIT');},async rollback(){db.exec('ROLLBACK');},release(){},async execute(sql,params){const q=sql.replace(/ FOR UPDATE$/,'');const stmt=db.prepare(q);if(/^SELECT/i.test(q))return [stmt.all(...params)];const result=stmt.run(...params);return [{insertId:Number(result.lastInsertRowid),affectedRows:Number(result.changes)}];}};
-  const pool={getConnection:async()=>connection,execute:(sql,params)=>connection.execute(sql,params)};
+  const connection={async beginTransaction(){db.exec('BEGIN');},async commit(){db.exec('COMMIT');},async rollback(){db.exec('ROLLBACK');},release(){},async execute(sql: string,params: import('node:sqlite').SQLInputValue[]){const q=sql.replace(/ FOR UPDATE$/,'');const stmt=db.prepare(q);if(/^SELECT/i.test(q))return [stmt.all(...params)];const result=stmt.run(...params);return [{insertId:Number(result.lastInsertRowid),affectedRows:Number(result.changes)}];}};
+  const pool={getConnection:async()=>connection,execute:(sql: string,params: import('node:sqlite').SQLInputValue[])=>connection.execute(sql,params)} as unknown as import('mysql2/promise').Pool;
   const admin=createAdmin(pool,'a'.repeat(32));const catalogue=createCatalogue(pool,'https://example.com');
   const event={id:10,title:'Concert',city:'Vilnius',categories:[{id:1,name:'Music'}],description:'Music <script>',startTime:'2026-11-25T19:00:00Z',venueName:'Club',sourceUrl:'https://example.org/event'};
   try {
@@ -30,10 +30,10 @@ test('Avilys imports are idempotent, reviewable, and preserve edits on refresh',
     await admin.price(1,{price_type:'paid',price_text:'5 €'});
     assert.equal((await catalogue.get(1,'2026-11-20')).price_text,'5 €');
     assert.deepEqual(await importAvilysPage(pool,{items:[{...event,venueName:'Changed'}],job}),{added:0,updated:1});
-    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM events').get().n,1);
-    assert.equal(db.prepare('SELECT venue FROM events').get().venue,'Edited');
-    assert.equal(db.prepare('SELECT price_text FROM event_prices').get().price_text,'5 €');
-    assert.match(db.prepare('SELECT content_html FROM event_sources').get().content_html,/&lt;script&gt;/);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM events').get()!.n,1);
+    assert.equal(db.prepare('SELECT venue FROM events').get()!.venue,'Edited');
+    assert.equal(db.prepare('SELECT price_text FROM event_prices').get()!.price_text,'5 €');
+    assert.match(String(db.prepare('SELECT content_html FROM event_sources').get()!.content_html),/&lt;script&gt;/);
     await assert.rejects(importAvilysPage(pool,{items:[{...event,city:'Kaunas'}],job}),{status:400});
     await assert.rejects(importAvilysPage(pool,{items:[event],job:{id:1,owner:'b'.repeat(64)}}),{status:409});
   } finally {db.close();}
