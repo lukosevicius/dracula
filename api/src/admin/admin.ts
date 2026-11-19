@@ -71,6 +71,10 @@ export function createAdmin(pool: Pool, token: string) {
       const [rows]=await pool.execute<RowDataPacket[]>('SELECT local_name,mime_type,source_url,source_modified FROM vilnius_images WHERE media_id=?',[mediaId]);
       return rows[0] || null;
     },
+    async getAvilysImage(sourceId:number) {
+      const [rows]=await pool.execute<RowDataPacket[]>("SELECT source_url,local_name,mime_type,width,height,source_id FROM event_images WHERE source_key='avilys' AND source_id=?",[String(sourceId)]);
+      return rows[0] || null;
+    },
     authorized(header: string | undefined) {
       const match = /^Bearer ([^\s]+)$/.exec(header || '');
       return !!match && timingSafeEqual(tokenHash, digest(match[1]));
@@ -132,10 +136,11 @@ export function createAdmin(pool: Pool, token: string) {
           const vn=sources.find(source=>source.source_key==='vilnius-events');
           const [legacy]=vn ? await conn.execute<RowDataPacket[]>('SELECT * FROM vilnius_events WHERE source_id=?',[Number(vn.source_id)]) : [[]];
           const [availableArtists]=await conn.execute<RowDataPacket[]>('SELECT mbid,name FROM artists',[]);
-          const [images]=legacy[0]?.featured_media ? await conn.execute<RowDataPacket[]>('SELECT media_id,width,height,source_url,local_name,mime_type FROM vilnius_images WHERE media_id=?',[legacy[0].featured_media]) : [[]];
+          const [images]=legacy[0]?.featured_media ? await conn.execute<RowDataPacket[]>("SELECT media_id,width,height,source_url,local_name,mime_type,'vilnius-events' AS source_key FROM vilnius_images WHERE media_id=?",[legacy[0].featured_media]) : [[]];
+          const [avilysImages]=!images.length ? await conn.execute<RowDataPacket[]>("SELECT source_id,width,height,source_url,local_name,mime_type,source_key FROM event_images WHERE event_id=? AND source_key='avilys'",[id]) : [[]];
           const [candidates]=events[0].event_date ? await conn.execute<RowDataPacket[]>('SELECT id,title,event_date,venue FROM events WHERE id<>? AND event_date=? LIMIT 500',[id,events[0].event_date]) : [[]];
           await conn.commit();
-          return {event:events[0],sources,price:prices[0] || null,artist_decisions:artists,vilnius_event:legacy[0] || null,available_artists:availableArtists,image:images[0] || null,match_candidates:candidates};
+          return {event:events[0],sources,price:prices[0] || null,artist_decisions:artists,vilnius_event:legacy[0] || null,available_artists:availableArtists,image:images[0] || avilysImages[0] || null,match_candidates:candidates};
         } catch(cause) {await conn.rollback(); throw cause;}
       } finally {conn.release();}
     },

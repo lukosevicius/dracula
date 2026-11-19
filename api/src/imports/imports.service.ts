@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { importVilniusPage } from './vilnius.js';
 import { importAvilysPage } from './avilys.js';
 import { importMusicBrainzPage, reserveMusicBrainz } from './musicbrainz.js';
-import { saveImage } from './images.js';
+import { saveImage, saveAvilysImage } from './images.js';
 import { enrichEvent } from './enrich.js';
 import { createJobs } from '../jobs/jobs.js';
 import { createAi } from '../admin/ai.js';
@@ -27,5 +27,6 @@ export class ImportsService {
   musicbrainz(input: Input): Promise<Result> { return importMusicBrainzPage(this.db.pool,input); }
   reserveMusicBrainz(): Promise<Result> { return reserveMusicBrainz(this.db.pool); }
   saveImage(input: Input): Promise<Result> { return saveImage(this.db.pool,this.config.imageDir,input); }
+  saveAvilysImage(input: Input): Promise<Result> { return saveAvilysImage(this.db.pool,this.config.imageDir,input); }
   enrich(id: number,input: Input): Promise<void> { return enrichEvent(this.db.pool,id,input); }
 }

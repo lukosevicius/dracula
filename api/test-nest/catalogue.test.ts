@@ -19,6 +19,7 @@ function fixture() {
     CREATE TABLE event_sources(id INTEGER PRIMARY KEY,event_id INTEGER,source_key TEXT,source_id TEXT,source_url TEXT,about_url TEXT,content_html TEXT);
     CREATE TABLE vilnius_events(source_id INTEGER,featured_media INTEGER);
     CREATE TABLE vilnius_images(media_id INTEGER,local_name TEXT);
+    CREATE TABLE event_images(event_id INTEGER,local_name TEXT);
     CREATE TABLE event_prices(event_id INTEGER,price_text TEXT,price_type TEXT);
     CREATE TABLE event_artist_decisions(event_id INTEGER,artist_mbid TEXT,decision TEXT);
     CREATE TABLE artists(mbid TEXT,name TEXT);

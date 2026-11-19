@@ -10,10 +10,11 @@ interface EventRow extends RowDataPacket { id: number; title: string; event_date
 interface ArtistRow extends RowDataPacket { event_id: number; mbid: string; name: string }
 interface CountRow extends RowDataPacket { total: number | string }
 const columns = `e.id,e.title,e.event_date,e.event_end_date,e.event_time,e.venue,e.ticket_url,
- s.source_url,s.about_url,s.content_html,i.local_name,p.price_text,p.price_type`;
+ s.source_url,s.about_url,s.content_html,COALESCE(i.local_name,ei.local_name) AS local_name,p.price_text,p.price_type`;
 const joins = `FROM events e JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY CASE WHEN source_key='vilnius-events' THEN 0 ELSE 1 END,id LIMIT 1)
  LEFT JOIN vilnius_events v ON s.source_key='vilnius-events' AND v.source_id=CAST(s.source_id AS UNSIGNED)
  LEFT JOIN vilnius_images i ON i.media_id=v.featured_media
+ LEFT JOIN event_images ei ON ei.event_id=e.id
  LEFT JOIN event_prices p ON p.event_id=e.id`;
 const ready = `e.review_status='music' AND (NULLIF(e.event_date,'') IS NULL OR COALESCE(NULLIF(e.event_end_date,''),e.event_date)>=?)`;
 export function vilniusToday(now = new Date()): string {
@@ -63,7 +64,7 @@ export class CatalogueService {
     return (await this.map(rows))[0] ?? null;
   }
   async hasImage(name: string, today = vilniusToday()) {
-    const [rows] = await this.db.pool.execute<RowDataPacket[]>(`SELECT e.id ${joins} WHERE ${ready} AND i.local_name=? LIMIT 1`, [today,name]);
+    const [rows] = await this.db.pool.execute<RowDataPacket[]>(`SELECT e.id ${joins} WHERE ${ready} AND COALESCE(i.local_name,ei.local_name)=? LIMIT 1`, [today,name]);
     return rows.length > 0;
   }
 }

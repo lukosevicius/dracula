@@ -50,6 +50,10 @@ export class AdminController {
         res.writeHead(200,{'Content-Type':types[ext],'Content-Length':info.size,'Cache-Control':'private, no-store'});
         const stream=createReadStream(file);stream.on('error',()=>res.destroy());stream.pipe(res);return;
       }
+      const avilysImageInfo=/^\/v1\/admin\/event-images\/avilys\/(\d{1,12})\/info$/.exec(path);
+      if(req.method==='GET' && avilysImageInfo){const record=await admin.getAvilysImage(Number(avilysImageInfo[1]));if(!record||!/^[A-Za-z0-9._-]+\.(jpg|png|webp|gif)$/.test(record.local_name))return json(res,200,{image:null});const info=await lstat(join(this.config.imageDir,record.local_name)).catch(()=>null);return json(res,200,{image:info?.isFile()?{source_url:record.source_url,width:record.width,height:record.height}:null});}
+      const avilysImage=/^\/v1\/admin\/event-images\/avilys\/(\d{1,12})$/.exec(path);
+      if(req.method==='GET' && avilysImage){const record=await admin.getAvilysImage(Number(avilysImage[1]));if(!record||!/^[A-Za-z0-9._-]+\.(jpg|png|webp|gif)$/.test(record.local_name))return json(res,404,{error:'Not found'});const ext=record.local_name.slice(record.local_name.lastIndexOf('.'));if(record.mime_type!==types[ext])return json(res,404,{error:'Not found'});const file=join(this.config.imageDir,record.local_name),info=await lstat(file).catch(()=>null);if(!info?.isFile())return json(res,404,{error:'Not found'});res.writeHead(200,{'Content-Type':types[ext],'Content-Length':info.size,'Cache-Control':'private, no-store'});const stream=createReadStream(file);stream.on('error',()=>res.destroy());stream.pipe(res);return;}
       if(req.method==='GET' && path==='/v1/admin/events') return json(res,200,await admin.listEvents(url.searchParams));
       const event=/^\/v1\/admin\/events\/(\d{1,12})$/.exec(path);
       if(req.method==='GET' && event && Number(event[1])>0) return json(res,200,await admin.getEvent(Number(event[1])));
@@ -59,11 +63,12 @@ export class AdminController {
       const isArtistImport=path==='/v1/admin/imports/musicbrainz/page', isArtistReservation=path==='/v1/admin/imports/musicbrainz/reserve-request';
       const isAiSave=path==='/v1/admin/ai/results', aiDecision=/^\/v1\/admin\/ai\/results\/(\d{1,12})\/decision$/.exec(path);
       const isJobStart=path==='/v1/admin/jobs/start', isImageUpload=path==='/v1/admin/images';
+      const isAvilysImageUpload=path==='/v1/admin/event-images/avilys';
       const jobUpdate=/^\/v1\/admin\/jobs\/(\d{1,12})$/.exec(path);
       const route=/^\/v1\/admin\/events\/(\d{1,12})\/(review|details|artist|price|confirm-assistant-review|enrich)$/.exec(path);
-      if (!isVilnius && !isAvilys && !isReservation && !isArtistImport && !isArtistReservation && !isAiSave && !aiDecision && !isJobStart && !isImageUpload && !jobUpdate && (!route || !Number.isSafeInteger(Number(route[1])) || Number(route[1])<1)) return json(res,404,{error:'Not found'});
+      if (!isVilnius && !isAvilys && !isReservation && !isArtistImport && !isArtistReservation && !isAiSave && !aiDecision && !isJobStart && !isImageUpload && !isAvilysImageUpload && !jobUpdate && (!route || !Number.isSafeInteger(Number(route[1])) || Number(route[1])<1)) return json(res,404,{error:'Not found'});
       if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || ''))return json(res,415,{error:'Expected JSON'});
-      const max=isImageUpload?17*1024*1024:isVilnius||isAvilys||isArtistImport?6*1024*1024:isAiSave||route?.[2]==='enrich'?512*1024:8192;
+      const max=isImageUpload||isAvilysImageUpload?17*1024*1024:isVilnius||isAvilys||isArtistImport?6*1024*1024:isAiSave||route?.[2]==='enrich'?512*1024:8192;
       let size=0;const chunks: Buffer[]=[];
       for await (const chunk of req) { const bytes=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);size+=bytes.length;if(size>max)return json(res,413,{error:'Request too large'});chunks.push(bytes); }
       let body: Record<string, unknown>;
@@ -75,6 +80,7 @@ export class AdminController {
       if(isArtistReservation)return json(res,200,{ok:true,...await this.imports.reserveMusicBrainz()});
       if(isJobStart)return json(res,200,{ok:true,...await this.imports.jobs.start(body.action,body.source,body.limit)});
       if(isImageUpload)return json(res,200,{ok:true,...await this.imports.saveImage(body)});
+      if(isAvilysImageUpload)return json(res,200,{ok:true,...await this.imports.saveAvilysImage(body)});
       if(isAiSave){await this.imports.ai.save(body);return json(res,200,{ok:true});}
       if(aiDecision){await this.imports.ai.decision(Number(aiDecision[1]),body.decision);return json(res,200,{ok:true});}
       if(jobUpdate){await this.imports.jobs.update(Number(jobUpdate[1]),body);return json(res,200,{ok:true});}

@@ -5,8 +5,8 @@ const fail = (status: number, message: string) => Object.assign(new Error(messag
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const eventSource = 'vilnius-events', artistSource = 'musicbrainz-lithuania-artists', leaseMs = 60000;
 interface Lease extends RowDataPacket { job_id: number; run_id: number | null; import_run_id: number | null; owner_hash: string; expires_at: number | string }
-type Progress = { fetched: number; added: number; updated: number; completed?: number; total?: number; failed?: number; cost_usd?: number };
-const progressKeys = ['completed','total','failed','cost_usd'] as const;
+type Progress = { fetched: number; added: number; updated: number; completed?: number; total?: number; failed?: number; cost_usd?: number; images?:number; image_failed?:number };
+const progressKeys = ['completed','total','failed','cost_usd','images','image_failed'] as const;
 function counts(value: unknown): Progress {
   if (!value || typeof value !== 'object') throw fail(400,'Invalid progress.');
   const data = value as Record<string, unknown>;

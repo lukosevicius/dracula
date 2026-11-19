@@ -5,6 +5,7 @@ import {runCentralEnrichment} from './sources/central-vilnius-enrich.js';
 import {runCentralMusicBrainz} from './sources/central-musicbrainz.js';
 import {runCentralAi} from './database/central-ai-evaluation.js';
 import {fetchAvilysPage} from './sources/avilys.js';
+import {createCentralAvilysImages} from './sources/central-avilys-images.js';
 import {MODELS,type Model} from './database/ai-evaluation.js';
 
 type Api=ReturnType<typeof createCentralApi>;
@@ -15,14 +16,15 @@ export function createCentralJobs(api:Api,userAgent:string,run:typeof runCentral
     if(input.source!==source||(source==='ai-evaluation'?(action!=='analyze'||!Array.isArray(input.event_ids)||!input.event_ids.length||input.event_ids.length>5000||!input.event_ids.every(id=>Number.isSafeInteger(id)&&id>0)||new Set(input.event_ids).size!==input.event_ids.length||!Array.isArray(input.models)||!input.models.length||new Set(input.models).size!==input.models.length||!input.models.every(model=>Object.hasOwn(MODELS,model))||!Number.isFinite(budget)||budget<=0||budget>1000||!process.env.GEMINI_API_KEY):source==='avilys'?(action!=='import'||!Number.isInteger(limit)||limit<1||limit>200||!Number.isInteger(startPage)||startPage<1||startPage>10000):source==='musicbrainz'?(!['next','start','all'].includes(action)||(action!=='all'&&(!Number.isInteger(limit)||limit<1||limit>1000))):(!['next','start','sample','refresh','download-images','details','refresh-details','details-event','refresh-all-details'].includes(action)||!Number.isInteger(pages)||pages<1||pages>10||(action==='details-event'&&(!Number.isSafeInteger(input.event_id)||Number(input.event_id)<1)))))throw Object.assign(new Error('This central job is not available or its settings are invalid.'),{status:400});
     const job=await api.startJob(action,source,(source==='avilys'||source==='musicbrainz'&&action!=='all')?limit:0);
     setImmediate(async()=>{
-      let progress={fetched:0,added:0,updated:0},failure:unknown;
+      let progress:{fetched:number;added:number;updated:number;images?:number;image_failed?:number}={fetched:0,added:0,updated:0,...(source==='avilys'?{images:0,image_failed:0}:{})},failure:unknown;
       let pending=Promise.resolve();
       const heartbeat=()=>{pending=pending.then(async()=>{if(failure)return;try{await api.updateJob(job.id,job.owner,'running',progress,undefined,source);}catch(error){failure=error;}});};
       const timer=setInterval(heartbeat,15000);timer.unref();
       try {
-        const jobApi={...api,importVilniusPage:async page=>{await pending;if(failure)throw failure;return api.importVilniusPage({...page,job});},uploadImage:async image=>{await pending;if(failure)throw failure;return api.uploadImage({...image,job});},enrichEvent:async(id,input)=>{await pending;if(failure)throw failure;return api.enrichEvent(id,{...input,job});}};
+        const jobApi={...api,importVilniusPage:async page=>{await pending;if(failure)throw failure;return api.importVilniusPage({...page,job});},uploadImage:async image=>{await pending;if(failure)throw failure;return api.uploadImage({...image,job});},uploadAvilysImage:async image=>{await pending;if(failure)throw failure;return api.uploadAvilysImage({...image,job});},enrichEvent:async(id,input)=>{await pending;if(failure)throw failure;return api.enrichEvent(id,{...input,job});}};
         let result;
         if(source==='avilys'){
+          const ensureImage=createCentralAvilysImages(jobApi,userAgent);
           for(let page=startPage;progress.fetched<limit;page++){
             await pending;if(failure)throw failure;
             if(page>startPage)await new Promise(resolve=>setTimeout(resolve,3000));
@@ -31,6 +33,7 @@ export function createCentralJobs(api:Api,userAgent:string,run:typeof runCentral
             await pending;if(failure)throw failure;
             const saved=await api.importAvilysPage(items,job);
             progress={fetched:progress.fetched+items.length,added:progress.added+saved.added,updated:progress.updated+saved.updated};heartbeat();
+            for(const item of items){await pending;if(failure)throw failure;try{if(await ensureImage(item,job)==='downloaded')progress.images=(progress.images||0)+1;}catch(error){progress.image_failed=(progress.image_failed||0)+1;console.error(`Avilys image download failed for event ${item.id}:`,error instanceof Error?error.message:String(error));}heartbeat();}
             if(page*batch.pageSize>=batch.total)break;
           }
           result=progress;

@@ -14,6 +14,7 @@ function setup() {
     CREATE TABLE event_sources(id INTEGER PRIMARY KEY,event_id INTEGER,source_key TEXT,source_id TEXT,source_url TEXT,about_url TEXT,content_html TEXT,last_checked_at TEXT);
     CREATE TABLE vilnius_events(source_id INTEGER PRIMARY KEY,review_status TEXT,featured_media INTEGER,event_date TEXT,event_end_date TEXT,event_time TEXT,venue TEXT,ticket_url TEXT,manual_fields TEXT,details_manual INTEGER);
     CREATE TABLE vilnius_images(media_id INTEGER,local_name TEXT);
+    CREATE TABLE event_images(event_id INTEGER,source_key TEXT,source_id TEXT,source_url TEXT,local_name TEXT,mime_type TEXT,width INTEGER,height INTEGER);
     CREATE TABLE artists(mbid TEXT PRIMARY KEY,name TEXT);
     CREATE TABLE vilnius_event_artists(event_id INTEGER,artist_mbid TEXT,decision TEXT,PRIMARY KEY(event_id,artist_mbid));
     CREATE TABLE event_artist_decisions(event_id INTEGER,artist_mbid TEXT,decision TEXT,PRIMARY KEY(event_id,artist_mbid));

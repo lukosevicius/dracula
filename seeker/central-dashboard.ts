@@ -21,6 +21,8 @@ export function createCentralDashboard(api:CentralApi, userAgent='Seeker/0.1.0')
         if(!/^\d{1,5}$/.test(raw)||Number(raw)<1||Number(raw)>10000){send(400,{error:'Invalid Avilys page.'});return true;}
         send(200,await fetchAvilysPage(Number(raw)));return true;
       }
+      const avilysImage=/^\/api\/avilys-images\/(\d{1,12})$/.exec(url.pathname);
+      if(request.method==='GET'&&avilysImage){const value=await api.getAvilysImage(Number(avilysImage[1]));if(!value){send(404,{error:'Image not found.'});return true;}response.writeHead(200,{'content-type':value.type,'cache-control':'private, no-store','x-content-type-options':'nosniff'});response.end(Buffer.from(value.bytes));return true;}
       if(request.method==='GET' && url.pathname==='/api/dashboard'){send(200,await api.artistsDashboard());return true;}
       if(request.method==='GET' && url.pathname==='/api/ai-evaluations/events'){send(200,{ids:await api.aiIds(Number(url.searchParams.get('limit')||1))});return true;}
       if(request.method==='GET' && url.pathname==='/api/ai-evaluations'){send(200,{results:await api.aiResults(),configured:!!process.env.GEMINI_API_KEY});return true;}
