@@ -172,11 +172,26 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
       const [cities]=await migrationDb.query<RowDataPacket[]>('SELECT city FROM events WHERE id IN (?) ORDER BY id',[[1,avilysEvent.id,10001,10002]]);
       assert.deepEqual(cities.map(row=>row.city),['Vilnius','Vilnius','Kaunas',null]);
 
-      for (const name of ['001-auto-increment.sql','002-job-leases.sql','003-musicbrainz-jobs.sql','004-event-city.sql','005-event-images.sql']) await copyFile(new URL(`../migrations/${name}`,import.meta.url),join(migrationDir,name));
+      // Account identifiers and session hashes must be unique, and account deletion cascades.
+      await migrationDb.execute("INSERT INTO users (display_name) VALUES ('Test user'), ('Second user')");
+      const [users]=await migrationDb.query<RowDataPacket[]>("SELECT id FROM users ORDER BY id");
+      const [userId, otherId]=users.map(row=>row.id);
+      await migrationDb.execute("INSERT INTO user_identities (user_id,provider,provider_subject) VALUES (?, 'google', 'CaseSensitive')",[userId]);
+      await assert.rejects(migrationDb.execute("INSERT INTO user_identities (user_id,provider,provider_subject) VALUES (?, 'google', 'CaseSensitive')",[otherId]),{code:'ER_DUP_ENTRY'});
+      await migrationDb.execute("INSERT INTO user_identities (user_id,provider,provider_subject) VALUES (?, 'google', 'casesensitive')",[otherId]);
+      const sessionHash=Buffer.alloc(32,1);
+      await migrationDb.execute("INSERT INTO user_sessions (user_id,session_hash,expires_at) VALUES (?,?,?)",[userId,sessionHash,'2099-01-01 00:00:00']);
+      await assert.rejects(migrationDb.execute("INSERT INTO user_sessions (user_id,session_hash,expires_at) VALUES (?,?,?)",[otherId,sessionHash,'2099-01-01 00:00:00']),{code:'ER_DUP_ENTRY'});
+      await migrationDb.execute('DELETE FROM users WHERE id=?',[userId]);
+      const [[remainingIdentities]]=await migrationDb.execute<RowDataPacket[]>('SELECT COUNT(*) AS n FROM user_identities WHERE user_id=?',[userId]);
+      const [[remainingSessions]]=await migrationDb.execute<RowDataPacket[]>('SELECT COUNT(*) AS n FROM user_sessions WHERE user_id=?',[userId]);
+      assert.equal(remainingIdentities.n,0); assert.equal(remainingSessions.n,0);
+
+      for (const name of ['001-auto-increment.sql','002-job-leases.sql','003-musicbrainz-jobs.sql','004-event-city.sql','005-event-images.sql','006-user-accounts.sql']) await copyFile(new URL(`../migrations/${name}`,import.meta.url),join(migrationDir,name));
       await writeFile(join(migrationDir,'004-event-city.sql'),'SELECT 1;');
       await assert.rejects(migrate(migrationDb,'status',migrationDir),/Checksum mismatch/);
       await copyFile(new URL('../migrations/004-event-city.sql',import.meta.url),join(migrationDir,'004-event-city.sql'));
-      await writeFile(join(migrationDir,'006-failure.sql'),'CREATE TABLE migration_partial (id INT); INVALID SQL;');
+      await writeFile(join(migrationDir,'007-failure.sql'),'CREATE TABLE migration_partial (id INT); INVALID SQL;');
       await assert.rejects(migrate(migrationDb,'up',migrationDir));
       await assert.rejects(migrate(migrationDb,'up',migrationDir),/is applying/);
     } finally { migrationDb.release(); await rm(migrationDir,{recursive:true,force:true}); }
