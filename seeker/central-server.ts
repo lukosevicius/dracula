@@ -26,7 +26,7 @@ const server=createServer(async(req,res)=>{
   const url=new URL(req.url || '/','http://localhost');
   let pathname:string;
   try {pathname=decodeURIComponent(url.pathname);}catch{res.writeHead(400);res.end();return;}
-  if(pathname==='/' || pathname==='/vilnius-events.html' || pathname==='/ai-evaluation.html')pathname='/index.html';
+  if(pathname==='/' || pathname==='/vilnius-events.html' || pathname==='/avilys.html' || pathname==='/ai-evaluation.html')pathname='/index.html';
   const file=normalize(join(clientDir,pathname));
   if(!file.startsWith(`${clientDir}/`)){res.writeHead(403);res.end();return;}
   try {const data=await readFile(file);res.writeHead(200,{'content-type':types[extname(file)] || 'application/octet-stream','cache-control':'no-cache','x-content-type-options':'nosniff'});res.end(data);}

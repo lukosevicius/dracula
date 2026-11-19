@@ -15,7 +15,7 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
   const {MYSQL_TEST_HOST:host,MYSQL_TEST_PORT:port,MYSQL_TEST_USER:user,MYSQL_TEST_PASSWORD:password,MYSQL_TEST_DATABASE:database}=process.env;
   if (!host || !port || !user || !password || !database || !/^[A-Za-z0-9_]+_test$/.test(database)) throw new Error('Configure a disposable empty database ending in _test.');
   const pool=mysql.createPool({host,port:Number(port),user,password,database,charset:'utf8mb4',connectionLimit:5,multipleStatements:true});
-  let app, imageDir;
+  let app, imageDir, nest;
   try {
     const [tables]=await pool.query('SHOW FULL TABLES');
     if(tables.length) throw new Error('Test database is not empty; refusing to alter it.');
@@ -35,7 +35,7 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     const token='0123456789abcdef0123456789abcdef';
     app=createApp(createCatalogue(pool,'https://api.example.com'),imageDir,createAdmin(pool,token,imageDir));
     await new Promise(resolve=>app.listen(0,'127.0.0.1',resolve));
-    const root=`http://127.0.0.1:${app.address().port}`;
+    let root=`http://127.0.0.1:${app.address().port}`;
     const headers={authorization:`Bearer ${token}`,'content-type':'application/json'};
     const post=(action,body)=>fetch(`${root}/v1/admin/events/1/${action}`,{method:'POST',headers,body:JSON.stringify(body)});
     assert.equal((await fetch(`${root}/v1/admin/events/1`)).status,401);
@@ -43,6 +43,32 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     assert.equal((await post('details',{review_status:'music',event_date:'2099-11-20',event_end_date:'2099-11-21',venue:'Venue'})).status,200);
     assert.equal((await post('artist',{mbid,decision:'accepted'})).status,200);
     assert.equal((await post('price',{price_type:'free',price_text:'Nemokama'})).status,200);
+    // Run the Nest server with its real connection pool against the same disposable fixture.
+    const {Test}=await import('@nestjs/testing');
+    const {AppModule}=await import('../dist/app.module.js');
+    const {APP_CONFIG}=await import('../dist/config/config.js');
+    const nestModule=await Test.createTestingModule({imports:[AppModule]})
+      .overrideProvider(APP_CONFIG).useValue({dbHost:host,dbPort:Number(port),dbUser:user,dbPassword:password,dbName:database,publicBaseUrl:'https://api.example.com',imageDir,port:3000,adminToken:token}).compile();
+    nest=nestModule.createNestApplication({logger:false,bodyParser:false});
+    {
+      await nest.listen(0,'127.0.0.1');
+      const nestRoot=`http://127.0.0.1:${nest.getHttpServer().address().port}`;
+      assert.deepEqual(await (await fetch(`${nestRoot}/health`)).json(),{status:'ok'});
+      assert.equal((await fetch(`${nestRoot}/v1/admin/events/1`)).status,401);
+      const nestPost=(action,body)=>fetch(`${nestRoot}/v1/admin/events/1/${action}`,{method:'POST',headers,body:JSON.stringify(body)});
+      assert.equal((await nestPost('review',{review_status:'invalid'})).status,400);
+      assert.equal((await nestPost('review',{review_status:'music'})).status,200);
+      assert.equal((await nestPost('details',{review_status:'music',event_date:'2099-11-20',event_end_date:'2099-11-21',venue:'Venue'})).status,200);
+      assert.equal((await nestPost('artist',{mbid,decision:'accepted'})).status,200);
+      assert.equal((await nestPost('price',{price_type:'free',price_text:'Nemokama'})).status,200);
+      const filtered=await fetch(`${nestRoot}/v1/events?filter=custom&from=2099-11-20&to=2099-11-21&offset=0&limit=1`);
+      assert.equal(filtered.status,200);const page=await filtered.json();
+      assert.equal(page.total,1);assert.equal(page.items[0].venue,'Venue');assert.equal(page.items[0].price_type,'free');assert.equal(page.items[0].artists[0].mbid,mbid);
+      const details=await (await fetch(`${nestRoot}/v1/admin/events/1`,{headers})).json();assert.equal(details.event.review_status,'music');
+      const publicImage=await fetch(`${nestRoot}/v1/images/42.jpg`);assert.equal(publicImage.status,200);assert.deepEqual([...new Uint8Array(await publicImage.arrayBuffer())],[1,2,3]);
+      const privateImage=await fetch(`${nestRoot}/v1/admin/images/42`,{headers});assert.equal(privateImage.status,200);assert.deepEqual([...new Uint8Array(await privateImage.arrayBuffer())],[1,2,3]);
+      root=nestRoot;
+    }
     const result=await (await fetch(`${root}/v1/events?filter=custom&from=2099-11-20&to=2099-11-21&offset=0&limit=1`)).json();
     assert.equal(result.total,1); assert.equal(result.items[0].venue,'Venue');
     assert.equal(result.items[0].price_type,'free'); assert.equal(result.items[0].artists[0].mbid,mbid);
@@ -90,6 +116,12 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     const startJob=()=>fetch(`${root}/v1/admin/jobs/start`,{method:'POST',headers,body:JSON.stringify({action:'sample'})});
     const starts=await Promise.all([startJob(),startJob()]);assert.deepEqual(starts.map(r=>r.status).sort(),[200,409]);
     const job=await starts.find(r=>r.status===200).json();
+    const avilysItem={id:987654,title:'Avilys music',city:'Vilnius',categories:[{id:1}],description:'Concert',startTime:'2099-11-20T19:00:00Z',venueName:'Club'};
+    const avilys=body=>fetch(`${root}/v1/admin/imports/avilys/page`,{method:'POST',headers,body:JSON.stringify(body)});
+    assert.deepEqual(await (await avilys({job:{id:job.id,owner:job.owner},items:[avilysItem]})).json(),{ok:true,added:1,updated:0});
+    assert.deepEqual(await (await avilys({job:{id:job.id,owner:job.owner},items:[avilysItem]})).json(),{ok:true,added:0,updated:1});
+    const [[avilysEvent]]=await pool.execute("SELECT e.review_status FROM events e JOIN event_sources s ON s.event_id=e.id WHERE s.source_key='avilys' AND s.source_id='987654'");
+    assert.equal(avilysEvent.review_status,'unsure');
     assert.equal((await upload(imagePayload)).status,409);
     assert.equal((await upload({...imagePayload,job:{id:job.id,owner:job.owner}})).status,200);
     const candidates=await (await fetch(`${root}/v1/admin/enrichment?mode=event&eventId=1`,{headers})).json();assert.equal(candidates.events.length,1);
@@ -146,6 +178,7 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     } finally { migrationDb.release(); await rm(migrationDir,{recursive:true,force:true}); }
 
   } finally {
+    if(nest) await nest.close();
     if(app) await new Promise(resolve=>app.close(resolve));
     await pool.end();
     if(imageDir)await rm(imageDir,{recursive:true,force:true});

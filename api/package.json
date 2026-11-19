@@ -3,15 +3,35 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.mjs",
+    "start": "node dist/main.js",
     "test": "node --test test/*.test.mjs",
-    "test:mariadb": "RUN_MARIADB_INTEGRATION=1 node --test test/mariadb.integration.test.mjs",
-    "migrate": "node migrate.mjs"
+    "test:mariadb": "npm run build:nest && RUN_MARIADB_INTEGRATION=1 node --test test/mariadb.integration.test.mjs",
+    "migrate": "node migrate.mjs",
+    "build:nest": "npm run build",
+    "typecheck:nest": "tsc -p tsconfig.json --noEmit",
+    "dev:nest": "tsx watch src/main.ts",
+    "start:nest": "node dist/main.js",
+    "test:nest": "npm run build:nest && node --test test-nest/*.test.mjs",
+    "start:legacy": "node server.mjs",
+    "build": "tsc -p tsconfig.json",
+    "test:production": "node test/production-smoke.mjs"
   },
   "engines": {
     "node": ">=22.16.0"
   },
   "dependencies": {
-    "mysql2": "^3.24.6"
+    "@nestjs/common": "^11.2.11",
+    "@nestjs/core": "^11.2.11",
+    "@nestjs/platform-express": "^11.2.11",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.6",
+    "mysql2": "^3.24.6",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "typescript": "^7.0.2"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "^11.2.11",
+    "tsx": "^4.23.15"
   }
 }

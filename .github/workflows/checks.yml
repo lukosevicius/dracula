@@ -43,6 +43,8 @@ jobs:
           cache-dependency-path: api/package-lock.json
       - run: npm ci
       - run: npm test
+      - run: npm run typecheck:nest
+      - run: npm run test:nest
 
   mariadb:
     name: API MariaDB integration
@@ -80,6 +82,7 @@ jobs:
           cache-dependency-path: api/package-lock.json
       - run: npm ci
       - run: npm run test:mariadb
+      - run: npm run test:production
 
   client:
     name: Client types and web build
