@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { createAdmin } from '../admin.mjs';
-import { createApp } from '../app.mjs';
-import { createCatalogue } from '../catalogue.mjs';
+import { createAdmin } from '../dist/admin/admin.js';
+import { createApp } from '../test-support/nest.mjs';
+import { createCatalogue } from '../test-support/nest.mjs';
 
 const token = '0123456789abcdef0123456789abcdef';
 const artist = 'f5e813d7-0f2e-499a-9d07-9c38d955837d';

@@ -5,13 +5,13 @@ import { mkdtemp, rm, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Test } from '@nestjs/testing';
+import {readFileSync} from 'node:fs';
 import { AppModule } from '../dist/app.module.js';
 import { APP_CONFIG, loadConfig } from '../dist/config/config.js';
 import { DatabaseService } from '../dist/database/database.service.js';
 import { AdminService } from '../dist/admin/admin.service.js';
 import { ImportsService } from '../dist/imports/imports.service.js';
-import { createAdmin } from '../admin.mjs';
-import { createApp } from '../app.mjs';
+import { createAdmin } from '../dist/admin/admin.js';
 
 const token='0123456789abcdef0123456789abcdef';
 const env={ DB_HOST:'127.0.0.1', DB_USER:'test', DB_PASSWORD:'test', DB_NAME:'test', PUBLIC_BASE_URL:'https://api.example.com', IMAGE_DIR:'/tmp/images', ADMIN_TOKEN:token };
@@ -34,11 +34,10 @@ test('Nest admin routes match legacy authorization, requests and protected image
   const module=await Test.createTestingModule({imports:[AppModule]}).overrideProvider(APP_CONFIG).useValue(config)
     .overrideProvider(DatabaseService).useValue({pool:{}}).overrideProvider(AdminService).useValue({backend}).overrideProvider(ImportsService).useValue({jobs:backend.jobs,ai:backend.ai,vilnius:backend.importVilniusPage,avilys:backend.importAvilysPage,musicbrainz:backend.importMusicBrainzPage,reserveMusicBrainz:backend.reserveMusicBrainz,saveImage:backend.saveImage,enrich:backend.enrichEvent}).compile();
   const app=module.createNestApplication({logger:false,bodyParser:false});
-  const old=createApp({},dir,backend);
-  await app.listen(0,'127.0.0.1');await new Promise(resolve=>old.listen(0,'127.0.0.1',resolve));
+  await app.listen(0,'127.0.0.1');
   const auth={authorization:`Bearer ${token}`};
   try {
-    const current=`http://127.0.0.1:${app.getHttpServer().address().port}`,previous=`http://127.0.0.1:${old.address().port}`;
+    const current=`http://127.0.0.1:${app.getHttpServer().address().port}`;
     const requests=[
       ['/v1/admin/events/1',{}],['/v1/admin/events/1',{headers:{authorization:'Bearer wrong'}}],
       ...['/v1/admin/events?search=abc','/v1/admin/events/1','/v1/admin/artists','/v1/admin/jobs','/v1/admin/media?after=1&limit=4','/v1/admin/enrichment?mode=all','/v1/admin/ai/artists','/v1/admin/ai/results','/v1/admin/ai/events?limit=2','/v1/admin/ai/events/1','/v1/admin/images/5','/v1/admin/images/5/info','/v1/admin/images/6'].map(p=>[p,{headers:auth}]),
@@ -49,13 +48,15 @@ test('Nest admin routes match legacy authorization, requests and protected image
       ['/v1/admin/events/1/review',{method:'POST',headers:{...auth,'content-type':'application/json'},body:JSON.stringify({padding:'x'.repeat(8192)})}],
       ['/v1/admin/events/0/review',{method:'POST',headers:{...auth,'content-type':'application/json'},body:'{}'}]
     ];
-    for(const [path,options] of requests){
-      const [a,b]=await Promise.all([fetch(current+path,options),fetch(previous+path,options)]);
-      assert.equal(a.status,b.status,path);
-      for(const header of ['cache-control','content-type','access-control-allow-origin','x-content-type-options'])assert.equal(a.headers.get(header),b.headers.get(header),`${path}: ${header}`);
-      assert.equal(await a.text(),await b.text(),path);
+    const snapshots=JSON.parse(readFileSync(new URL('./fixtures/admin-contract.json',import.meta.url),'utf8'));
+    assert.equal(snapshots.length,requests.length);
+    for(const [i,[path,options]] of requests.entries()){
+      const expected=snapshots[i],response=await fetch(current+path,options);
+      assert.equal(response.status,expected.status,path);
+      for(const [header,value] of Object.entries(expected.headers)) assert.equal(response.headers.get(header),value,`${path}: ${header}`);
+      assert.equal(await response.text(),expected.body,path);
     }
-  } finally {await app.close();await new Promise(resolve=>old.close(resolve));await rm(dir,{recursive:true,force:true});}
+  } finally {await app.close();await rm(dir,{recursive:true,force:true});}
 });
 
 test('Nest disables admin without a token and validates configured token',async()=>{

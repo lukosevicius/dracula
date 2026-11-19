@@ -6,12 +6,11 @@ import { mkdtemp, rm, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Test } from '@nestjs/testing';
+import {readFileSync} from 'node:fs';
 import { AppModule } from '../dist/app.module.js';
 import { CatalogueService } from '../dist/catalogue/catalogue.service.js';
 import { APP_CONFIG, loadConfig } from '../dist/config/config.js';
 import { DatabaseService } from '../dist/database/database.service.js';
-import { createApp } from '../app.mjs';
-import { createCatalogue } from '../catalogue.mjs';
 
 const env = { DB_HOST:'127.0.0.1', DB_USER:'test', DB_PASSWORD:'test', DB_NAME:'test', PUBLIC_BASE_URL:'https://api.example.com', IMAGE_DIR:'/tmp/images' };
 function fixture() {
@@ -40,28 +39,26 @@ test('Nest public endpoints preserve the existing API contract', async () => {
   await symlink(join(directory,'secret.jpg'),join(directory,'link.jpg'));
   const config=loadConfig({...env,IMAGE_DIR:directory});
   const nestCatalogue=new CatalogueService({pool},config);
-  const oldCatalogue=createCatalogue(pool,config.publicBaseUrl);
   const fixed=c=>({list:(after,limit)=>c.list(after,limit,'2026-11-15'),page:options=>c.page(options,'2026-11-15'),get:id=>c.get(id,'2026-11-15'),hasImage:name=>c.hasImage(name,'2026-11-15')});
   const module=await Test.createTestingModule({imports:[AppModule]}).overrideProvider(APP_CONFIG).useValue(config)
     .overrideProvider(DatabaseService).useValue({pool}).overrideProvider(CatalogueService).useValue(fixed(nestCatalogue)).compile();
   const app=module.createNestApplication({logger:false});
-  const old=createApp(fixed(oldCatalogue),directory);
   await app.listen(0,'127.0.0.1');
-  await new Promise(resolve=>old.listen(0,'127.0.0.1',resolve));
   try {
     const current=`http://127.0.0.1:${app.getHttpServer().address().port}`;
-    const previous=`http://127.0.0.1:${old.address().port}`;
     const paths=['/v1/events','/v1/events?limit=1','/v1/events?after=1&limit=1','/v1/events?limit=101',
       ...['upcoming','today','tomorrow','weekend','all','past','unknown'].map(f=>`/v1/events?filter=${f}`),
       '/v1/events?filter=custom&from=2026-11-20&to=2026-11-21','/v1/events?filter=custom&from=2026-02-30',
       '/v1/events?filter=custom&from=2026-11-21&to=2026-11-20','/v1/events?filter=all&offset=1&limit=1',
       '/v1/events/1','/v1/events/4','/v1/events/garbage','/v1/images/5.jpg','/v1/images/secret.jpg','/v1/images/link.jpg'];
-    for (const path of paths) {
-      const [a,b]=await Promise.all([fetch(current+path),fetch(previous+path)]);
-      assert.equal(a.status,b.status,path);
-      for (const header of ['content-type','cache-control','access-control-allow-origin','x-content-type-options']) assert.equal(a.headers.get(header),b.headers.get(header),`${path}: ${header}`);
-      assert.equal(await a.text(),await b.text(),path);
+    const snapshots=JSON.parse(readFileSync(new URL('./fixtures/catalogue-contract.json',import.meta.url),'utf8'));
+    assert.equal(snapshots.length,paths.length);
+    for (const [i,path] of paths.entries()) {
+      const expected=snapshots[i], response=await fetch(current+path);
+      assert.equal(path,expected.path);assert.equal(response.status,expected.status,path);
+      for(const [header,value] of Object.entries(expected.headers)) assert.equal(response.headers.get(header),value,`${path}: ${header}`);
+      assert.equal(await response.text(),expected.body,path);
     }
     assert.equal((await fetch(current+'/v1/events',{method:'POST'})).status,405);
-  } finally { await app.close(); await new Promise(resolve=>old.close(resolve)); db.close(); await rm(directory,{recursive:true,force:true}); }
+  } finally { await app.close(); db.close(); await rm(directory,{recursive:true,force:true}); }
 });

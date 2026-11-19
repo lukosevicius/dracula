@@ -4,8 +4,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createCatalogue } from '../catalogue.mjs';
-import { createApp } from '../app.mjs';
+import { createCatalogue } from '../test-support/nest.mjs';
+import { createApp } from '../test-support/nest.mjs';
 
 function fixture() {
   const db = new DatabaseSync(':memory:');

@@ -1,0 +1,233 @@
+[
+  {
+    "path": "/v1/events",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "{\"items\":[{\"id\":1,\"title\":\"Upcoming\",\"event_date\":\"2026-11-20\",\"event_end_date\":null,\"event_time\":\"19:00\",\"venue\":\"Club\",\"ticket_url\":null,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":\"Nemokama\",\"price_type\":\"free\",\"description\":\"Hello & welcome\",\"image_url\":\"https://api.example.com/v1/images/5.jpg\",\"artists\":[{\"mbid\":\"artist-1\",\"name\":\"Artist\"}]},{\"id\":2,\"title\":\"Undated\",\"event_date\":null,\"event_end_date\":null,\"event_time\":null,\"venue\":null,\"ticket_url\":null,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":null,\"price_type\":null,\"description\":\"Hello & welcome\",\"image_url\":null,\"artists\":[]}],\"next\":null}"
+  },
+  {
+    "path": "/v1/events?limit=1",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "{\"items\":[{\"id\":1,\"title\":\"Upcoming\",\"event_date\":\"2026-11-20\",\"event_end_date\":null,\"event_time\":\"19:00\",\"venue\":\"Club\",\"ticket_url\":null,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":\"Nemokama\",\"price_type\":\"free\",\"description\":\"Hello & welcome\",\"image_url\":\"https://api.example.com/v1/images/5.jpg\",\"artists\":[{\"mbid\":\"artist-1\",\"name\":\"Artist\"}]}],\"next\":1}"
+  },
+  {
+    "path": "/v1/events?after=1&limit=1",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "{\"items\":[{\"id\":2,\"title\":\"Undated\",\"event_date\":null,\"event_end_date\":null,\"event_time\":null,\"venue\":null,\"ticket_url\":null,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":null,\"price_type\":null,\"description\":\"Hello & welcome\",\"image_url\":null,\"artists\":[]}],\"next\":null}"
+  },
+  {
+    "path": "/v1/events?limit=101",
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "{\"error\":\"Invalid pagination\"}"
+  },
+  {
+    "path": "/v1/events?filter=upcoming",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "{\"items\":[{\"id\":1,\"title\":\"Upcoming\",\"event_date\":\"2026-11-20\",\"event_end_date\":null,\"event_time\":\"19:00\",\"venue\":\"Club\",\"ticket_url\":null,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":\"Nemokama\",\"price_type\":\"free\",\"description\":\"Hello & welcome\",\"image_url\":\"https://api.example.com/v1/images/5.jpg\",\"artists\":[{\"mbid\":\"artist-1\",\"name\":\"Artist\"}]}],\"total\":1,\"nextOffset\":null}"
+  },
+  {
+    "path": "/v1/events?filter=today",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "{\"items\":[],\"total\":0,\"nextOffset\":null}"
+  },
+  {
+    "path": "/v1/events?filter=tomorrow",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "{\"items\":[],\"total\":0,\"nextOffset\":null}"
+  },
+  {
+    "path": "/v1/events?filter=weekend",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "{\"items\":[],\"total\":0,\"nextOffset\":null}"
+  },
+  {
+    "path": "/v1/events?filter=all",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "{\"items\":[{\"id\":1,\"title\":\"Upcoming\",\"event_date\":\"2026-11-20\",\"event_end_date\":null,\"event_time\":\"19:00\",\"venue\":\"Club\",\"ticket_url\":null,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":\"Nemokama\",\"price_type\":\"free\",\"description\":\"Hello & welcome\",\"image_url\":\"https://api.example.com/v1/images/5.jpg\",\"artists\":[{\"mbid\":\"artist-1\",\"name\":\"Artist\"}]},{\"id\":2,\"title\":\"Undated\",\"event_date\":null,\"event_end_date\":null,\"event_time\":null,\"venue\":null,\"ticket_url\":null,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":null,\"price_type\":null,\"description\":\"Hello & welcome\",\"image_url\":null,\"artists\":[]}],\"total\":2,\"nextOffset\":null}"
+  },
+  {
+    "path": "/v1/events?filter=past",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "{\"items\":[],\"total\":0,\"nextOffset\":null}"
+  },
+  {
+    "path": "/v1/events?filter=unknown",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "{\"items\":[{\"id\":2,\"title\":\"Undated\",\"event_date\":null,\"event_end_date\":null,\"event_time\":null,\"venue\":null,\"ticket_url\":null,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":null,\"price_type\":null,\"description\":\"Hello & welcome\",\"image_url\":null,\"artists\":[]}],\"total\":1,\"nextOffset\":null}"
+  },
+  {
+    "path": "/v1/events?filter=custom&from=2026-11-20&to=2026-11-21",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "{\"items\":[{\"id\":1,\"title\":\"Upcoming\",\"event_date\":\"2026-11-20\",\"event_end_date\":null,\"event_time\":\"19:00\",\"venue\":\"Club\",\"ticket_url\":null,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":\"Nemokama\",\"price_type\":\"free\",\"description\":\"Hello & welcome\",\"image_url\":\"https://api.example.com/v1/images/5.jpg\",\"artists\":[{\"mbid\":\"artist-1\",\"name\":\"Artist\"}]}],\"total\":1,\"nextOffset\":null}"
+  },
+  {
+    "path": "/v1/events?filter=custom&from=2026-02-30",
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "{\"error\":\"Invalid filter or pagination\"}"
+  },
+  {
+    "path": "/v1/events?filter=custom&from=2026-11-21&to=2026-11-20",
+    "status": 400,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "{\"error\":\"Invalid filter or pagination\"}"
+  },
+  {
+    "path": "/v1/events?filter=all&offset=1&limit=1",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "{\"items\":[{\"id\":2,\"title\":\"Undated\",\"event_date\":null,\"event_end_date\":null,\"event_time\":null,\"venue\":null,\"ticket_url\":null,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":null,\"price_type\":null,\"description\":\"Hello & welcome\",\"image_url\":null,\"artists\":[]}],\"total\":2,\"nextOffset\":null}"
+  },
+  {
+    "path": "/v1/events/1",
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "{\"id\":1,\"title\":\"Upcoming\",\"event_date\":\"2026-11-20\",\"event_end_date\":null,\"event_time\":\"19:00\",\"venue\":\"Club\",\"ticket_url\":null,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":\"Nemokama\",\"price_type\":\"free\",\"description\":\"Hello & welcome\",\"image_url\":\"https://api.example.com/v1/images/5.jpg\",\"artists\":[{\"mbid\":\"artist-1\",\"name\":\"Artist\"}]}"
+  },
+  {
+    "path": "/v1/events/4",
+    "status": 404,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "{\"error\":\"Not found\"}"
+  },
+  {
+    "path": "/v1/events/garbage",
+    "status": 404,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "{\"error\":\"Not found\"}"
+  },
+  {
+    "path": "/v1/images/5.jpg",
+    "status": 200,
+    "headers": {
+      "content-type": "image/jpeg",
+      "cache-control": "public, max-age=3600",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "public-image"
+  },
+  {
+    "path": "/v1/images/secret.jpg",
+    "status": 404,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "{\"error\":\"Not found\"}"
+  },
+  {
+    "path": "/v1/images/link.jpg",
+    "status": 404,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "x-content-type-options": "nosniff"
+    },
+    "body": "{\"error\":\"Not found\"}"
+  }
+]

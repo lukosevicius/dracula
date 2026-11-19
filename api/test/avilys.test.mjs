@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {createHash} from 'node:crypto';
-import {importAvilysPage} from '../import-avilys.mjs';
-import {createAdmin} from '../admin.mjs';
-import {createCatalogue} from '../catalogue.mjs';
+import {importAvilysPage} from '../dist/imports/avilys.js';
+import {createAdmin} from '../dist/admin/admin.js';
+import {createCatalogue} from '../test-support/nest.mjs';
 
 test('Avilys imports are idempotent, reviewable, and preserve edits on refresh',async()=>{
   const db=new DatabaseSync(':memory:');

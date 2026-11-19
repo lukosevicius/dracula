@@ -2,7 +2,7 @@
 
 ## NestJS foundation
 
-The NestJS app exposes `GET /health`, public event and image endpoints, and authenticated Seeker routes, and checks the MariaDB connection at startup. NestJS uses TypeScript implementations for admin operations, imports, jobs, image uploads, enrichment and AI. The existing JavaScript API and independently runnable JavaScript migration runner are retained during the transition. The deployed API remains on the previous entry point until the code and Hostinger settings are updated.
+The deployed NestJS app exposes `GET /health`, public event and image endpoints, and authenticated Seeker routes, and checks the MariaDB connection at startup. NestJS uses TypeScript implementations for admin operations, imports, jobs, image uploads, enrichment and AI. The independently runnable JavaScript migration runner remains in use.
 
 Configure the environment variables in `.env.example` before starting the NestJS app. From `api/`:
 
@@ -10,11 +10,11 @@ Configure the environment variables in `.env.example` before starting the NestJS
 - `npm start` runs the built NestJS app; build first.
 - `npm run dev:nest` runs the NestJS app with source watching.
 - `npm run typecheck:nest` checks TypeScript without emitting files.
-- `npm run test:nest` builds and runs the NestJS checks, including public and admin route comparisons and admin edits using isolated fixtures. For a real MariaDB connection, use `npm run test:mariadb` as described below.
+- `npm run test:nest` builds and runs the NestJS checks, including public and admin route contract checks and admin edits using isolated fixtures. For a real MariaDB connection, use `npm run test:mariadb` as described below.
 
 The NestJS health endpoint reports process health, not ongoing database connectivity. The database connection is checked at startup and the pool is closed on application shutdown.
 
-The API is deployed at `https://api.dracula.lt` against the Hostinger MariaDB database. The live Dracula client reads its public endpoints, and local Seeker uses bearer-token-protected administrative endpoints. Hosted event and artist reads, review writes, and a bounded live import of 20 new Vilnius Events records have been verified. The bounded import left the normal import cursor unchanged; the standard next-page workflow and live AI jobs have not yet been verified end to end.
+The API is deployed at `https://api.dracula.lt` against the Hostinger MariaDB database. The live Dracula client reads its public endpoints, and local Seeker uses bearer-token-protected administrative endpoints. On 2026-11-19, Seeker read the live catalogue, saved and restored an event review, and completed a bounded Vilnius Events sample import of 10 new records through NestJS. The sample left the normal import cursor unchanged; the standard next-page workflow and live AI jobs have not yet been verified end to end.
 
 The API expects MariaDB tables equivalent to the current Seeker catalogue. `GET /v1/events?filter=upcoming&offset=0&limit=30` returns `{items, total, nextOffset}` with filtering before pagination. Filters are `upcoming`, `today`, `tomorrow`, `weekend`, `custom`, `all`, `past`, and `unknown`. A custom filter requires `from=YYYY-MM-DD` and accepts an optional `to`. The legacy `after` cursor form remains available. `GET /v1/events/:id` returns a single public event. `GET /v1/images/:filename` serves an image only while it belongs to a currently public event. `GET /health` reports that the process is running; it does not verify an ongoing database connection.
 
@@ -22,7 +22,7 @@ Like the former export, the public catalogue includes events marked `music` with
 
 Run `npm install` and `npm test` in this folder. Tests use an isolated SQLite fixture to exercise query logic and HTTP routes. A verified backup was imported into the Hostinger MariaDB staging database, with row counts and SHA-256 comparisons matching all 15 tables at import. The Node migration script, API process, prepared statements, protected edits and a Vilnius Events page import have also been tested against a disposable local MariaDB 11.4 instance. Hostinger serves public event data and an image directly; cross-site image requests from a local web preview encountered Hostinger's CDN challenge.
 
-`npm run test:mariadb` builds NestJS and runs the legacy and NestJS API integration checks against a disposable MariaDB database. It requires `MYSQL_TEST_HOST`, `MYSQL_TEST_PORT`, `MYSQL_TEST_USER`, `MYSQL_TEST_PASSWORD` and `MYSQL_TEST_DATABASE`; the database name must end in `_test` and the database must be empty. The test creates schema and fixture rows and leaves them in place, so use a fresh disposable database for each run. Never use a staging or production database for this test. This test is skipped by the normal `npm test` command unless `RUN_MARIADB_INTEGRATION=1` is set.
+`npm run test:mariadb` builds NestJS and runs the API integration checks against a disposable MariaDB database. It requires `MYSQL_TEST_HOST`, `MYSQL_TEST_PORT`, `MYSQL_TEST_USER`, `MYSQL_TEST_PASSWORD` and `MYSQL_TEST_DATABASE`; the database name must end in `_test` and the database must be empty. The test creates schema and fixture rows and leaves them in place, so use a fresh disposable database for each run. Never use a staging or production database for this test. This test is skipped by the normal `npm test` command unless `RUN_MARIADB_INTEGRATION=1` is set.
 
 Configure the variables in `.env.example` in the hosting environment; never put credentials in the client. `IMAGE_DIR` must point to durable storage outside the deployment directory. `PUBLIC_BASE_URL` is the public API origin. Keep the database private and the administrative token secret.
 

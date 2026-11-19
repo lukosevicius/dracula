@@ -4,10 +4,7 @@ import { readFile, mkdtemp, writeFile, rm, copyFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import mysql from 'mysql2/promise';
-import { createApp } from '../app.mjs';
-import { createAdmin } from '../admin.mjs';
-import { createCatalogue } from '../catalogue.mjs';
-import { importVilniusPage } from '../import-vilnius.mjs';
+import { importVilniusPage } from '../dist/imports/vilnius.js';
 import { migrate } from '../migrate.mjs';
 
 // This deliberately refuses existing data and never targets staging or production.
@@ -15,7 +12,7 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
   const {MYSQL_TEST_HOST:host,MYSQL_TEST_PORT:port,MYSQL_TEST_USER:user,MYSQL_TEST_PASSWORD:password,MYSQL_TEST_DATABASE:database}=process.env;
   if (!host || !port || !user || !password || !database || !/^[A-Za-z0-9_]+_test$/.test(database)) throw new Error('Configure a disposable empty database ending in _test.');
   const pool=mysql.createPool({host,port:Number(port),user,password,database,charset:'utf8mb4',connectionLimit:5,multipleStatements:true});
-  let app, imageDir, nest;
+  let imageDir, nest;
   try {
     const [tables]=await pool.query('SHOW FULL TABLES');
     if(tables.length) throw new Error('Test database is not empty; refusing to alter it.');
@@ -33,16 +30,9 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     await pool.execute('UPDATE vilnius_events SET featured_media=42 WHERE source_id=11');
     imageDir=await mkdtemp(join(tmpdir(),'dracula-api-test-')); await writeFile(join(imageDir,'42.jpg'),Buffer.from([1,2,3]));
     const token='0123456789abcdef0123456789abcdef';
-    app=createApp(createCatalogue(pool,'https://api.example.com'),imageDir,createAdmin(pool,token,imageDir));
-    await new Promise(resolve=>app.listen(0,'127.0.0.1',resolve));
-    let root=`http://127.0.0.1:${app.address().port}`;
+    let root;
     const headers={authorization:`Bearer ${token}`,'content-type':'application/json'};
     const post=(action,body)=>fetch(`${root}/v1/admin/events/1/${action}`,{method:'POST',headers,body:JSON.stringify(body)});
-    assert.equal((await fetch(`${root}/v1/admin/events/1`)).status,401);
-    assert.equal((await post('review',{review_status:'music'})).status,200);
-    assert.equal((await post('details',{review_status:'music',event_date:'2099-11-20',event_end_date:'2099-11-21',venue:'Venue'})).status,200);
-    assert.equal((await post('artist',{mbid,decision:'accepted'})).status,200);
-    assert.equal((await post('price',{price_type:'free',price_text:'Nemokama'})).status,200);
     // Run the Nest server with its real connection pool against the same disposable fixture.
     const {Test}=await import('@nestjs/testing');
     const {AppModule}=await import('../dist/app.module.js');
@@ -179,7 +169,6 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
 
   } finally {
     if(nest) await nest.close();
-    if(app) await new Promise(resolve=>app.close(resolve));
     await pool.end();
     if(imageDir)await rm(imageDir,{recursive:true,force:true});
   }

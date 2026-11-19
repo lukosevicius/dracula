@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "node dist/main.js",
-    "test": "node --test test/*.test.mjs",
+    "test": "npm run build && node --test test/*.test.mjs",
     "test:mariadb": "npm run build:nest && RUN_MARIADB_INTEGRATION=1 node --test test/mariadb.integration.test.mjs",
     "migrate": "node migrate.mjs",
     "build:nest": "npm run build",
@@ -12,7 +12,6 @@
     "dev:nest": "tsx watch src/main.ts",
     "start:nest": "node dist/main.js",
     "test:nest": "npm run build:nest && node --test test-nest/*.test.mjs",
-    "start:legacy": "node server.mjs",
     "build": "tsc -p tsconfig.json",
     "test:production": "node test/production-smoke.mjs"
   },
