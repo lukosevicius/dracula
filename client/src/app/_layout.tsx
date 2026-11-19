@@ -2,6 +2,7 @@ import { Image } from 'expo-image';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { WebHeader } from '../components/web-header';
+import { AuthProvider } from '../auth/auth-context';
 import { StyleSheet, Text, View } from 'react-native';
 
 function BrandTitle() {
@@ -12,7 +13,7 @@ function BrandTitle() {
 }
 
 export default function RootLayout() {
-  return <><StatusBar style="light" /><Stack screenOptions={{ headerStyle: { backgroundColor: '#100e15' }, headerTintColor: '#fff', headerShadowVisible: false, contentStyle: { backgroundColor: '#100e15' } }}><Stack.Screen name="index" options={{ title: 'Dracula', header: process.env.EXPO_OS === 'web' ? () => <WebHeader><BrandTitle /></WebHeader> : undefined, headerTitle: () => <BrandTitle /> }} /></Stack></>;
+  return <AuthProvider><StatusBar style="light" /><Stack screenOptions={{ headerStyle: { backgroundColor: '#100e15' }, headerTintColor: '#fff', headerShadowVisible: false, contentStyle: { backgroundColor: '#100e15' } }}><Stack.Screen name="index" options={{ title: 'Dracula', header: process.env.EXPO_OS === 'web' ? () => <WebHeader><BrandTitle /></WebHeader> : undefined, headerTitle: () => <BrandTitle /> }} /></Stack></AuthProvider>;
 }
 
 const styles = StyleSheet.create({

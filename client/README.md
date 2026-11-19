@@ -15,6 +15,8 @@ Open the QR code in Expo Go, or use the Expo terminal commands to open an instal
 
 The app reads event data from `https://api.dracula.lt` by default. Set `EXPO_PUBLIC_API_URL` to use a different API. Never put credentials in `EXPO_PUBLIC_` variables.
 
+The web account page uses Google Sign-In and the API's cookie-based user sessions. The public Google web client ID defaults to Dracula's configured client ID; set `EXPO_PUBLIC_GOOGLE_CLIENT_ID` before building to use another Google OAuth web client. The client ID is public and is not a client secret. The API must have migrations 006 and 007 applied and must be configured with the same client ID and an allowed app origin. For local sign-in use a local API with `PUBLIC_BASE_URL=http://localhost:3000`, `AUTH_ORIGINS=http://localhost:8081`, and `EXPO_PUBLIC_API_URL=http://localhost:3000`; browsers will not send the production API's same-site session cookies from a localhost app. Native sign-in is not implemented yet.
+
 Run `npm run build` to build the web app. It uses single-page routing and writes an Apache rewrite rule for direct event URLs. Hostinger challenged image requests from a localhost preview, while images loaded on the live app domain with CDN security at Medium.
 
 ## Web deployment

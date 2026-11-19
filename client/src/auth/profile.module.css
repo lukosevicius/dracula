@@ -1,0 +1,23 @@
+.page { width: 100%; max-width: 760px; margin: 0 auto; padding: 36px 22px 80px; box-sizing: border-box; color: #f9f6fa; font-family: system-ui, sans-serif; }
+.back { color: #efb0b8; text-decoration: none; font-weight: 650; }
+.back:hover { text-decoration: underline; }
+.card { margin-top: 32px; padding: clamp(24px, 5vw, 40px); background: #1d1822; border: 1px solid #403541; border-radius: 20px; }
+.eyebrow { color: #ff8792; font-size: 12px; font-weight: 800; letter-spacing: .16em; margin: 0 0 12px; }
+.heading { margin: 0 0 14px; font-size: clamp(30px, 5vw, 40px); letter-spacing: -.03em; }
+.secondary { color: #beb3c1; line-height: 1.6; margin: 0 0 24px; }
+.user { display: flex; gap: 16px; align-items: center; margin: 28px 0; }
+.avatar, .avatarFallback { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; }
+.avatarFallback { display: grid; place-items: center; background: #49303f; color: #fff; font-size: 24px; font-weight: 700; }
+.userLabel { color: #beb3c1; font-size: 14px; margin: 0 0 4px; }
+.userName { font-size: 19px; font-weight: 700; margin: 0; overflow-wrap: anywhere; }
+.form { display: grid; gap: 10px; max-width: 420px; margin-bottom: 24px; }
+.form label { font-size: 14px; font-weight: 650; }
+.form input { padding: 12px 14px; border: 1px solid #67546a; border-radius: 10px; background: #100e15; color: #fff; font: inherit; }
+.primaryButton, .secondaryButton { cursor: pointer; width: fit-content; border-radius: 999px; padding: 11px 20px; font: inherit; font-weight: 700; }
+.primaryButton { background: #f2e8e8; color: #1d1822; border: 1px solid #f2e8e8; }
+.secondaryButton { color: #f2e8e8; border: 1px solid #67546a; background: transparent; }
+.primaryButton:disabled, .secondaryButton:disabled { cursor: default; opacity: .55; }
+.primaryButton:focus-visible, .secondaryButton:focus-visible, .form input:focus-visible, .back:focus-visible { outline: 3px solid #ff8792; outline-offset: 3px; }
+.error { color: #ff939c; line-height: 1.5; }
+.success { color: #a4dda9; }
+.signIn { margin-top: 24px; min-height: 46px; }
