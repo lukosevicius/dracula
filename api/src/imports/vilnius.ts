@@ -5,6 +5,7 @@ interface EventInput { source_id: number; title: string; source_url: string; con
 interface PageInput { items: EventInput[]; advance_cursor: boolean; expected_offset: number; next_offset: number; total_available: number | null; job?: {id: number; owner: string} }
 interface Lease extends RowDataPacket {job_id: number; owner_hash: string; expires_at: number | string}
 const fields: Field[]=['event_date','event_end_date','event_time','venue','ticket_url'];
+const city = 'Vilnius';
 const problem=(status: number,message: string)=>Object.assign(new Error(message),{status});
 const dateOk=(value: string)=>/^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0,10)===value;
 
@@ -42,7 +43,7 @@ export async function importVilniusPage(pool: Pool, data: unknown) {
         if(!existing.length){
           const values=fields.map(field=>item.details[field]||null);
           await conn.execute('INSERT INTO vilnius_events(source_id,title,source_url,content_html,categories_json,featured_media,published_at,modified_at,first_seen_at,updated_at,event_date,event_end_date,event_time,venue,ticket_url,details_manual,review_status,details_checked_at,details_version,manual_fields) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',[item.source_id,item.title,item.source_url,item.content_html,categories,item.featured_media||null,item.published_at||null,item.modified_at||null,now,now,...values,0,'unsure',null,0,'[]']);
-          const [result]=await conn.execute<ResultSetHeader>('INSERT INTO events(title,event_date,event_end_date,event_time,venue,ticket_url,review_status,manual_fields,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)',[item.title,...values,'unsure','[]',now,now]);
+          const [result]=await conn.execute<ResultSetHeader>('INSERT INTO events(title,event_date,event_end_date,event_time,venue,ticket_url,city,review_status,manual_fields,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[item.title,...values,city,'unsure','[]',now,now]);
           await conn.execute('INSERT INTO event_sources(event_id,source_key,source_id,source_url,content_html,source_data_json,last_checked_at) VALUES(?,?,?,?,?,?,?)',[result.insertId,'vilnius-events',String(item.source_id),item.source_url,item.content_html,metadata,null]);
           added++;
         } else {
@@ -53,7 +54,7 @@ export async function importVilniusPage(pool: Pool, data: unknown) {
           const checked=changed?null:row.details_checked_at;
           const values=fields.map(field=>checked===null&&!manual.includes(field)?(item.details[field]??row[field]):row[field]);
           await conn.execute('UPDATE vilnius_events SET title=?,source_url=?,content_html=?,categories_json=?,featured_media=?,published_at=?,modified_at=?,updated_at=?,event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=?,details_checked_at=? WHERE source_id=?',[item.title,item.source_url,item.content_html,categories,item.featured_media||null,item.published_at||null,item.modified_at||null,now,...values,checked,item.source_id]);
-          await conn.execute('UPDATE events SET title=?,event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=?,updated_at=? WHERE id=?',[item.title,...values,now,links[0].event_id]);
+          await conn.execute('UPDATE events SET title=?,event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=?,city=?,updated_at=? WHERE id=?',[item.title,...values,city,now,links[0].event_id]);
           await conn.execute("UPDATE event_sources SET source_url=?,content_html=?,source_data_json=?,last_checked_at=? WHERE source_key='vilnius-events' AND source_id=?",[item.source_url,item.content_html,metadata,checked,String(item.source_id)]);
           updated++;
         }

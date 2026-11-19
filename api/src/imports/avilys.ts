@@ -3,6 +3,7 @@ import type { Pool, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 interface AvilysEvent { id: number; title: string; city: string; categories: {id: number}[]; description?: string; startTime?: string; venueName?: string; ticketUrl?: string; sourceUrl?: string; priceFrom?: number | string; priceTo?: number | string; free?: boolean }
 interface ImportInput { items: AvilysEvent[]; job: {id: number; owner: string} }
 interface Lease extends RowDataPacket { job_id: number; owner_hash: string; expires_at: number | string }
+const city = 'Vilnius';
 const fail=(status: number,message: string)=>Object.assign(new Error(message),{status});
 const esc=(value: string | undefined)=>String(value||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
 const url=(value: string | undefined)=>{try{const u=new URL(value ?? '');return ['http:','https:'].includes(u.protocol)&&!u.username&&!u.password?u.href:null;}catch{return null;}};
@@ -14,7 +15,7 @@ export async function importAvilysPage(pool: Pool, data: unknown){
   if(!Array.isArray(input?.items)||input.items.length>20||!Number.isSafeInteger(input.job?.id)||typeof input.job?.owner!=='string'||!/^[a-f0-9]{64}$/.test(input.job.owner))throw fail(400,'Invalid Avilys import.');
   const ids=new Set<number>();
   for(const e of input.items){
-    if(!e||!Number.isSafeInteger(e.id)||e.id<1||ids.has(e.id)||typeof e.title!=='string'||!e.title.trim()||e.title.length>2000||typeof e.city!=='string'||e.city.toLowerCase()!=='vilnius'||!Array.isArray(e.categories)||!e.categories.some(c=>c?.id===1)||typeof (e.description??'')!=='string'||(e.description?.length||0)>100000)throw fail(400,'Invalid Avilys event.');
+    if(!e||!Number.isSafeInteger(e.id)||e.id<1||ids.has(e.id)||typeof e.title!=='string'||!e.title.trim()||e.title.length>2000||typeof e.city!=='string'||e.city.toLowerCase()!==city.toLowerCase()||!Array.isArray(e.categories)||!e.categories.some(c=>c?.id===1)||typeof (e.description??'')!=='string'||(e.description?.length||0)>100000)throw fail(400,'Invalid Avilys event.');
     ids.add(e.id);
   }
   const conn=await pool.getConnection();let added=0,updated=0;
@@ -28,7 +29,7 @@ export async function importAvilysPage(pool: Pool, data: unknown){
       const sourceUrl=`https://avilys.app/event/${e.id}`, description=esc(e.description), metadata=JSON.stringify(e), original=url(e.sourceUrl);
       if(!links.length){
         // The source timestamps have appeared to contain local wall times labelled UTC. Keep time unknown until reviewed.
-        const [insert]=await conn.execute<ResultSetHeader>('INSERT INTO events(title,event_date,event_end_date,event_time,venue,ticket_url,review_status,manual_fields,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)',[e.title.trim(),date(e.startTime),null,null,typeof e.venueName==='string'?e.venueName.slice(0,300):null,url(e.ticketUrl),'unsure','[]',now,now]);
+        const [insert]=await conn.execute<ResultSetHeader>('INSERT INTO events(title,event_date,event_end_date,event_time,venue,ticket_url,city,review_status,manual_fields,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[e.title.trim(),date(e.startTime),null,null,typeof e.venueName==='string'?e.venueName.slice(0,300):null,url(e.ticketUrl),city,'unsure','[]',now,now]);
         await conn.execute('INSERT INTO event_sources(event_id,source_key,source_id,source_url,content_html,source_data_json,last_checked_at,about_url) VALUES(?,?,?,?,?,?,?,?)',[insert.insertId,'avilys',String(e.id),sourceUrl,description,metadata,now,original]);
         const from=typeof e.priceFrom==='number'||typeof e.priceFrom==='string'?Number(e.priceFrom):NaN;
         const to=typeof e.priceTo==='number'||typeof e.priceTo==='string'?Number(e.priceTo):NaN;
@@ -38,6 +39,7 @@ export async function importAvilysPage(pool: Pool, data: unknown){
         added++;
       }else{
         // Do not overwrite reviewed event fields or source association on refresh.
+        await conn.execute('UPDATE events SET city=? WHERE id=? AND city IS NULL',[city,links[0].event_id]);
         await conn.execute("UPDATE event_sources SET content_html=?,source_data_json=?,last_checked_at=?,about_url=? WHERE source_key='avilys' AND source_id=?",[description,metadata,now,original,String(e.id)]);
         updated++;
       }

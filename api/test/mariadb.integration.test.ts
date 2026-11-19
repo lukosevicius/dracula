@@ -89,11 +89,14 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     const importPage= (body: unknown)=>fetch(importUrl,{method:'POST',headers,body:JSON.stringify(body)});
     assert.deepEqual(await (await importPage(payload)).json(),{ok:true,added:1,updated:0});
     assert.equal((await importPage(payload)).status,409);
-    const [[linked]]=await pool.execute<RowDataPacket[]>("SELECT event_id FROM event_sources WHERE source_key='vilnius-events' AND source_id='12'");
+    const [[linked]]=await pool.execute<RowDataPacket[]>("SELECT s.event_id,e.city FROM event_sources s JOIN events e ON e.id=s.event_id WHERE s.source_key='vilnius-events' AND s.source_id='12'");
+    assert.equal(linked.city,'Vilnius');
+    await pool.execute('UPDATE events SET city=NULL WHERE id=?',[linked.event_id]);
     assert.equal((await fetch(`${root}/v1/admin/events/${linked.event_id}/details`,{method:'POST',headers,body:JSON.stringify({review_status:'music',event_date:'2099-11-20',venue:'Manual'})})).status,200);
     assert.equal((await importPage({...payload,advance_cursor:false,items:[{...item,modified_at:'two',content_html:'changed',details:{...item.details,venue:'Source update'}}]})).status,200);
-    const [[preserved]]=await pool.execute<RowDataPacket[]>('SELECT review_status,venue,manual_fields FROM events WHERE id=?',[linked.event_id]);
+    const [[preserved]]=await pool.execute<RowDataPacket[]>('SELECT review_status,venue,manual_fields,city FROM events WHERE id=?',[linked.event_id]);
     assert.equal(preserved.review_status,'music'); assert.equal(preserved.venue,'Manual'); assert.ok(JSON.parse(preserved.manual_fields).includes('venue'));
+    assert.equal(preserved.city,'Vilnius');
     await pool.execute("INSERT INTO vilnius_events(source_id,title,source_url,content_html,categories_json,first_seen_at,updated_at,details_manual,review_status,details_version,manual_fields) VALUES(13,'Orphan','https://www.vilnius-events.lt/test','x','[]','now','now',0,'unsure',0,'[]')");
     const failed=await importPage({...payload,advance_cursor:false,items:[{...item,source_id:14},{...item,source_id:13}]});
     assert.equal(failed.status,409);
@@ -106,12 +109,13 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     const startJob=()=>fetch(`${root}/v1/admin/jobs/start`,{method:'POST',headers,body:JSON.stringify({action:'sample'})});
     const starts=await Promise.all([startJob(),startJob()]);assert.deepEqual(starts.map(r=>r.status).sort(),[200,409]);
     const job=await starts.find(r=>r.status===200)!.json();
-    const avilysItem={id:987654,title:'Avilys music',city:'Vilnius',categories:[{id:1}],description:'Concert',startTime:'2099-11-20T19:00:00Z',venueName:'Club'};
+    const avilysItem={id:987654,title:'Avilys music',city:'vilnius',categories:[{id:1}],description:'Concert',startTime:'2099-11-20T19:00:00Z',venueName:'Club'};
     const avilys= (body: unknown)=>fetch(`${root}/v1/admin/imports/avilys/page`,{method:'POST',headers,body:JSON.stringify(body)});
     assert.deepEqual(await (await avilys({job:{id:job.id,owner:job.owner},items:[avilysItem]})).json(),{ok:true,added:1,updated:0});
     assert.deepEqual(await (await avilys({job:{id:job.id,owner:job.owner},items:[avilysItem]})).json(),{ok:true,added:0,updated:1});
-    const [[avilysEvent]]=await pool.execute<RowDataPacket[]>("SELECT e.review_status FROM events e JOIN event_sources s ON s.event_id=e.id WHERE s.source_key='avilys' AND s.source_id='987654'");
+    const [[avilysEvent]]=await pool.execute<RowDataPacket[]>("SELECT e.id,e.review_status,e.city FROM events e JOIN event_sources s ON s.event_id=e.id WHERE s.source_key='avilys' AND s.source_id='987654'");
     assert.equal(avilysEvent.review_status,'unsure');
+    assert.equal(avilysEvent.city,'Vilnius');
     assert.equal((await upload(imagePayload)).status,409);
     assert.equal((await upload({...imagePayload,job:{id:job.id,owner:job.owner}})).status,200);
     const candidates=await (await fetch(`${root}/v1/admin/enrichment?mode=event&eventId=1`,{headers})).json();assert.equal(candidates.events.length,1);
@@ -149,19 +153,28 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     assert.equal((await fetch(`${root}/v1/admin/jobs/${aiJob.id}`,{method:'POST',headers,body:JSON.stringify({source:'ai-evaluation',status:'completed',owner:aiJob.owner,progress:{fetched:1,added:1,updated:0,completed:1,total:1,failed:0,cost_usd:0.0001}})})).status,200);
     const [[aiProgress]]=await pool.execute<RowDataPacket[]>('SELECT progress_json FROM jobs WHERE id=?',[aiJob.id]);assert.equal(JSON.parse(aiProgress.progress_json).cost_usd,0.0001);
 
-    // Exercise baseline, idempotence, checksum protection, and a partial DDL failure.
+    // Recreate the pre-city schema to exercise the real upgrade against existing imports.
+    await pool.query('ALTER TABLE events DROP COLUMN city');
+    await pool.query(`INSERT INTO events(id,title,review_status,manual_fields,created_at,updated_at)
+      VALUES(10001,'Kaunas fixture','unsure','[]','now','now'),(10002,'Unknown city fixture','unsure','[]','now','now');
+      INSERT INTO event_sources(event_id,source_key,source_id,source_url,content_html,source_data_json)
+      VALUES(10001,'avilys','10001','https://example.com','','{"city":" Kaunas "}'),(10002,'avilys','10002','https://example.com','','{broken');`);
+
+    // Exercise the backfill, baseline, idempotence, checksum protection, and a partial DDL failure.
     const migrationDir=await mkdtemp(join(tmpdir(),'dracula-migrations-'));
     const migrationDb=await pool.getConnection();
     try {
-      for (const name of ['001-auto-increment.sql','002-job-leases.sql','003-musicbrainz-jobs.sql']) await copyFile(new URL(`../migrations/${name}`,import.meta.url),join(migrationDir,name));
-      await assert.rejects(migrate(migrationDb,'up',migrationDir),/not baselined/);
-      await migrate(migrationDb,'baseline',migrationDir);
-      await writeFile(join(migrationDir,'004-test.sql'),'CREATE TABLE migration_test (id INT PRIMARY KEY);');
-      await migrate(migrationDb,'up',migrationDir);
-      await migrate(migrationDb,'up',migrationDir);
-      await writeFile(join(migrationDir,'004-test.sql'),'SELECT 1;');
+      await assert.rejects(migrate(migrationDb,'up'),/not baselined/);
+      await migrate(migrationDb,'baseline');
+      await migrate(migrationDb,'up');
+      await migrate(migrationDb,'up');
+      const [cities]=await migrationDb.query<RowDataPacket[]>('SELECT city FROM events WHERE id IN (?) ORDER BY id',[[1,avilysEvent.id,10001,10002]]);
+      assert.deepEqual(cities.map(row=>row.city),['Vilnius','Vilnius','Kaunas',null]);
+
+      for (const name of ['001-auto-increment.sql','002-job-leases.sql','003-musicbrainz-jobs.sql','004-event-city.sql']) await copyFile(new URL(`../migrations/${name}`,import.meta.url),join(migrationDir,name));
+      await writeFile(join(migrationDir,'004-event-city.sql'),'SELECT 1;');
       await assert.rejects(migrate(migrationDb,'status',migrationDir),/Checksum mismatch/);
-      await writeFile(join(migrationDir,'004-test.sql'),'CREATE TABLE migration_test (id INT PRIMARY KEY);');
+      await copyFile(new URL('../migrations/004-event-city.sql',import.meta.url),join(migrationDir,'004-event-city.sql'));
       await writeFile(join(migrationDir,'005-failure.sql'),'CREATE TABLE migration_partial (id INT); INVALID SQL;');
       await assert.rejects(migrate(migrationDb,'up',migrationDir));
       await assert.rejects(migrate(migrationDb,'up',migrationDir),/is applying/);
