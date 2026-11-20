@@ -28,6 +28,10 @@ export class AdminController {
     const url=new URL(req.originalUrl,'http://localhost');
     const path=url.pathname;
     try {
+      if (req.method==='GET' && path==='/v1/admin/seeker/saved-events') return json(res,200,{events:await admin.savedEvents()});
+      if (req.method==='GET' && path==='/v1/admin/seeker/settings') return json(res,200,{settings:await admin.seekerSettings()});
+      const savedEvent=/^\/v1\/admin\/seeker\/saved-events\/(\d{1,12})$/.exec(path);
+      if(req.method==='DELETE'&&savedEvent&&Number(savedEvent[1])>0){await admin.removeSavedEvent(Number(savedEvent[1]));return json(res,200,{ok:true});}
       if (req.method==='GET' && path==='/v1/admin/jobs') return json(res,200,{jobs:await this.imports.jobs.list()});
       if (req.method==='GET' && path==='/v1/admin/artists') return json(res,200,await admin.artistsDashboard());
       if (req.method==='GET' && path==='/v1/admin/ai/artists') return json(res,200,{artists:await this.imports.ai.artists()});
@@ -62,13 +66,14 @@ export class AdminController {
       const isReservation=path==='/v1/admin/imports/vilnius-events/reserve-request';
       const isArtistImport=path==='/v1/admin/imports/musicbrainz/page', isArtistReservation=path==='/v1/admin/imports/musicbrainz/reserve-request';
       const isAiSave=path==='/v1/admin/ai/results', aiDecision=/^\/v1\/admin\/ai\/results\/(\d{1,12})\/decision$/.exec(path);
+      const isSeekerSave=path==='/v1/admin/seeker/saved-events',isSeekerSettings=path==='/v1/admin/seeker/settings';
       const isJobStart=path==='/v1/admin/jobs/start', isImageUpload=path==='/v1/admin/images';
       const isAvilysImageUpload=path==='/v1/admin/event-images/avilys';
       const jobUpdate=/^\/v1\/admin\/jobs\/(\d{1,12})$/.exec(path);
       const route=/^\/v1\/admin\/events\/(\d{1,12})\/(review|details|artist|price|confirm-assistant-review|enrich)$/.exec(path);
-      if (!isVilnius && !isAvilys && !isReservation && !isArtistImport && !isArtistReservation && !isAiSave && !aiDecision && !isJobStart && !isImageUpload && !isAvilysImageUpload && !jobUpdate && (!route || !Number.isSafeInteger(Number(route[1])) || Number(route[1])<1)) return json(res,404,{error:'Not found'});
+      if (!isVilnius && !isAvilys && !isReservation && !isArtistImport && !isArtistReservation && !isAiSave && !aiDecision && !isJobStart && !isImageUpload && !isAvilysImageUpload && !isSeekerSave && !isSeekerSettings && !jobUpdate && (!route || !Number.isSafeInteger(Number(route[1])) || Number(route[1])<1)) return json(res,404,{error:'Not found'});
       if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || ''))return json(res,415,{error:'Expected JSON'});
-      const max=isImageUpload||isAvilysImageUpload?17*1024*1024:isVilnius||isAvilys||isArtistImport?6*1024*1024:isAiSave||route?.[2]==='enrich'?512*1024:8192;
+      const max=isImageUpload||isAvilysImageUpload?17*1024*1024:isVilnius||isAvilys||isArtistImport?6*1024*1024:isAiSave||route?.[2]==='enrich'?512*1024:isSeekerSettings?65536:isSeekerSave?8192:8192;
       let size=0;const chunks: Buffer[]=[];
       for await (const chunk of req) { const bytes=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);size+=bytes.length;if(size>max)return json(res,413,{error:'Request too large'});chunks.push(bytes); }
       let body: Record<string, unknown>;
@@ -81,6 +86,8 @@ export class AdminController {
       if(isJobStart)return json(res,200,{ok:true,...await this.imports.jobs.start(body.action,body.source,body.limit)});
       if(isImageUpload)return json(res,200,{ok:true,...await this.imports.saveImage(body)});
       if(isAvilysImageUpload)return json(res,200,{ok:true,...await this.imports.saveAvilysImage(body)});
+      if(isSeekerSave){await admin.saveEvents(body.ids as number[]);return json(res,200,{ok:true});}
+      if(isSeekerSettings){await admin.saveSeekerSetting(body.key as string,body.value);return json(res,200,{ok:true});}
       if(isAiSave){await this.imports.ai.save(body);return json(res,200,{ok:true});}
       if(aiDecision){await this.imports.ai.decision(Number(aiDecision[1]),body.decision);return json(res,200,{ok:true});}
       if(jobUpdate){await this.imports.jobs.update(Number(jobUpdate[1]),body);return json(res,200,{ok:true});}

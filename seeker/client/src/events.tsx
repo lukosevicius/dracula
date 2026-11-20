@@ -65,7 +65,7 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
   const [loading, setLoading] = useState(true);
   const requestId = useRef(0);
   const catalogue = useRef<HTMLElement>(null);
-  const { events: savedEvents, isSaved, toggle: toggleSaved } = useSavedEvents();
+  const { events: savedEvents, isSaved, toggle: toggleSaved, loading: savedEventsLoading, error: savedEventsError, pendingIds: savedPendingIds } = useSavedEvents();
   const today = dateFormatter.format(new Date());
   const invalid = when === 'custom' && (!from || (!!to && to < from));
   const extraCount = Number(readiness !== 'all') + Number(assistantReview !== 'all') + Number(sourceFilter !== defaultSource);
@@ -319,6 +319,7 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
                 {isFiltered && <button type="button" className="text-button reset-filters" onClick={resetFilters}>Reset filters</button>}
               </div>
               {invalid && <Feedback error message={!from ? 'Choose a start date.' : 'End date must be on or after the start date.'} />}
+              {savedEventsError && <Feedback error message={savedEventsError} />}
             </div>
             <div className="selection-bar">
               <label className="checkbox-label"><input type="checkbox" checked={allSelected} ref={element => { if (element) element.indeterminate = !allSelected && rowIds.some(id => selected.includes(id)); }} disabled={!rows.length || loading || bulkPending} onChange={event => setSelection(rowIds, event.target.checked)} /> Select this page</label>
@@ -333,7 +334,7 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
             <div className="event-list" aria-busy={loading}>
               {rows.map(row => (
                 <EventItem key={row.id} row={row} today={today} showSource={!avilys} open={open === row.id} toggle={() => setOpen(current => current === row.id ? null : row.id)}
-                  selected={selected.includes(row.id)} select={checked => setSelection([row.id], checked)} disabled={bulkPending || pending.includes(row.id) || loading}
+                  selected={selected.includes(row.id)} select={checked => setSelection([row.id], checked)} disabled={bulkPending || pending.includes(row.id) || loading || savedEventsLoading || savedPendingIds.includes(row.id)}
                   review={status => void changeRow(row.id, 'review', { review_status: status }, 'Review saved.')}
                   confirm={() => void changeRow(row.id, 'confirm-assistant-review', {}, 'Assistant review checked.')}
                   editor={<EventEditor row={row} today={today} onSaved={() => loadCurrent.current()} onRefresh={() => void startVilnius('details-event', row.id)} refreshing={busy} />}

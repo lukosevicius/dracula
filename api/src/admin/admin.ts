@@ -33,6 +33,34 @@ export function createAdmin(pool: Pool, token: string) {
     } finally { conn.release(); }
   }
   return {
+    async savedEvents() {
+      const [rows]=await pool.execute<RowDataPacket[]>(`SELECT e.*,s.source_id,s.source_key,s.source_url,s.about_url,s.last_checked_at AS details_checked_at,ar.reviewed_at AS assistant_reviewed_at,ar.confirmed_at AS assistant_confirmed_at,ar.notes AS assistant_notes,ep.price_text,COALESCE(ep.price_type,'unknown') AS price_type FROM seeker_saved_events saved JOIN events e ON e.id=saved.event_id LEFT JOIN event_prices ep ON ep.event_id=e.id LEFT JOIN assistant_event_reviews ar ON ar.event_id=e.id JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY id LIMIT 1) ORDER BY saved.saved_at DESC,e.id DESC`);
+      return rows.map(row=>({...row,id:Number(row.id)}));
+    },
+    async saveEvents(ids: number[]) {
+      if(!Array.isArray(ids)||ids.length>500||!ids.every(id=>Number.isSafeInteger(id)&&id>0&&id<=999999999999))throw error(400,'Invalid saved event IDs.');
+      const unique=[...new Set(ids)];
+      if(!unique.length)return;
+      const placeholders=unique.map(()=>'?').join(',');
+      await pool.execute(`INSERT IGNORE INTO seeker_saved_events(event_id) SELECT id FROM events WHERE id IN (${placeholders})`,unique);
+    },
+    async removeSavedEvent(id: number) {
+      if(!Number.isSafeInteger(id)||id<1||id>999999999999)throw error(400,'Invalid event ID.');
+      await pool.execute('DELETE FROM seeker_saved_events WHERE event_id=?',[id]);
+    },
+    async seekerSettings() {
+      const [rows]=await pool.execute<RowDataPacket[]>('SELECT setting_key,setting_value FROM seeker_settings ORDER BY setting_key');
+      const settings:Record<string,unknown>={};
+      for(const row of rows){try{settings[String(row.setting_key)]=typeof row.setting_value==='string'?JSON.parse(row.setting_value):row.setting_value;}catch{throw error(500,'A saved Seeker setting is invalid.');}}
+      return settings;
+    },
+    async saveSeekerSetting(key: string, value: unknown) {
+      if(typeof key!=='string'||!/^[a-z][a-z0-9._-]{0,190}$/.test(key))throw error(400,'Invalid setting key.');
+      let serialized:string;
+      try{serialized=JSON.stringify(value);}catch{throw error(400,'Invalid setting value.');}
+      if(serialized===undefined||Buffer.byteLength(serialized)>65536)throw error(400,'Setting value is too large or invalid.');
+      await pool.execute('INSERT INTO seeker_settings(setting_key,setting_value) VALUES(?,?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)',[key,serialized]);
+    },
     async enrichmentCandidates(mode: string | null,after: number,eventId: number){
       if(mode===null||!['missing','oldest','all','event'].includes(mode)||!Number.isSafeInteger(after)||after<0||(mode==='event'&&(!Number.isSafeInteger(eventId)||eventId<1)))throw error(400,'Invalid detail selection.');
       const clauses=["s.source_key='vilnius-events'"],params: (string | number)[]=[];

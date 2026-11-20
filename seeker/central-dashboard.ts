@@ -15,7 +15,29 @@ export function createCentralDashboard(api:CentralApi, userAgent='Seeker/0.1.0')
     const url=new URL(request.url || '/', 'http://localhost');
     if(!url.pathname.startsWith('/api/'))return false;
     const send=(status:number,body:unknown)=>{response.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});response.end(JSON.stringify(body));};
+    const readBody=async(max:number):Promise<Record<string,unknown>|null>=>{
+      if(!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type']||'')){send(415,{error:'Expected JSON.'});return null;}
+      let size=0;const chunks:Buffer[]=[];for await(const chunk of request){const part=Buffer.from(chunk);size+=part.length;if(size>max){send(413,{error:'Request too large.'});return null;}chunks.push(part);}
+      try{const value=JSON.parse(Buffer.concat(chunks).toString('utf8'));if(!value||typeof value!=='object'||Array.isArray(value)){send(400,{error:'Invalid JSON.'});return null;}return value;}catch{send(400,{error:'Invalid JSON.'});return null;}
+    };
     try {
+      if(request.method==='GET'&&url.pathname==='/api/saved-events'){send(200,{events:await api.savedEvents()});return true;}
+      if(request.method==='POST'&&url.pathname==='/api/saved-events'){
+        const body=await readBody(8192);if(!body)return true;
+        if(!Array.isArray(body.ids)||body.ids.length>500||!body.ids.every(id=>Number.isSafeInteger(id)&&Number(id)>0)){send(400,{error:'Invalid saved event IDs.'});return true;}
+        await api.saveEvents(body.ids as number[]);send(200,{ok:true});return true;
+      }
+      if(request.method==='POST'&&url.pathname==='/api/saved-events/remove'){
+        const body=await readBody(1024);if(!body)return true;
+        if(!Number.isSafeInteger(body.id)||Number(body.id)<1){send(400,{error:'Invalid event ID.'});return true;}
+        await api.removeSavedEvent(Number(body.id));send(200,{ok:true});return true;
+      }
+      if(request.method==='GET'&&url.pathname==='/api/seeker/settings'){send(200,{settings:await api.seekerSettings()});return true;}
+      if(request.method==='POST'&&url.pathname==='/api/seeker/settings'){
+        const body=await readBody(65536);if(!body)return true;
+        if(typeof body.key!=='string'||! /^[a-z][a-z0-9._-]{0,190}$/.test(body.key)||!('value' in body)){send(400,{error:'Invalid Seeker setting.'});return true;}
+        await api.saveSeekerSetting(body.key,body.value);send(200,{ok:true});return true;
+      }
       if(request.method==='GET' && url.pathname==='/api/avilys/preview') {
         const raw=url.searchParams.get('page') || '1';
         if(!/^\d{1,5}$/.test(raw)||Number(raw)<1||Number(raw)>10000){send(400,{error:'Invalid Avilys page.'});return true;}

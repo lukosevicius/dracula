@@ -3,7 +3,7 @@ import { apiUrl, fetchEvents, type DisplayEvent } from './events-api';
 import { displayText } from './event-format';
 import { selectedDates } from '../shared/event-date-filters';
 
-export function useEvents(filter: string, from: string, to: string, invalid: boolean, search: string) {
+export function useEvents(filter: string, from: string, to: string, invalid: boolean, search: string, freeOnly: boolean) {
   const [items, setItems] = useState<DisplayEvent[]>([]);
   const [total, setTotal] = useState(0);
   const [next, setNext] = useState<number | null>(null);
@@ -23,7 +23,7 @@ export function useEvents(filter: string, from: string, to: string, invalid: boo
     if (invalid) { pending.current = false; setLoading(false); return () => active.abort(); }
     pending.current = true; setLoading(true);
     async function load() {
-      if (!search && filter !== 'upcoming') return fetchEvents(filter, from, to, 0, active.signal);
+      if (!search && !freeOnly && filter !== 'upcoming') return fetchEvents(filter, from, to, 0, active.signal);
       const matches: DisplayEvent[] = [];
       const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('lt');
       const term = normalize(search);
@@ -33,14 +33,14 @@ export function useEvents(filter: string, from: string, to: string, invalid: boo
       while (offset !== null) {
         const page = await fetchEvents(filter, from, to, offset, active.signal, 100);
         total = page.total;
-        matches.push(...(search ? page.items.filter(event => normalize([event.title, event.venue ?? '', ...event.artists.map(artist => artist.name)].map(displayText).join(' ')).includes(term)) : page.items));
+        matches.push(...page.items.filter(event => (!freeOnly || event.price_type === 'free') && (!search || normalize([event.title, event.venue ?? '', ...event.artists.map(artist => artist.name)].map(displayText).join(' ')).includes(term))));
         if (page.nextOffset !== null && page.nextOffset <= offset) throw new Error('Invalid pagination');
         offset = page.nextOffset;
         // The API is ordered by start date. Load through tomorrow so both sections
         // have accurate limits even when a day spans several API pages.
-        if (!search && page.items.some(event => event.event_date && tomorrow && event.event_date > tomorrow)) break;
+        if (!search && !freeOnly && page.items.some(event => event.event_date && tomorrow && event.event_date > tomorrow)) break;
       }
-      return { items: matches, total: search ? matches.length : total, nextOffset: search ? null : offset };
+      return { items: matches, total: search || freeOnly ? matches.length : total, nextOffset: search || freeOnly ? null : offset };
     }
     load().then(page => {
       if (current !== generation.current) return;
@@ -48,7 +48,7 @@ export function useEvents(filter: string, from: string, to: string, invalid: boo
     }).catch(() => { if (!active.signal.aborted && current === generation.current) setError(true); })
       .finally(() => { if (current === generation.current) { pending.current = false; setLoading(false); } });
     return () => { active.abort(); generation.current++; };
-  }, [filter, from, to, invalid, search, retry]);
+  }, [filter, from, to, invalid, search, freeOnly, retry]);
 
   function loadMore() {
     if (!apiUrl || next == null || pending.current || invalid) return;

@@ -46,7 +46,7 @@ export default function EventItem({ row, today, open, toggle, selected, select, 
           </label>
           <small>{assistantPending ? 'Needs your check' : past ? 'Past event' : prepared ? 'Ready for Dracula' : ''}</small>
         </div>
-        <button type="button" className="icon-button save-event-button" aria-label={saved ? `Remove ${title} from saved events` : `Save ${title}`} aria-pressed={saved} title={saved ? 'Remove from saved events' : 'Save event'} onClick={toggleSaved}><Icon name="save" /></button>
+        <button type="button" className="icon-button save-event-button" aria-label={saved ? `Remove ${title} from saved events` : `Save ${title}`} aria-pressed={saved} aria-busy={disabled} disabled={disabled} title={saved ? 'Remove from saved events' : 'Save event'} onClick={toggleSaved}><Icon name="save" /></button>
         <button type="button" className="icon-button event-expand" aria-label={`${open ? 'Hide' : 'Show'} details for ${title}`} aria-expanded={open} aria-controls={open ? `event-details-${row.id}` : undefined} onClick={toggle}><Icon name="down" /></button>
       </div>
       {open && (

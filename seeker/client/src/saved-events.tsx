@@ -6,46 +6,63 @@ import EventItem from './event-item';
 import { Feedback, PageHeading, PanelHeading } from './workspace';
 
 const storageKey = 'seeker-saved-events';
-type SavedEventsContextValue = { events: EventRow[]; isSaved: (id: number) => boolean; toggle: (event: EventRow) => void; update: (event: EventRow) => void };
-const SavedEventsContext = createContext<SavedEventsContextValue>({ events: [], isSaved: () => false, toggle: () => {}, update: () => {} });
+type SavedEventsContextValue = { events: EventRow[]; isSaved: (id: number) => boolean; toggle: (event: EventRow) => Promise<void>; update: (event: EventRow) => void; loading: boolean; error: string; pendingIds: number[] };
+const SavedEventsContext = createContext<SavedEventsContextValue>({ events: [], isSaved: () => false, toggle: async () => {}, update: () => {}, loading: true, error: '', pendingIds: [] });
 
-function readSavedEvents(): EventRow[] {
+function readLegacySavedIds(): number[] {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(storageKey) || '[]');
-    return Array.isArray(value) ? value.filter(item => item && Number.isSafeInteger(item.id) && typeof item.title === 'string') : [];
+    return Array.isArray(value) ? [...new Set(value.filter(item => item && Number.isSafeInteger(item.id) && item.id > 0).map(item => Number(item.id)))] : [];
   } catch {
     return [];
   }
 }
 
 export function SavedEventsProvider({ children }: { children: ReactNode }) {
-  const [events, setEvents] = useState<EventRow[]>(readSavedEvents);
+  const [events, setEvents] = useState<EventRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [pendingIds, setPendingIds] = useState<number[]>([]);
   useEffect(() => {
-    const sync = () => setEvents(readSavedEvents());
-    window.addEventListener('storage', sync);
-    return () => window.removeEventListener('storage', sync);
+    let active = true;
+    void (async () => {
+      try {
+        const legacyIds = readLegacySavedIds();
+        if (legacyIds.length) {
+          for (let index = 0; index < legacyIds.length; index += 500) await api('/api/saved-events', { ids: legacyIds.slice(index, index + 500) });
+          localStorage.removeItem(storageKey);
+        }
+        const result = await api<{ events: EventRow[] }>('/api/saved-events');
+        if (active) setEvents(result.events);
+      } catch (cause) {
+        if (active) setError(errorMessage(cause));
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
   }, []);
 
-  function toggle(event: EventRow) {
-    setEvents(current => {
-      const next = current.some(item => item.id === event.id)
-        ? current.filter(item => item.id !== event.id)
-        : [event, ...current];
-      try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch { /* keep the current session usable */ }
-      return next;
-    });
+  async function toggle(event: EventRow) {
+    if (loading || pendingIds.includes(event.id)) return;
+    const removing = events.some(item => item.id === event.id);
+    setPendingIds(current => [...current, event.id]);
+    setError('');
+    try {
+      await api(removing ? '/api/saved-events/remove' : '/api/saved-events', removing ? { id: event.id } : { ids: [event.id] });
+      setEvents(current => removing ? current.filter(item => item.id !== event.id) : [event, ...current]);
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setPendingIds(current => current.filter(id => id !== event.id));
+    }
   }
 
   function update(event: EventRow) {
-    setEvents(current => {
-      if (!current.some(item => item.id === event.id)) return current;
-      const next = current.map(item => item.id === event.id ? event : item);
-      try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch { /* keep the current session usable */ }
-      return next;
-    });
+    setEvents(current => current.map(item => item.id === event.id ? event : item));
   }
 
-  return <SavedEventsContext.Provider value={{ events, isSaved: id => events.some(event => event.id === id), toggle, update }}>{children}</SavedEventsContext.Provider>;
+  return <SavedEventsContext.Provider value={{ events, isSaved: id => events.some(event => event.id === id), toggle, update, loading, error, pendingIds }}>{children}</SavedEventsContext.Provider>;
 }
 
 export function useSavedEvents() { return useContext(SavedEventsContext); }
@@ -53,7 +70,7 @@ export function useSavedEvents() { return useContext(SavedEventsContext); }
 const vilniusDateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Vilnius', year: 'numeric', month: '2-digit', day: '2-digit' });
 
 export function SavedEventsPage() {
-  const { events, isSaved, toggle, update } = useSavedEvents();
+  const { events, isSaved, toggle, update, loading, error, pendingIds } = useSavedEvents();
   const [openId, setOpenId] = useState<number | null>(null);
   const [pendingId, setPendingId] = useState<number | null>(null);
   const [notice, setNotice] = useState('');
@@ -110,13 +127,15 @@ export function SavedEventsPage() {
     <PageHeading title="Saved events" description="Events you bookmarked in Seeker." icon="save" />
     <section className="panel saved-events-panel">
       <PanelHeading title="Your saved events" end={<span className="count-label">{events.length} saved</span>} />
+      {error && <div className="catalogue-feedback"><Feedback message={error} error /></div>}
       <div className="catalogue-feedback"><Feedback message={notice} error={noticeError} /></div>
       <div className="saved-event-list">
+        {loading && <p className="empty-state" role="status">Loading saved events…</p>}
         {events.map(event => <EventItem key={event.id} row={event} today={today} open={openId === event.id} toggle={() => setOpenId(current => current === event.id ? null : event.id)}
-          selected={false} select={() => {}} disabled={pendingId === event.id || refreshing} review={status => void saveReview(event, status)}
+          selected={false} select={() => {}} disabled={loading || pendingIds.includes(event.id) || pendingId === event.id || refreshing} review={status => void saveReview(event, status)}
           confirm={() => void confirmAssistantReview(event)} showSource saved={isSaved(event.id)} toggleSaved={() => toggle(event)} selectionEnabled={false}
           editor={<EventEditor row={event} today={today} onSaved={() => refreshSavedRow(event)} onRefresh={() => void refreshSourceDetails(event)} refreshing={refreshing} />} />)}
-        {!events.length && <p className="empty-state">No saved events yet. Use the save button on an event to add it here.</p>}
+        {!loading && !error && !events.length && <p className="empty-state">No saved events yet. Use the save button on an event to add it here.</p>}
       </div>
     </section>
   </>;
