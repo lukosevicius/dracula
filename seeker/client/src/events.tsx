@@ -42,7 +42,7 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
   const [data, setData] = useState<EventPage | null>(null);
   const [query, setQuery] = useState('');
   const [price, setPrice] = useState('all');
-  const [sort, setSort] = useState<'score' | 'date'>('score');
+  const [sort, setSort] = useState<'date' | 'score-asc' | 'score-desc'>('date');
   const [when, setWhen] = useState<DateFilter>('upcoming');
   const [review, setReview] = useState('all');
   const [readiness, setReadiness] = useState('all');
@@ -70,7 +70,7 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
   const today = dateFormatter.format(new Date());
   const invalid = when === 'custom' && (!from || (!!to && to < from));
   const extraCount = Number(readiness !== 'all') + Number(assistantReview !== 'all') + Number(sourceFilter !== defaultSource);
-  const isFiltered = Boolean(query || when !== 'upcoming' || price !== 'all' || review !== 'all' || extraCount || savedOnly || sort !== 'score');
+  const isFiltered = Boolean(query || when !== 'upcoming' || price !== 'all' || review !== 'all' || extraCount || savedOnly || sort !== 'date');
   const sourceSavedEvents = savedEvents.filter(event => event.source_key === source);
 
   const load = useCallback(async () => {
@@ -126,7 +126,7 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
     setQuery('');
     setWhen('upcoming');
     setPrice('all');
-    setSort('score');
+    setSort('date');
     setReview('all');
     setReadiness('all');
     setAssistantReview('all');
@@ -238,7 +238,9 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
     const dateCompare = (a.event_date ? 0 : 1) - (b.event_date ? 0 : 1)
       || (when === 'past' ? -1 : 1) * (a.event_date || '').localeCompare(b.event_date || '')
       || (when === 'past' ? -1 : 1) * (a.event_time || '').localeCompare(b.event_time || '');
-    return sort === 'score' ? (b.interest_score || 1) - (a.interest_score || 1) || dateCompare : dateCompare;
+    if (sort === 'score-desc') return (b.interest_score || 1) - (a.interest_score || 1) || dateCompare;
+    if (sort === 'score-asc') return (a.interest_score || 1) - (b.interest_score || 1) || dateCompare;
+    return dateCompare;
   });
   const rows = invalid ? [] : savedOnly ? savedRows : data?.events ?? [];
   const rowIds = rows.map(row => row.id);
@@ -268,8 +270,8 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
                 <label className="field">Review <select value={review} onChange={event => updateFilters(setReview, event.target.value)}>
                   <option value="all">All statuses</option>{reviews.map(status => <option key={status} value={status}>{labels[status]}</option>)}
                 </select></label>
-                <label className="field">Sort by <select value={sort} onChange={event => updateFilters(setSort, event.target.value as 'score' | 'date')}>
-                  <option value="score">Interest score · high to low</option><option value="date">Event date</option>
+                <label className="field">Sort by <select value={sort} onChange={event => updateFilters(setSort, event.target.value as typeof sort)}>
+                  <option value="date">Event date</option><option value="score-asc">Interest score · low to high</option><option value="score-desc">Interest score · high to low</option>
                 </select></label>
               </div>
               <div className="date-quick-filters" role="group" aria-label="Quick date filters">

@@ -298,10 +298,10 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
 .event-title:hover strong { color: var(--accent); }
 .event-title > span { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; color: var(--muted); font-size: 11px; line-height: 1.3; }
 .event-title > span > span { display: inline-flex; min-width: 0; align-items: center; gap: 3px; overflow-wrap: anywhere; }
-.interest-score-control { display: inline-flex; align-items: center; gap: 2px; min-height: 28px; padding: 2px 5px; border: 1px solid #65533c; border-radius: 6px; background: #29231d; color: #f0c879; }
-.interest-score-control > span { font-size: 12px; }
-.interest-score-control select { width: 34px; padding: 2px 0; border: 0; outline: 0; background: transparent; color: inherit; font-size: 12px; font-weight: 700; }
-.interest-score-control option { background: var(--input); color: var(--text); }
+.interest-score-buttons { display: flex; align-items: center; gap: 3px; }
+.interest-score-button { display: grid; place-items: center; width: 25px; height: 27px; padding: 0; border: 1px solid #65533c; border-radius: 5px; background: #29231d; color: #d0b27a; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.interest-score-button:hover:not(:disabled), .interest-score-button.active { border-color: #f0c879; background: #48371f; color: #ffe09a; }
+.interest-score-button.active { box-shadow: inset 0 0 0 1px #f0c879; }
 .event-review { display: grid; justify-items: start; gap: 2px; }
 .event-review > small { color: var(--dim); font-size: 10px; line-height: 1.2; }
 .review-select { position: relative; display: flex; max-width: 100%; align-items: center; border: 1px solid #4d4259; border-radius: 6px; background: #2b2536; color: #d5c6e5; }

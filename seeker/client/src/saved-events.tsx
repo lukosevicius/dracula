@@ -59,7 +59,7 @@ export function SavedEventsProvider({ children }: { children: ReactNode }) {
   }
 
   function update(event: EventRow) {
-    setEvents(current => current.map(item => item.id === event.id ? event : item).sort((a, b) => (b.interest_score || 1) - (a.interest_score || 1)));
+    setEvents(current => current.map(item => item.id === event.id ? event : item));
   }
 
   return <SavedEventsContext.Provider value={{ events, isSaved: id => events.some(event => event.id === id), toggle, update, loading, error, pendingIds }}>{children}</SavedEventsContext.Provider>;

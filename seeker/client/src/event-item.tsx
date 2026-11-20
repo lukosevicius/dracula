@@ -39,12 +39,17 @@ export default function EventItem({ row, today, open, toggle, selected, select, 
               {showSource && <span>{sourceNames[row.source_key] ?? row.source_key}</span>}
             </span>
           </button>
-          <label className="interest-score-control" title={`Interest score: ${row.interest_score || 1} of 5`}>
-            <span aria-hidden="true">★</span>
-            <select aria-label={`Interest score for ${title}`} value={row.interest_score || 1} disabled={disabled} onChange={event => changeInterestScore(Number(event.target.value) as 1 | 2 | 3 | 4 | 5)}>
-              {[1, 2, 3, 4, 5].map(score => <option key={score} value={score}>{score}</option>)}
-            </select>
-          </label>
+          <div className="interest-score-buttons" role="group" aria-label={`Interest score for ${title}`} title={`Interest score: ${row.interest_score || 1} of 5`}>
+            {[1, 2, 3, 4, 5].map(score => <button
+              key={score}
+              type="button"
+              className={`interest-score-button ${(row.interest_score || 1) === score ? 'active' : ''}`}
+              aria-label={`Set interest score to ${score} for ${title}`}
+              aria-pressed={(row.interest_score || 1) === score}
+              disabled={disabled}
+              onClick={() => changeInterestScore(score as 1 | 2 | 3 | 4 | 5)}
+            >{score}</button>)}
+          </div>
         </div>
         <div className="event-review">
           <label className={`review-select review-${row.review_status}`}>

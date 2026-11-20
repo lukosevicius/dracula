@@ -34,7 +34,7 @@ export function createAdmin(pool: Pool, token: string) {
   }
   return {
     async savedEvents() {
-      const [rows]=await pool.execute<RowDataPacket[]>(`SELECT e.*,s.source_id,s.source_key,s.source_url,s.about_url,s.last_checked_at AS details_checked_at,ar.reviewed_at AS assistant_reviewed_at,ar.confirmed_at AS assistant_confirmed_at,ar.notes AS assistant_notes,ep.price_text,COALESCE(ep.price_type,'unknown') AS price_type FROM seeker_saved_events saved JOIN events e ON e.id=saved.event_id LEFT JOIN event_prices ep ON ep.event_id=e.id LEFT JOIN assistant_event_reviews ar ON ar.event_id=e.id JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY id LIMIT 1) ORDER BY e.interest_score DESC,saved.saved_at DESC,e.id DESC`);
+      const [rows]=await pool.execute<RowDataPacket[]>(`SELECT e.*,s.source_id,s.source_key,s.source_url,s.about_url,s.last_checked_at AS details_checked_at,ar.reviewed_at AS assistant_reviewed_at,ar.confirmed_at AS assistant_confirmed_at,ar.notes AS assistant_notes,ep.price_text,COALESCE(ep.price_type,'unknown') AS price_type FROM seeker_saved_events saved JOIN events e ON e.id=saved.event_id LEFT JOIN event_prices ep ON ep.event_id=e.id LEFT JOIN assistant_event_reviews ar ON ar.event_id=e.id JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY id LIMIT 1) ORDER BY e.event_date IS NULL,e.event_date,e.event_time IS NULL,e.event_time,saved.saved_at DESC,e.id DESC`);
       return rows.map(row=>({...row,id:Number(row.id)}));
     },
     async saveEvents(ids: number[]) {
@@ -108,11 +108,11 @@ export function createAdmin(pool: Pool, token: string) {
       return !!match && timingSafeEqual(tokenHash, digest(match[1]));
     },
     async listEvents(query: URLSearchParams) {
-      const page=Number(query.get('page') || 1), limit=Number(query.get('limit') || 25), sort=query.get('sort') || 'score';
+      const page=Number(query.get('page') || 1), limit=Number(query.get('limit') || 25), sort=query.get('sort') || 'date';
       const review=query.get('review') || 'all', when=query.get('when') || 'upcoming', source=query.get('source') || 'all';
       const readiness=query.get('readiness') || 'all', assistantReview=query.get('assistantReview') || 'all', price=query.get('price') || 'all';
       const from=query.get('from'),to=query.get('to'),today=vilniusToday(),search=normalizeEventSearch((query.get('search') || '').slice(0,200));
-      if(!Number.isSafeInteger(page)||page<1||page>1000000||!Number.isSafeInteger(limit)||limit<1||limit>100 || !['all','music','not_music','unsure'].includes(review) || !['all','upcoming','past','unknown','today','tomorrow','weekend','custom'].includes(when) || !['all','ready','attention'].includes(readiness) || !['all','pending'].includes(assistantReview) || !['all','free','paid','unknown'].includes(price) || !['score','date'].includes(sort) || source.length>191) throw error(400,'Invalid filters.');
+      if(!Number.isSafeInteger(page)||page<1||page>1000000||!Number.isSafeInteger(limit)||limit<1||limit>100 || !['all','music','not_music','unsure'].includes(review) || !['all','upcoming','past','unknown','today','tomorrow','weekend','custom'].includes(when) || !['all','ready','attention'].includes(readiness) || !['all','pending'].includes(assistantReview) || !['all','free','paid','unknown'].includes(price) || !['date','score-asc','score-desc'].includes(sort) || source.length>191) throw error(400,'Invalid filters.');
       if(['today','tomorrow','weekend','custom'].includes(when) && (!from || !to || !validDate(from) || !validDate(to) || to<from)) throw error(400,'Choose a valid date range.');
       const clauses: string[]=[],params: (string | number)[]=[];
       const ready="e.review_status='music' AND (NULLIF(e.event_date,'') IS NULL OR COALESCE(NULLIF(e.event_end_date,''),e.event_date)>=?)";
@@ -131,7 +131,7 @@ export function createAdmin(pool: Pool, token: string) {
         try {
           let searchTotal=null;
           const order=when==='past'?'DESC':'ASC';
-          const scoreOrder=sort==='score'?'e.interest_score DESC,':'';
+          const scoreOrder=sort==='score-desc'?'e.interest_score DESC,':sort==='score-asc'?'e.interest_score ASC,':'';
           // Seeker strips HTML/entities before prefix matching. Searching titles in JS preserves that behavior.
           if(search){
             const [titles]=await conn.execute<RowDataPacket[]>(`SELECT e.id,e.title FROM events e ${where} ORDER BY ${scoreOrder}e.event_date IS NULL,e.event_date ${order},e.event_time IS NULL,e.event_time ${order},e.id`,params);
