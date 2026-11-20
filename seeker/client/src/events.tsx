@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DateFilter, ReviewStatus } from '../../types';
-import { api, errorMessage, formatDate, isActive, labels, plainText, priceInfo, reviews, sourceNames, useJobs, type EventPage, type EventRow } from './data';
+import { api, errorMessage, formatDate, isActive, labels, plainText, priceInfo, reviews, sourceNames, useJobs, type EventPage } from './data';
 import { useSavedEvents } from './saved-events';
+import EventItem from './event-item';
 import EventEditor from './event-editor';
 import { AvilysImport, VilniusImport, VilniusNotes } from './imports';
 import { Disclosure, Feedback, Icon, Metrics, PageHeading, Pagination, PanelHeading, SearchField } from './workspace';
@@ -12,7 +13,6 @@ const dateOptions: [DateFilter, string][] = [
   ['custom', 'Custom dates'], ['all', 'All dates'], ['past', 'Past'], ['unknown', 'Unknown date'],
 ];
 const dateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Vilnius', year: 'numeric', month: '2-digit', day: '2-digit' });
-const monthFormatter = new Intl.DateTimeFormat('en-GB', { month: 'short', timeZone: 'UTC' });
 
 function shift(date: string, days: number) {
   const value = new Date(`${date}T12:00:00Z`);
@@ -35,64 +35,6 @@ function dateRange(filter: DateFilter, from: string, to: string, today: string) 
   return null;
 }
 
-function EventItem({ row, today, open, toggle, selected, select, disabled, review, confirm, editor, showSource, saved, toggleSaved }: {
-  row: EventRow; today: string; open: boolean; toggle: () => void; selected: boolean;
-  select: (checked: boolean) => void; disabled: boolean; review: (status: ReviewStatus) => void;
-  confirm: () => void; editor: ReactNode; showSource: boolean; saved: boolean; toggleSaved: () => void;
-}) {
-  const title = plainText(row.title);
-  const assistantPending = !!row.assistant_reviewed_at && !row.assistant_confirmed_at;
-  const date = row.event_date ? formatDate(row.event_date) : 'Date unknown';
-  const past = !!row.event_date && (row.event_end_date || row.event_date) < today;
-  const prepared = row.review_status === 'music' && !past;
-  const time = row.event_time?.slice(0, 5);
-  const price = priceInfo(row);
-  return (
-    <article className={`event-item ${open ? 'event-open' : ''} ${selected ? 'event-selected' : ''}`}>
-      <div className="event-row">
-        <input type="checkbox" aria-label={`Select ${title}`} checked={selected} disabled={disabled} onChange={event => select(event.target.checked)} />
-        <div className="event-date" aria-label={date} title={date}>
-          <span>{row.event_date ? monthFormatter.format(new Date(`${row.event_date}T12:00:00Z`)) : 'Date'}</span>
-          <strong>{row.event_date?.slice(8, 10) || '—'}</strong>
-        </div>
-        <button type="button" className="event-title" aria-expanded={open} aria-controls={open ? `event-details-${row.id}` : undefined} onClick={toggle}>
-          <strong>{title}</strong>
-          <span>
-            {row.event_date && row.event_date.slice(0, 4) !== today.slice(0, 4) && <span>{row.event_date.slice(0, 4)}</span>}
-            {time && <span title="Event time"><Icon name="clock" size={13} /> {time}</span>}
-            {row.venue && <span title="Venue"><Icon name="pin" size={13} /> {row.venue}</span>}
-            {(price.text || price.type === 'free' || price.type === 'paid') && <span title="Price"><Icon name="ticket" size={13} /> {price.text || (price.type === 'free' ? 'Free' : 'Paid')}</span>}
-            {!time && !row.venue && !price.text && price.type === 'unknown' && <span>Details incomplete</span>}
-            {showSource && <span>{sourceNames[row.source_key] ?? row.source_key}</span>}
-          </span>
-        </button>
-        <div className="event-review">
-          <label className={`review-select review-${row.review_status}`}>
-            <select aria-label={`Review status for ${title}`} value={row.review_status} disabled={disabled} onChange={event => review(event.target.value as ReviewStatus)}>
-              {reviews.map(status => <option key={status} value={status}>{labels[status]}</option>)}
-            </select>
-            <Icon name="down" size={13} />
-          </label>
-          <small>{assistantPending ? 'Needs your check' : past ? 'Past event' : prepared ? 'Ready for Dracula' : ''}</small>
-        </div>
-        <button type="button" className="icon-button save-event-button" aria-label={saved ? `Remove ${title} from saved events` : `Save ${title}`} aria-pressed={saved} title={saved ? 'Remove from saved events' : 'Save event'} onClick={toggleSaved}><Icon name="save" /></button>
-        <button type="button" className="icon-button event-expand" aria-label={`${open ? 'Hide' : 'Show'} details for ${title}`} aria-expanded={open} aria-controls={open ? `event-details-${row.id}` : undefined} onClick={toggle}><Icon name="down" /></button>
-      </div>
-      {open && (
-        <div className="event-details" id={`event-details-${row.id}`}>
-          {assistantPending && (
-            <div className="assistant-note">
-              <div><strong>Assistant review</strong><p>{row.assistant_notes || 'No notes provided.'}</p></div>
-              <button className="secondary-button" type="button" disabled={disabled} onClick={confirm}><Icon name="check" size={15} /> Mark as checked</button>
-            </div>
-          )}
-          {editor}
-        </div>
-      )}
-    </article>
-  );
-}
-
 export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
   const name = avilys ? 'Avilys' : 'Vilnius Events';
   const source = avilys ? 'avilys' : 'vilnius-events';
@@ -108,6 +50,7 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [specificDateMode, setSpecificDateMode] = useState(false);
+  const [savedOnly, setSavedOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [includeImages, setIncludeImages] = useState(false);
@@ -122,11 +65,12 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
   const [loading, setLoading] = useState(true);
   const requestId = useRef(0);
   const catalogue = useRef<HTMLElement>(null);
-  const { isSaved, toggle: toggleSaved } = useSavedEvents();
+  const { events: savedEvents, isSaved, toggle: toggleSaved } = useSavedEvents();
   const today = dateFormatter.format(new Date());
   const invalid = when === 'custom' && (!from || (!!to && to < from));
   const extraCount = Number(readiness !== 'all') + Number(assistantReview !== 'all') + Number(sourceFilter !== defaultSource);
-  const isFiltered = Boolean(query || when !== 'upcoming' || price !== 'all' || review !== 'all' || extraCount);
+  const isFiltered = Boolean(query || when !== 'upcoming' || price !== 'all' || review !== 'all' || extraCount || savedOnly);
+  const sourceSavedEvents = savedEvents.filter(event => event.source_key === source);
 
   const load = useCallback(async () => {
     const id = ++requestId.current;
@@ -188,6 +132,7 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
     setFrom('');
     setTo('');
     setSpecificDateMode(false);
+    setSavedOnly(false);
     setPage(1);
   }
 
@@ -269,7 +214,26 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
     }
   }
 
-  const rows = invalid ? [] : data?.events ?? [];
+  const savedRows = sourceSavedEvents.filter(row => {
+    const eventDate = row.event_date;
+    const eventEnd = row.event_end_date || eventDate;
+    const dateWindow = dateRange(when, from, to, today);
+    const matchesWhen = when === 'all'
+      || (when === 'upcoming' && !!eventDate && !!eventEnd && eventEnd >= today)
+      || (when === 'past' && !!eventEnd && eventEnd < today)
+      || (when === 'unknown' && !eventDate)
+      || (!!dateWindow && !!eventDate && !!eventEnd && eventDate <= dateWindow.to && eventEnd >= dateWindow.from);
+    const savedPrice = priceInfo(row);
+    const ready = row.review_status === 'music' && (!eventDate || !eventEnd || eventEnd >= today);
+    return matchesWhen
+      && (!query || plainText(row.title).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+      && (price === 'all' || savedPrice.type === price)
+      && (review === 'all' || row.review_status === review)
+      && (readiness === 'all' || (readiness === 'ready' ? ready : !ready))
+      && (assistantReview !== 'pending' || (!!row.assistant_reviewed_at && !row.assistant_confirmed_at))
+      && (sourceFilter === 'all' || row.source_key === sourceFilter);
+  });
+  const rows = invalid ? [] : savedOnly ? savedRows : data?.events ?? [];
   const rowIds = rows.map(row => row.id);
   const allSelected = rowIds.length > 0 && rowIds.every(id => selected.includes(id));
 
@@ -284,7 +248,7 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
       <div className="workspace-grid">
         <div className="main-stack">
           <section className="panel catalogue" ref={catalogue}>
-            <PanelHeading title="Imported events" end={data && !invalid && <span className="count-label">{data.total.toLocaleString()} matching</span>} />
+            <PanelHeading title="Imported events" end={savedOnly ? <span className="count-label">{rows.length} saved matching</span> : data && !invalid && <span className="count-label">{data.total.toLocaleString()} matching</span>} />
             <div className="catalogue-tools event-tools">
               <SearchField label="Search by event title" value={query} onChange={value => updateFilters(setQuery, value)} />
               <div className="filter-grid">
@@ -346,6 +310,12 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
                   </div>
                   <p>Events marked Music are ready if they have no date or have yet to end. Choose All dates to include undated events.</p>
                 </Disclosure>
+                <button type="button" className={`secondary-button saved-only-toggle ${savedOnly ? 'active' : ''}`} aria-pressed={savedOnly} onClick={() => {
+                  setSavedOnly(current => !current);
+                  setPage(1);
+                  setSelected([]);
+                  setOpen(null);
+                }}><Icon name="save" size={15} /> Saved only · {sourceSavedEvents.length}</button>
                 {isFiltered && <button type="button" className="text-button reset-filters" onClick={resetFilters}>Reset filters</button>}
               </div>
               {invalid && <Feedback error message={!from ? 'Choose a start date.' : 'End date must be on or after the start date.'} />}
@@ -371,7 +341,7 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
               ))}
               {!rows.length && !loadError && !invalid && <p className="empty-state" role="status">{loading ? 'Loading events…' : 'No events match these filters.'}</p>}
             </div>
-            {data && !invalid && data.total > pageSize && <Pagination page={data.page} total={data.total} size={pageSize} onChange={next => {
+            {!savedOnly && data && !invalid && data.total > pageSize && <Pagination page={data.page} total={data.total} size={pageSize} onChange={next => {
               setPage(next);
               catalogue.current?.scrollIntoView({ block: 'start' });
             }} />}

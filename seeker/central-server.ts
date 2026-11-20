@@ -17,10 +17,11 @@ if(!Number.isInteger(port)||port<1||port>65535)throw new Error('Invalid PORT.');
 const handle=createCentralDashboard(createCentralApi(process.env.CENTRAL_API_URL,process.env.CENTRAL_API_TOKEN));
 const clientDir=join(root,'client','dist');
 const types:Record<string,string>={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.png':'image/png'};
+const allowedOrigins=new Set([`http://127.0.0.1:${port}`,`http://localhost:${port}`,process.env.SEEKER_DEV_ORIGIN].filter((origin):origin is string=>Boolean(origin)));
 const server=createServer(async(req,res)=>{
   const host=req.headers.host || '';
   if(![`127.0.0.1:${port}`,`localhost:${port}`].includes(host)){res.writeHead(403);res.end('Forbidden');return;}
-  if(req.headers.origin && ![`http://127.0.0.1:${port}`,`http://localhost:${port}`].includes(req.headers.origin)){res.writeHead(403);res.end('Forbidden');return;}
+  if(req.headers.origin && !allowedOrigins.has(req.headers.origin)){res.writeHead(403);res.end('Forbidden');return;}
   if(await handle(req,res))return;
   if(req.method!=='GET'){res.writeHead(405);res.end();return;}
   const url=new URL(req.url || '/','http://localhost');

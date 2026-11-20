@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "start": "npm run build && node dist/central-server.js",
+    "dev": "node scripts/dev.mjs",
+    "dev:server:watch": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "dev:central": "node --watch dist/central-server.js",
+    "dev:client": "vite --config client/vite.config.ts --host 127.0.0.1 --port 4177 --strictPort",
     "build": "npm run build:server && npm run build:client",
     "build:server": "tsc -p tsconfig.json",
     "build:client": "vite build --config client/vite.config.ts",
