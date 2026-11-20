@@ -18,7 +18,29 @@ Open <http://127.0.0.1:4177>.
 
 The dashboard uses React, TypeScript and Vite. `npm start` builds the server and dashboard before starting the local Node server. Run `npm run typecheck` to check types, or `npm test` to build and run the tests.
 
-For dashboard development, run the backend on port 4177 and then run `npm run dev:client` in a second terminal. Vite forwards `/api` calls to the backend.
+For local development, run `npm run dev` and open <http://127.0.0.1:4177>. Vite forwards `/api` calls to the local Node server on port 4178. This uses the same central API as hosted Seeker.
+
+## Deploy hosted Seeker
+
+In Google Auth Platform, create a dedicated OAuth client of type **Web application**, with `https://seeker.dracula.lt/auth/google/callback` as its authorized redirect URI. Seeker requests only `openid` and `email`, which Google allows while the project is in Testing.
+
+Create a separate **Node.js web app** in Hostinger. Choose the **Other** framework preset, Node 22.x or newer, build command `npm run build`, and entry file `dist/hosted-server.js`. Upload a ZIP with `package.json` at its root and set the project root to `./`. Exclude the root `public/` and `test/` directories from the ZIP. Hostinger can serve legacy root `public/` files directly, before the Node server checks the session. Include `client/public/` so Vite can copy the install manifest and icons. Also exclude local data, dependencies, build output, and environment files. Set these runtime variables in the hosting dashboard:
+
+| Variable | Value |
+| --- | --- |
+| `SEEKER_PUBLIC_ORIGIN` | `https://seeker.dracula.lt` |
+| `SEEKER_GOOGLE_CLIENT_ID` | The dedicated Google web OAuth client ID |
+| `SEEKER_GOOGLE_CLIENT_SECRET` | The dedicated Google web OAuth client secret |
+| `SEEKER_GOOGLE_EMAIL` | The exact Gmail address authorized for Seeker |
+| `SEEKER_SESSION_SECRET` | A random secret generated with `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"` |
+| `CENTRAL_API_URL` | `https://api.dracula.lt` |
+| `CENTRAL_API_TOKEN` | The existing Dracula API admin token, entered as a runtime secret |
+
+Hosted Seeker verifies Google's ID token, then starts an eight-hour session with a Secure, HttpOnly cookie. The hosted server checks the hostname, protects private pages and API routes, and requires a same-origin `Origin` header on writes. Use valid HTTPS and keep Hostinger CDN caching disabled for Seeker. `npm run dev` and `npm start` keep the local server on loopback. Hosted Seeker can read and edit events and see shared job history. Start imports, background refreshes, and AI jobs in local Seeker until long-running jobs have been verified on the hosted platform.
+
+Seeker can be installed from the sign-in page or dashboard. Only the install metadata and icons are public assets. The installed app requires a connection and uses the same Google sign-in as the website.
+
+Before relying on the hosted copy, verify that a signed-out browser and a different Google account are denied, and that direct requests to the Hostinger URL cannot load the dashboard or `/api/events`. With the approved account, check the event list and confirm an authorized edit appears locally on refresh.
 
 The central database stores each import run, including its requested limit, time, status and counts. Artists are keyed by their MusicBrainz ID, so repeated imports update existing rows instead of creating duplicates.
 

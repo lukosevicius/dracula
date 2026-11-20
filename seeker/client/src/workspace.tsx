@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 const logo = new URL('./assets/favicon.png', import.meta.url).href;
 
@@ -20,6 +20,8 @@ const paths = {
   pin: 'M18 10c0 5-6 10-6 10s-6-5-6-10a6 6 0 1 1 12 0Zm-4 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z',
   ticket: 'M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4V7Zm9 0v2m0 2v2m0 2v2',
   save: 'M5 3h12l4 4v14H3V3h2Zm2 0v6h10V3M7 21v-8h10v8',
+  menu: 'M4 6h16M4 12h16M4 18h16',
+  close: 'm6 6 12 12M18 6 6 18',
 } as const;
 
 type IconName = keyof typeof paths;
@@ -44,31 +46,68 @@ const navigation = [
 
 export function Workspace({ children }: { children: ReactNode }) {
   const current = navigation.flatMap(group => [...group.items]).find(item => item.path === window.location.pathname);
+  const hosted = document.body.hasAttribute('data-hosted');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const sidebar = useRef<HTMLElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function dismissOutside(event: PointerEvent) {
+      if (event.target instanceof Node && !sidebar.current?.contains(event.target)) setMenuOpen(false);
+    }
+    function dismissOnEscape(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      setMenuOpen(false);
+      menuButton.current?.focus();
+    }
+    document.addEventListener('pointerdown', dismissOutside);
+    document.addEventListener('keydown', dismissOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', dismissOutside);
+      document.removeEventListener('keydown', dismissOnEscape);
+    };
+  }, [menuOpen]);
+
+  const signOut = hosted && <form action="/auth/logout" method="post">
+    <button type="submit" className="secondary-button">Sign out</button>
+  </form>;
+
   return (
     <div className="workspace">
       <a className="skip-link" href="#content">Skip to content</a>
-      <aside className="sidebar">
-        <a className="brand" href="/" aria-label="Seeker home">
-          <span className="brand-logo"><img src={logo} alt="" /></span>
-          <span><strong>Seeker</strong><small>Dracula workspace</small></span>
-        </a>
-        <nav aria-label="Main navigation">
-          {navigation.map(group => (
-            <div className="nav-group" key={group.label}>
-              <p>{group.label}</p>
-              {group.items.map(item => (
-                <a className="nav-link" key={item.path} href={item.path} aria-current={item === current ? 'page' : undefined}>
-                  <Icon name={item.icon} /> <span>{item.name}</span>
-                </a>
-              ))}
-            </div>
-          ))}
-        </nav>
-        <div className="sidebar-footer"><span className="local-dot" />Local workspace</div>
-      </aside>
+      <header className="sidebar" ref={sidebar}>
+        <div className="sidebar-heading">
+          <a className="brand" href="/" aria-label="Seeker home">
+            <span className="brand-logo"><img src={logo} alt="" /></span>
+            <span><strong>Seeker</strong><small className="brand-workspace">Dracula workspace</small><small className="brand-page">{current?.name ?? 'Artists'}</small></span>
+          </a>
+          <button type="button" className="secondary-button mobile-menu-toggle" aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen} aria-controls="seeker-navigation" ref={menuButton} onClick={() => setMenuOpen(open => !open)}>
+            <Icon name={menuOpen ? 'close' : 'menu'} size={22} />
+          </button>
+        </div>
+        <div id="seeker-navigation" className="sidebar-navigation" data-open={menuOpen}>
+          <nav aria-label="Main navigation">
+            {navigation.map(group => (
+              <div className="nav-group" key={group.label}>
+                <p>{group.label}</p>
+                {group.items.map(item => (
+                  <a className="nav-link" key={item.path} href={item.path} aria-current={item === current ? 'page' : undefined} onClick={() => setMenuOpen(false)}>
+                    <Icon name={item.icon} /> <span>{item.name}</span>
+                  </a>
+                ))}
+              </div>
+            ))}
+          </nav>
+          {hosted && <div className="mobile-sign-out">{signOut}</div>}
+        </div>
+        <div className="sidebar-footer"><span className="local-dot" />{hosted ? 'Online workspace' : 'Local workspace'}</div>
+      </header>
       <main className="main-content" id="content" tabIndex={-1}>
         <header className="topbar">
           <a href="/">Seeker</a><Icon name="chevron" size={13} /><strong>{current?.name ?? 'Artists'}</strong>
+          {signOut}
         </header>
         <div className="page-wrap">{children}</div>
       </main>

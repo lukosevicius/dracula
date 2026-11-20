@@ -51,17 +51,19 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, revie
             >{score}</button>)}
           </div>
         </div>
-        <div className="event-review">
-          <label className={`review-select review-${row.review_status}`}>
-            <select aria-label={`Review status for ${title}`} value={row.review_status} disabled={disabled} onChange={event => review(event.target.value as ReviewStatus)}>
-              {reviews.map(status => <option key={status} value={status}>{labels[status]}</option>)}
-            </select>
-            <Icon name="down" size={13} />
-          </label>
-          <small>{assistantPending ? 'Needs your check' : past ? 'Past event' : prepared ? 'Ready for Dracula' : ''}</small>
+        <div className="event-actions">
+          <div className="event-review">
+            <label className={`review-select review-${row.review_status}`}>
+              <select aria-label={`Review status for ${title}`} value={row.review_status} disabled={disabled} onChange={event => review(event.target.value as ReviewStatus)}>
+                {reviews.map(status => <option key={status} value={status}>{labels[status]}</option>)}
+              </select>
+              <Icon name="down" size={13} />
+            </label>
+            <small>{assistantPending ? 'Needs your check' : past ? 'Past event' : prepared ? 'Ready for Dracula' : ''}</small>
+          </div>
+          <button type="button" className="icon-button save-event-button" aria-label={saved ? `Remove ${title} from saved events` : `Save ${title}`} aria-pressed={saved} aria-busy={disabled} disabled={disabled} title={saved ? 'Remove from saved events' : 'Save event'} onClick={toggleSaved}><Icon name="save" /></button>
+          <button type="button" className="icon-button event-expand" aria-label={`${open ? 'Hide' : 'Show'} details for ${title}`} aria-expanded={open} aria-controls={open ? `event-details-${row.id}` : undefined} onClick={toggle}><Icon name="down" /></button>
         </div>
-        <button type="button" className="icon-button save-event-button" aria-label={saved ? `Remove ${title} from saved events` : `Save ${title}`} aria-pressed={saved} aria-busy={disabled} disabled={disabled} title={saved ? 'Remove from saved events' : 'Save event'} onClick={toggleSaved}><Icon name="save" /></button>
-        <button type="button" className="icon-button event-expand" aria-label={`${open ? 'Hide' : 'Show'} details for ${title}`} aria-expanded={open} aria-controls={open ? `event-details-${row.id}` : undefined} onClick={toggle}><Icon name="down" /></button>
       </div>
       {open && (
         <div className="event-details" id={`event-details-${row.id}`}>
