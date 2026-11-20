@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import mysql, { type RowDataPacket } from 'mysql2/promise';
 import { importVilniusPage } from '../dist/imports/vilnius.js';
-import { migrate } from '../dist/migrate.js';
+import { loadMigrations, migrate } from '../dist/migrate.js';
 
 // This deliberately refuses existing data and never targets staging or production.
 test('MariaDB: authenticated edits, private reads and public pagination', {skip:process.env.RUN_MARIADB_INTEGRATION !== '1'}, async () => {
@@ -248,12 +248,15 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
         await challenge();
       } finally {await authApp.close();}
 
-      for (const name of ['001-auto-increment.sql','002-job-leases.sql','003-musicbrainz-jobs.sql','004-event-city.sql','005-event-images.sql','006-user-accounts.sql','007-auth-challenges.sql','008-auth-rate-limits.sql']) await copyFile(new URL(`../migrations/${name}`,import.meta.url),join(migrationDir,name));
+      const migrations = await loadMigrations();
+      for (const {name} of migrations) await copyFile(new URL(`../migrations/${name}`,import.meta.url),join(migrationDir,name));
       await writeFile(join(migrationDir,'004-event-city.sql'),'SELECT 1;');
       await assert.rejects(migrate(migrationDb,'status',migrationDir),/Checksum mismatch/);
       await copyFile(new URL('../migrations/004-event-city.sql',import.meta.url),join(migrationDir,'004-event-city.sql'));
-      await writeFile(join(migrationDir,'009-failure.sql'),'CREATE TABLE migration_partial (id INT); INVALID SQL;');
-      await assert.rejects(migrate(migrationDb,'up',migrationDir));
+      const nextVersion = Number(migrations.at(-1)!.name.slice(0, 3)) + 1;
+      assert.ok(nextVersion <= 999, 'No migration version available for the failure fixture');
+      await writeFile(join(migrationDir,`${String(nextVersion).padStart(3,'0')}-failure.sql`),'CREATE TABLE migration_partial (id INT); INVALID SQL;');
+      await assert.rejects(migrate(migrationDb,'up',migrationDir),/syntax/i);
       await assert.rejects(migrate(migrationDb,'up',migrationDir),/is applying/);
     } finally { migrationDb.release(); await rm(migrationDir,{recursive:true,force:true}); }
 
