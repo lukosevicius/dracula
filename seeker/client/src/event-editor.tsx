@@ -38,7 +38,6 @@ export default function EventEditor({ row, today, onSaved, onRefresh, refreshing
   const [info, setInfo] = useState<EventDetailsResponse | null>(null);
   const [draft, setDraft] = useState<DetailsDraft>({});
   const [priceDraft, setPriceDraft] = useState<{ text?: string; type?: NonNullable<EventRecord['price_type']> }>({});
-  const [interestScoreDraft, setInterestScoreDraft] = useState<1 | 2 | 3>(row.interest_score || 1);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [saveError, setSaveError] = useState(false);
@@ -60,7 +59,6 @@ export default function EventEditor({ row, today, onSaved, onRefresh, refreshing
   }, [id]);
   useEffect(() => { void load(); }, [load, lastChecked]);
   useEffect(() => { setDraft(current => ({ ...current, review_status: undefined })); }, [row.review_status]);
-  useEffect(() => { setInterestScoreDraft(row.interest_score || 1); }, [row.interest_score]);
 
   const storedPrice = priceInfo(row);
   const priceText = priceDraft.text ?? storedPrice.text;
@@ -127,14 +125,6 @@ export default function EventEditor({ row, today, onSaved, onRefresh, refreshing
     }, 'Price saved.');
   }
 
-  function saveInterestScore(event: FormEvent) {
-    event.preventDefault();
-    void saveRequest('interest-score', { interest_score: interestScoreDraft }, async () => {
-      await onSaved();
-      await load();
-    }, 'Interest score saved.');
-  }
-
   function decideArtist(mbid: string, decision: string) {
     void saveRequest('artist', { mbid, decision }, load, 'Artist review saved.');
   }
@@ -182,14 +172,6 @@ export default function EventEditor({ row, today, onSaved, onRefresh, refreshing
           </select>
         </label>
         <button className="secondary-button" disabled={saving}>Save price</button>
-      </form>
-      <form className="editor-form editor-price" onSubmit={saveInterestScore}>
-        <label className="field">Interest score
-          <select aria-label="Interest score" value={interestScoreDraft} disabled={saving} onChange={event => setInterestScoreDraft(Number(event.target.value) as 1 | 2 | 3)}>
-            <option value={1}>1 · Normal</option><option value={2}>2 · Interesting</option><option value={3}>3 · Very interesting</option>
-          </select>
-        </label>
-        <button className="secondary-button" disabled={saving || interestScoreDraft === (row.interest_score || 1)}>Save score</button>
       </form>
       <Feedback message={message} error={saveError} />
       <div className="editor-refresh">

@@ -5,10 +5,11 @@ import { Icon } from './workspace';
 
 const monthFormatter = new Intl.DateTimeFormat('en-GB', { month: 'short', timeZone: 'UTC' });
 
-export default function EventItem({ row, today, open, toggle, selected, select, disabled, review, confirm, editor, showSource, saved, toggleSaved, selectionEnabled = true }: {
+export default function EventItem({ row, today, open, toggle, selected, select, disabled, review, confirm, editor, showSource, saved, toggleSaved, changeInterestScore, selectionEnabled = true }: {
   row: EventRow; today: string; open: boolean; toggle: () => void; selected: boolean;
   select: (checked: boolean) => void; disabled: boolean; review: (status: ReviewStatus) => void;
   confirm: () => void; editor: ReactNode; showSource: boolean; saved: boolean; toggleSaved: () => void;
+  changeInterestScore: (score: 1 | 2 | 3 | 4 | 5) => void;
   selectionEnabled?: boolean;
 }) {
   const title = plainText(row.title);
@@ -26,17 +27,25 @@ export default function EventItem({ row, today, open, toggle, selected, select, 
           <span>{row.event_date ? monthFormatter.format(new Date(`${row.event_date}T12:00:00Z`)) : 'Date'}</span>
           <strong>{row.event_date?.slice(8, 10) || '—'}</strong>
         </div>
-        <button type="button" className="event-title" aria-expanded={open} aria-controls={open ? `event-details-${row.id}` : undefined} onClick={toggle}>
-          <strong>{title}</strong>
-          <span>
-            {row.event_date && row.event_date.slice(0, 4) !== today.slice(0, 4) && <span>{row.event_date.slice(0, 4)}</span>}
-            {time && <span title="Event time"><Icon name="clock" size={13} /> {time}</span>}
-            {row.venue && <span title="Venue"><Icon name="pin" size={13} /> {row.venue}</span>}
-            {(price.text || price.type === 'free' || price.type === 'paid') && <span title="Price"><Icon name="ticket" size={13} /> {price.text || (price.type === 'free' ? 'Free' : 'Paid')}</span>}
-            {!time && !row.venue && !price.text && price.type === 'unknown' && <span>Details incomplete</span>}
-            {showSource && <span>{sourceNames[row.source_key] ?? row.source_key}</span>}
-          </span>
-        </button>
+        <div className="event-main">
+          <button type="button" className="event-title" aria-expanded={open} aria-controls={open ? `event-details-${row.id}` : undefined} onClick={toggle}>
+            <strong>{title}</strong>
+            <span>
+              {row.event_date && row.event_date.slice(0, 4) !== today.slice(0, 4) && <span>{row.event_date.slice(0, 4)}</span>}
+              {time && <span title="Event time"><Icon name="clock" size={13} /> {time}</span>}
+              {row.venue && <span title="Venue"><Icon name="pin" size={13} /> {row.venue}</span>}
+              {(price.text || price.type === 'free' || price.type === 'paid') && <span title="Price"><Icon name="ticket" size={13} /> {price.text || (price.type === 'free' ? 'Free' : 'Paid')}</span>}
+              {!time && !row.venue && !price.text && price.type === 'unknown' && <span>Details incomplete</span>}
+              {showSource && <span>{sourceNames[row.source_key] ?? row.source_key}</span>}
+            </span>
+          </button>
+          <label className="interest-score-control" title={`Interest score: ${row.interest_score || 1} of 5`}>
+            <span aria-hidden="true">★</span>
+            <select aria-label={`Interest score for ${title}`} value={row.interest_score || 1} disabled={disabled} onChange={event => changeInterestScore(Number(event.target.value) as 1 | 2 | 3 | 4 | 5)}>
+              {[1, 2, 3, 4, 5].map(score => <option key={score} value={score}>{score}</option>)}
+            </select>
+          </label>
+        </div>
         <div className="event-review">
           <label className={`review-select review-${row.review_status}`}>
             <select aria-label={`Review status for ${title}`} value={row.review_status} disabled={disabled} onChange={event => review(event.target.value as ReviewStatus)}>

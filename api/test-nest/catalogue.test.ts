@@ -29,6 +29,7 @@ function fixture() {
     INSERT INTO event_prices VALUES(1,'Nemokama','free'); INSERT INTO artists VALUES('artist-1','Artist');
     INSERT INTO event_artist_decisions VALUES(1,'artist-1','accepted');`);
   const pool={ execute: async (sql: string,params: import('node:sqlite').SQLInputValue[]) => [db.prepare(sql).all(...params)] };
+  db.exec('ALTER TABLE events ADD COLUMN interest_score INTEGER NOT NULL DEFAULT 1');
   return { db, pool };
 }
 

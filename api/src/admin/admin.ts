@@ -108,11 +108,11 @@ export function createAdmin(pool: Pool, token: string) {
       return !!match && timingSafeEqual(tokenHash, digest(match[1]));
     },
     async listEvents(query: URLSearchParams) {
-      const page=Number(query.get('page') || 1), limit=Number(query.get('limit') || 25);
+      const page=Number(query.get('page') || 1), limit=Number(query.get('limit') || 25), sort=query.get('sort') || 'score';
       const review=query.get('review') || 'all', when=query.get('when') || 'upcoming', source=query.get('source') || 'all';
       const readiness=query.get('readiness') || 'all', assistantReview=query.get('assistantReview') || 'all', price=query.get('price') || 'all';
       const from=query.get('from'),to=query.get('to'),today=vilniusToday(),search=normalizeEventSearch((query.get('search') || '').slice(0,200));
-      if(!Number.isSafeInteger(page)||page<1||page>1000000||!Number.isSafeInteger(limit)||limit<1||limit>100 || !['all','music','not_music','unsure'].includes(review) || !['all','upcoming','past','unknown','today','tomorrow','weekend','custom'].includes(when) || !['all','ready','attention'].includes(readiness) || !['all','pending'].includes(assistantReview) || !['all','free','paid','unknown'].includes(price) || source.length>191) throw error(400,'Invalid filters.');
+      if(!Number.isSafeInteger(page)||page<1||page>1000000||!Number.isSafeInteger(limit)||limit<1||limit>100 || !['all','music','not_music','unsure'].includes(review) || !['all','upcoming','past','unknown','today','tomorrow','weekend','custom'].includes(when) || !['all','ready','attention'].includes(readiness) || !['all','pending'].includes(assistantReview) || !['all','free','paid','unknown'].includes(price) || !['score','date'].includes(sort) || source.length>191) throw error(400,'Invalid filters.');
       if(['today','tomorrow','weekend','custom'].includes(when) && (!from || !to || !validDate(from) || !validDate(to) || to<from)) throw error(400,'Choose a valid date range.');
       const clauses: string[]=[],params: (string | number)[]=[];
       const ready="e.review_status='music' AND (NULLIF(e.event_date,'') IS NULL OR COALESCE(NULLIF(e.event_end_date,''),e.event_date)>=?)";
@@ -131,16 +131,17 @@ export function createAdmin(pool: Pool, token: string) {
         try {
           let searchTotal=null;
           const order=when==='past'?'DESC':'ASC';
+          const scoreOrder=sort==='score'?'e.interest_score DESC,':'';
           // Seeker strips HTML/entities before prefix matching. Searching titles in JS preserves that behavior.
           if(search){
-            const [titles]=await conn.execute<RowDataPacket[]>(`SELECT e.id,e.title FROM events e ${where} ORDER BY e.interest_score DESC,e.event_date IS NULL,e.event_date ${order},e.event_time IS NULL,e.event_time ${order},e.id`,params);
+            const [titles]=await conn.execute<RowDataPacket[]>(`SELECT e.id,e.title FROM events e ${where} ORDER BY ${scoreOrder}e.event_date IS NULL,e.event_date ${order},e.event_time IS NULL,e.event_time ${order},e.id`,params);
             const matches=titles.filter(row=>normalizeEventSearch(row.title).startsWith(search));
             searchTotal=matches.length;
             const ids=matches.slice((page-1)*limit,page*limit).map(row=>row.id);
             if(ids.length){where+=`${where?' AND':'WHERE'} e.id IN (${ids.map(()=>'?').join(',')})`;params.push(...ids);} else where+=`${where?' AND':'WHERE'} 1=0`;
           }
           const [totals]=await conn.execute<RowDataPacket[]>(`SELECT COUNT(*) AS count FROM events e ${where}`,params);
-          const [events]=await conn.execute<RowDataPacket[]>(`SELECT e.*,s.source_id,s.source_key,s.source_url,s.about_url,s.last_checked_at AS details_checked_at,ar.reviewed_at AS assistant_reviewed_at,ar.confirmed_at AS assistant_confirmed_at,ar.notes AS assistant_notes,ep.price_text,COALESCE(ep.price_type,'unknown') AS price_type FROM events e LEFT JOIN event_prices ep ON ep.event_id=e.id LEFT JOIN assistant_event_reviews ar ON ar.event_id=e.id JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY id LIMIT 1) ${where} ORDER BY e.interest_score DESC,e.event_date IS NULL,e.event_date ${order},e.event_time IS NULL,e.event_time ${order},e.id LIMIT ? OFFSET ?`,[...params,limit,search?0:(page-1)*limit]);
+          const [events]=await conn.execute<RowDataPacket[]>(`SELECT e.*,s.source_id,s.source_key,s.source_url,s.about_url,s.last_checked_at AS details_checked_at,ar.reviewed_at AS assistant_reviewed_at,ar.confirmed_at AS assistant_confirmed_at,ar.notes AS assistant_notes,ep.price_text,COALESCE(ep.price_type,'unknown') AS price_type FROM events e LEFT JOIN event_prices ep ON ep.event_id=e.id LEFT JOIN assistant_event_reviews ar ON ar.event_id=e.id JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY id LIMIT 1) ${where} ORDER BY ${scoreOrder}e.event_date IS NULL,e.event_date ${order},e.event_time IS NULL,e.event_time ${order},e.id LIMIT ? OFFSET ?`,[...params,limit,search?0:(page-1)*limit]);
           const [counts]=await conn.execute<RowDataPacket[]>("SELECT COUNT(*) AS total, COALESCE(SUM(review_status='music'),0) AS music, COALESCE(SUM(review_status='not_music'),0) AS not_music, COALESCE(SUM(review_status='unsure'),0) AS unsure, COALESCE(SUM(event_date IS NULL),0) AS unknown FROM events",[]);
           const [readyRows]=await conn.execute<RowDataPacket[]>(`SELECT COUNT(*) AS count FROM events e WHERE ${ready}`,[today]);
           const [states]=await conn.execute<RowDataPacket[]>('SELECT next_offset FROM source_state WHERE source_key=?',['vilnius-events']);
@@ -224,7 +225,7 @@ export function createAdmin(pool: Pool, token: string) {
     },
     async interestScore(id: number, data: unknown) {
       const score=(data as Record<string,unknown>)?.interest_score;
-      if(!Number.isInteger(score)||Number(score)<1||Number(score)>3)throw error(400,'Interest score must be 1, 2, or 3.');
+      if(!Number.isInteger(score)||Number(score)<1||Number(score)>5)throw error(400,'Interest score must be from 1 to 5.');
       const [result]=await pool.execute<ResultSetHeader>('UPDATE events SET interest_score=? WHERE id=?',[Number(score),id]);
       if(!result.affectedRows){const [rows]=await pool.execute<RowDataPacket[]>('SELECT id FROM events WHERE id=?',[id]);if(!rows.length)throw error(404,'Event not found.');}
     },

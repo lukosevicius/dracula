@@ -96,7 +96,7 @@ export function createCentralDashboard(api:CentralApi, userAgent='Seeker/0.1.0')
           else if(action==='details')await api.details(id,body as unknown as EventDetails & {review_status:ReviewStatus});
           else if(action==='artist')await api.artist(id,body.mbid as string,body.decision as ArtistDecision);
           else if(action==='price')await api.price(id,body as {price_text:string|null;price_type:'free'|'paid'|'unknown'});
-          else if(action==='interest-score')await api.interestScore(id,body.interest_score as 1|2|3);
+          else if(action==='interest-score')await api.interestScore(id,body.interest_score as 1|2|3|4|5);
           else await api.confirmAssistantReview(id);
           send(200,{id});return true;
         }

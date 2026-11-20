@@ -3,7 +3,7 @@ import type { EventRecord, ImportRun, ReviewStatus } from '../../types';
 
 export type EventRow = Omit<EventRecord, 'source_id' | 'artist_links' | 'artist_suggestions' | 'content_html'> & {
   id: number;
-  interest_score: 1 | 2 | 3;
+  interest_score: 1 | 2 | 3 | 4 | 5;
   source_id: string;
   source_key: string;
   about_url: string | null;

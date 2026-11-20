@@ -6,7 +6,7 @@ import { descriptionText } from './description.js';
 
 export type DateFilter = 'upcoming' | 'today' | 'tomorrow' | 'weekend' | 'custom' | 'all' | 'past' | 'unknown';
 export interface PageOptions { offset: number; limit: number; filter: DateFilter; from: string; to: string }
-interface EventRow extends RowDataPacket { id: number; title: string; event_date: string | null; event_end_date: string | null; event_time: string | null; venue: string | null; ticket_url: string | null; source_url: string; about_url: string | null; price_text: string | null; price_type: string | null; content_html: string | null; local_name: string | null }
+interface EventRow extends RowDataPacket { id: number; interest_score: number; title: string; event_date: string | null; event_end_date: string | null; event_time: string | null; venue: string | null; ticket_url: string | null; source_url: string; about_url: string | null; price_text: string | null; price_type: string | null; content_html: string | null; local_name: string | null }
 interface ArtistRow extends RowDataPacket { event_id: number; mbid: string; name: string }
 interface CountRow extends RowDataPacket { total: number | string }
 const columns = `e.id,e.title,e.event_date,e.event_end_date,e.event_time,e.venue,e.ticket_url,e.interest_score,

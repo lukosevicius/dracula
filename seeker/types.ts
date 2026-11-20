@@ -12,7 +12,7 @@ export interface EventDetails {
 export interface PublicEvent extends Pick<EventDetails, 'event_date' | 'event_end_date' | 'event_time' | 'venue' | 'ticket_url'> {
   id: number;
   title: string;
-  interest_score: 1 | 2 | 3;
+  interest_score: 1 | 2 | 3 | 4 | 5;
   source_url: string;
   about_url: string | null;
   description: string;
@@ -24,7 +24,7 @@ export interface ArtistSuggestion extends Artist { reason: 'Title' | 'Descriptio
 export interface EventRecord extends EventDetails {
   source_id: number;
   title: string;
-  interest_score: 1 | 2 | 3;
+  interest_score: 1 | 2 | 3 | 4 | 5;
   source_url: string;
   content_html: string;
   manual_fields: string;

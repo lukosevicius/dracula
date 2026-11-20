@@ -162,7 +162,7 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
     details: (id:number, details:Details) => edit(id,'details',details),
     artist: (id:number, mbid:string, decision:ArtistDecision) => edit(id,'artist',{mbid,decision}),
     price: (id:number, price:Price) => edit(id,'price',price),
-    interestScore: (id:number, interest_score:1|2|3) => edit(id,'interest-score',{interest_score}),
+    interestScore: (id:number, interest_score:1|2|3|4|5) => edit(id,'interest-score',{interest_score}),
     confirmAssistantReview: (id:number) => edit(id,'confirm-assistant-review',{}),
   };
 }

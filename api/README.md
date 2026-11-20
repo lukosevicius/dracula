@@ -59,7 +59,7 @@ The hosted image files are stored outside the deployment directory. One image wa
 
 `010-seeker-preferences.sql` adds Seeker's database-backed saved events and a JSON key-value table for future Seeker settings. Apply it before deploying API or Seeker versions that use these endpoints. Seeker preferences are installation-wide and are managed through the protected admin API.
 
-`011-event-interest-score.sql` adds an `interest_score` to events. Existing and newly imported events default to 1; Seeker can set 1, 2, or 3. Apply it before deploying API or Seeker versions that read or write the score.
+`011-event-interest-score.sql` adds an `interest_score` to events. Existing and newly imported events default to 1; Seeker can set scores from 1 to 5. Apply it before deploying API or Seeker versions that read or write the score.
 
 Schema changes are separate from API deployment. `migrations/001` through `003` describe changes already included in `schema.sql`. They must not be replayed against an existing catalogue. API migration history is recorded separately in `api_schema_migrations`; the older `schema_migrations` table belongs to Seeker and is not modified.
 

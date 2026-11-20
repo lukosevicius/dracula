@@ -59,7 +59,7 @@ export function SavedEventsProvider({ children }: { children: ReactNode }) {
   }
 
   function update(event: EventRow) {
-    setEvents(current => current.map(item => item.id === event.id ? event : item));
+    setEvents(current => current.map(item => item.id === event.id ? event : item).sort((a, b) => (b.interest_score || 1) - (a.interest_score || 1)));
   }
 
   return <SavedEventsContext.Provider value={{ events, isSaved: id => events.some(event => event.id === id), toggle, update, loading, error, pendingIds }}>{children}</SavedEventsContext.Provider>;
@@ -116,6 +116,22 @@ export function SavedEventsPage() {
     }
   }
 
+  async function changeInterestScore(row: EventRow, score: 1 | 2 | 3 | 4 | 5) {
+    setPendingId(row.id);
+    setNoticeError(false);
+    setNotice('');
+    try {
+      await api(`/api/events/${row.id}/interest-score`, { interest_score: score });
+      update({ ...row, interest_score: score });
+      setNotice('Interest score saved.');
+    } catch (cause) {
+      setNoticeError(true);
+      setNotice(errorMessage(cause));
+    } finally {
+      setPendingId(null);
+    }
+  }
+
   async function refreshSourceDetails(row: EventRow) {
     setNoticeError(false);
     setNotice('');
@@ -133,6 +149,7 @@ export function SavedEventsPage() {
         {loading && <p className="empty-state" role="status">Loading saved events…</p>}
         {events.map(event => <EventItem key={event.id} row={event} today={today} open={openId === event.id} toggle={() => setOpenId(current => current === event.id ? null : event.id)}
           selected={false} select={() => {}} disabled={loading || pendingIds.includes(event.id) || pendingId === event.id || refreshing} review={status => void saveReview(event, status)}
+          changeInterestScore={score => void changeInterestScore(event, score)}
           confirm={() => void confirmAssistantReview(event)} showSource saved={isSaved(event.id)} toggleSaved={() => toggle(event)} selectionEnabled={false}
           editor={<EventEditor row={event} today={today} onSaved={() => refreshSavedRow(event)} onRefresh={() => void refreshSourceDetails(event)} refreshing={refreshing} />} />)}
         {!loading && !error && !events.length && <p className="empty-state">No saved events yet. Use the save button on an event to add it here.</p>}

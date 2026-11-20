@@ -24,6 +24,7 @@ function setup() {
     CREATE TABLE vilnius_event_runs(id INTEGER);
     INSERT INTO events VALUES(1,'unsure','Tést &amp; show','2026-11-20',NULL,NULL,NULL,NULL,'[]'); INSERT INTO event_sources VALUES(1,1,'vilnius-events','99','https://example.com',NULL,'Description',NULL);
     INSERT INTO vilnius_events VALUES(99,'unsure',NULL,'2026-11-20',NULL,NULL,NULL,NULL,'[]',0); INSERT INTO artists VALUES('${artist}','Artist');`);
+  db.exec('ALTER TABLE events ADD COLUMN interest_score INTEGER NOT NULL DEFAULT 1');
   const connection = {
     async beginTransaction() { db.exec('BEGIN'); }, async commit() { db.exec('COMMIT'); },
     async rollback() { db.exec('ROLLBACK'); }, release() {},

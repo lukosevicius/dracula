@@ -153,9 +153,9 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     assert.equal((await fetch(`${root}/v1/admin/jobs/${aiJob.id}`,{method:'POST',headers,body:JSON.stringify({source:'ai-evaluation',status:'completed',owner:aiJob.owner,progress:{fetched:1,added:1,updated:0,completed:1,total:1,failed:0,cost_usd:0.0001}})})).status,200);
     const [[aiProgress]]=await pool.execute<RowDataPacket[]>('SELECT progress_json FROM jobs WHERE id=?',[aiJob.id]);assert.equal(JSON.parse(aiProgress.progress_json).cost_usd,0.0001);
 
-    // Recreate the pre-city schema to exercise the real upgrade against existing imports.
-    await pool.query('ALTER TABLE events DROP COLUMN city');
-    await pool.query('DROP TABLE event_images');
+    // Recreate the pre-city, pre-preferences and pre-score schema to exercise migrations.
+    await pool.query('ALTER TABLE events DROP COLUMN city, DROP COLUMN interest_score');
+    await pool.query('DROP TABLE event_images, seeker_saved_events, seeker_settings');
     await pool.query(`INSERT INTO events(id,title,review_status,manual_fields,created_at,updated_at)
       VALUES(10001,'Kaunas fixture','unsure','[]','now','now'),(10002,'Unknown city fixture','unsure','[]','now','now');
       INSERT INTO event_sources(event_id,source_key,source_id,source_url,content_html,source_data_json)
@@ -169,6 +169,8 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
       await migrate(migrationDb,'baseline');
       await migrate(migrationDb,'up');
       await migrate(migrationDb,'up');
+      const [[scoreColumn]]=await migrationDb.query<RowDataPacket[]>('SELECT interest_score FROM events WHERE id=1');
+      assert.equal(scoreColumn.interest_score,1);
       const [cities]=await migrationDb.query<RowDataPacket[]>('SELECT city FROM events WHERE id IN (?) ORDER BY id',[[1,avilysEvent.id,10001,10002]]);
       assert.deepEqual(cities.map(row=>row.city),['Vilnius','Vilnius','Kaunas',null]);
 

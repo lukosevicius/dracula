@@ -78,6 +78,7 @@ test('Nest admin edits persist both event records and reject invalid input', asy
     INSERT INTO events VALUES(1,'unsure','Concert','2026-11-20',NULL,NULL,NULL,NULL,'[]');
     INSERT INTO event_sources VALUES(1,1,'vilnius-events','99');
     INSERT INTO vilnius_events VALUES(99,'unsure','2026-11-20',NULL,NULL,NULL,NULL,'[]',0);`);
+  db.exec('ALTER TABLE events ADD COLUMN interest_score INTEGER NOT NULL DEFAULT 1');
   const connection={async beginTransaction(){db.exec('BEGIN')},async commit(){db.exec('COMMIT')},async rollback(){db.exec('ROLLBACK')},release(){},async execute(sql: string,params: import('node:sqlite').SQLInputValue[]){const query=sql.replace(/ FOR UPDATE$/,'');const stmt=db.prepare(query);return [/^SELECT/i.test(query)?stmt.all(...params):stmt.run(...params)]}};
   const pool={getConnection:async()=>connection,execute:(sql: string,params: import('node:sqlite').SQLInputValue[])=>connection.execute(sql,params)};
   const config=loadConfig(env);

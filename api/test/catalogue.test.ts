@@ -22,6 +22,7 @@ function fixture() {
     INSERT INTO vilnius_events VALUES(1,5); INSERT INTO vilnius_images VALUES(5,'5.jpg');
     INSERT INTO event_prices VALUES(1,'Nemokama','free'); INSERT INTO artists VALUES('artist-1','Artist');
     INSERT INTO event_artist_decisions VALUES(1,'artist-1','accepted');`);
+  db.exec('ALTER TABLE events ADD COLUMN interest_score INTEGER NOT NULL DEFAULT 1');
   return { db, catalogue:createCatalogue({execute:async (sql: string,params: import('node:sqlite').SQLInputValue[]) => [db.prepare(sql).all(...params)]},'https://api.example.com') };
 }
 
@@ -56,6 +57,21 @@ test('filtered pages apply date ranges before pagination', async () => {
     assert.equal((await page('past')).total,0);
     const first=await page('all'); assert.equal(first.total,2); assert.equal(first.nextOffset,1);
     assert.equal((await page('all','','',1)).items[0].id,2);
+  } finally {db.close();}
+});
+
+test('higher interest scores appear first within the same date before pagination', async () => {
+  const {db,catalogue}=fixture();
+  try {
+    db.exec(`INSERT INTO events(id,title,event_date,review_status,interest_score) VALUES
+      (5,'Higher score','2026-11-20','music',3), (6,'Next day','2026-11-21','music',3);
+      INSERT INTO event_sources(id,event_id,source_key,source_id,source_url) VALUES
+      (5,5,'avilys','5','https://example.com'), (6,6,'avilys','6','https://example.com');`);
+    const page=(offset: number)=>catalogue.page({filter:'upcoming',from:'',to:'',offset,limit:1},'2026-11-15');
+    assert.equal((await page(0)).items[0].id,5);
+    assert.equal((await page(1)).items[0].id,1);
+    assert.equal((await page(2)).items[0].id,6);
+    assert.equal((await page(0)).items[0].interest_score,3);
   } finally {db.close();}
 });
 

@@ -17,6 +17,7 @@ test('Avilys imports are idempotent, reviewable, and preserve edits on refresh',
     CREATE TABLE event_prices(event_id INTEGER,price_text TEXT,price_type TEXT,manual INTEGER,checked_at TEXT);
     CREATE TABLE event_artist_decisions(event_id INTEGER,artist_mbid TEXT,decision TEXT);
     CREATE TABLE artists(mbid TEXT,name TEXT);`);
+  db.exec('ALTER TABLE events ADD COLUMN interest_score INTEGER NOT NULL DEFAULT 1');
   const owner='a'.repeat(64),job={id:1,owner};
   db.prepare('INSERT INTO job_leases VALUES(?,?,?,?)').run('vilnius-events',1,createHash('sha256').update(owner).digest('hex'),Date.now()+60000);
   const connection={async beginTransaction(){db.exec('BEGIN');},async commit(){db.exec('COMMIT');},async rollback(){db.exec('ROLLBACK');},release(){},async execute(sql: string,params: import('node:sqlite').SQLInputValue[]){const q=sql.replace(/ FOR UPDATE$/,'');const stmt=db.prepare(q);if(/^SELECT/i.test(q))return [stmt.all(...params)];const result=stmt.run(...params);return [{insertId:Number(result.lastInsertRowid),affectedRows:Number(result.changes)}];}};
