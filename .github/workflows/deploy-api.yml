@@ -8,6 +8,8 @@ on:
       - 'api/**'
       - '.github/workflows/checks.yml'
       - '.github/workflows/deploy-api.yml'
+      - '.github/scripts/verify-api-deployment.mjs'
+      - '.github/scripts/verify-api-deployment.test.mjs'
 
 permissions:
   contents: read
@@ -34,6 +36,18 @@ jobs:
     name: Publish tested API revision
     needs: checks
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production-api-migrations
+    env:
+      SSH_HOST: ${{ vars.HOSTINGER_SSH_HOST }}
+      SSH_PORT: ${{ vars.HOSTINGER_SSH_PORT }}
+      HOSTINGER_SSH_USER: ${{ vars.HOSTINGER_SSH_USER }}
+      SSH_FINGERPRINT: ${{ vars.HOSTINGER_SSH_FINGERPRINT }}
+      DB_USER: ${{ secrets.MIGRATION_DB_USER }}
+      DB_PASSWORD: ${{ secrets.MIGRATION_DB_PASSWORD }}
+      DB_NAME: ${{ secrets.MIGRATION_DB_NAME }}
+      HOSTINGER_API_TOKEN: ${{ secrets.HOSTINGER_API_TOKEN }}
+      RELEASE_SHA: ${{ github.sha }}
     permissions:
       contents: write
     steps:
@@ -41,11 +55,52 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-      - name: Advance API deployment branch
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - name: Install API dependencies
+        working-directory: api
+        run: npm ci
+      - name: Verify Hostinger access before publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOSTINGER_API_TOKEN"
+          [[ "$HOSTINGER_SSH_USER" =~ ^[a-zA-Z0-9_-]+$ ]]
+          curl --fail --silent --show-error --max-time 20 -o /dev/null -H "Authorization: Bearer $HOSTINGER_API_TOKEN" "https://developers.hostinger.com/api/hosting/v1/accounts/$HOSTINGER_SSH_USER/websites/api.dracula.lt/nodejs/builds?per_page=1"
+      - name: Check production migrations
+        working-directory: api
+        shell: bash
         env:
-          RELEASE_SHA: ${{ github.sha }}
+          SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$SSH_HOST" =~ ^[a-zA-Z0-9.-]+$ ]]
+          [[ "$SSH_PORT" =~ ^[0-9]+$ ]] && (( SSH_PORT >= 1 && SSH_PORT <= 65535 ))
+          [[ "$HOSTINGER_SSH_USER" =~ ^[a-zA-Z0-9_-]+$ ]]
+          [[ "$SSH_FINGERPRINT" =~ ^SHA256:[a-zA-Z0-9+/]+$ ]]
+          test -n "$SSH_PRIVATE_KEY" && test -n "$DB_USER" && test -n "$DB_PASSWORD" && test -n "$DB_NAME"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/dracula_migrate"
+          chmod 600 "$HOME/.ssh/dracula_migrate"
+          ssh-keyscan -T 10 -p "$SSH_PORT" -t ed25519 "$SSH_HOST" > "$HOME/.ssh/known_hosts"
+          actual=$(ssh-keygen -lf "$HOME/.ssh/known_hosts" -E sha256 | awk '{print $2}')
+          test "$actual" = "$SSH_FINGERPRINT"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          ssh -f -N -M -S "$HOME/.ssh/dracula-tunnel" -L 127.0.0.1:13306:127.0.0.1:3306 -p "$SSH_PORT" -i "$HOME/.ssh/dracula_migrate" -o BatchMode=yes -o StrictHostKeyChecking=yes -o ExitOnForwardFailure=yes "$HOSTINGER_SSH_USER@$SSH_HOST"
+          trap 'ssh -S "$HOME/.ssh/dracula-tunnel" -O exit -p "$SSH_PORT" "$HOSTINGER_SSH_USER@$SSH_HOST" >/dev/null 2>&1 || true' EXIT
+          DB_HOST=127.0.0.1 DB_PORT=13306 npm run migrate -- check
+      - name: Advance API deployment branch
         run: |
           set -euo pipefail
           [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
           # A non-force push prevents an older run from replacing a newer release.
           git push origin "$RELEASE_SHA:refs/heads/api-deploy"
+      - name: Verify Hostinger build and live catalogue
+        shell: bash
+        run: |
+          set -euo pipefail
+          export EXPECTED_FINGERPRINT="$(node api/scripts/release-fingerprint.mjs)"
+          node .github/scripts/verify-api-deployment.mjs

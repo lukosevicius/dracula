@@ -13,7 +13,7 @@
     "dev:nest": "tsx watch src/main.ts",
     "start:nest": "node dist/main.js",
     "test:nest": "npm run build && node --import tsx --test test-nest/*.test.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/release-fingerprint.mjs --write",
     "test:production": "node --import tsx test/production-smoke.ts",
     "premigrate": "npm run build"
   },

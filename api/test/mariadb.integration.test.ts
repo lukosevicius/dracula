@@ -166,8 +166,11 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     const migrationDb=await pool.getConnection();
     try {
       await assert.rejects(migrate(migrationDb,'up'),/not baselined/);
+      await assert.rejects(migrate(migrationDb,'check'),/Pending migrations/);
       await migrate(migrationDb,'baseline');
+      await assert.rejects(migrate(migrationDb,'check'),/Pending migrations/);
       await migrate(migrationDb,'up');
+      await migrate(migrationDb,'check');
       await migrate(migrationDb,'up');
       const [[scoreColumn]]=await migrationDb.query<RowDataPacket[]>('SELECT interest_score FROM events WHERE id=1');
       assert.equal(scoreColumn.interest_score,1);

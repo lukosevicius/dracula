@@ -73,7 +73,7 @@ async function createTracking(db: Connection) {
 }
 
 export async function migrate(db: Connection, action: string, directory?: string) {
-  if (!['status','baseline','up'].includes(action)) throw new Error('Choose status, baseline, or up');
+  if (!['status','check','baseline','up'].includes(action)) throw new Error('Choose status, check, baseline, or up');
   const migrations = await loadMigrations(directory);
   if (historical.some((name, i) => migrations[i]?.name !== name || migrations[i]?.checksum !== historicalChecksums[i])) throw new Error('Historical migrations are missing, changed, or out of order');
   const [[lock]] = await db.query<LockRow[]>("SELECT GET_LOCK(CONCAT('dracula-api-migrate:', DATABASE()), 0) AS acquired");
@@ -106,6 +106,7 @@ export async function migrate(db: Connection, action: string, directory?: string
     }
     const applied = new Set(rows.map(row => row.name));
     for (const m of migrations) console.log(`${applied.has(m.name) ? 'applied' : 'pending'} ${m.name}`);
+    if (action === 'check' && migrations.some(m => !applied.has(m.name))) throw new Error('Pending migrations; apply them before publishing the API release');
     return rows;
   } finally { await db.query("SELECT RELEASE_LOCK(CONCAT('dracula-api-migrate:', DATABASE()))"); }
 }
