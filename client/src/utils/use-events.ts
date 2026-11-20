@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiUrl, fetchEvents, type DisplayEvent } from './events-api';
 import { displayText } from './event-format';
+import { selectedDates } from '../shared/event-date-filters';
 
 export function useEvents(filter: string, from: string, to: string, invalid: boolean, search: string) {
   const [items, setItems] = useState<DisplayEvent[]>([]);
@@ -22,18 +23,24 @@ export function useEvents(filter: string, from: string, to: string, invalid: boo
     if (invalid) { pending.current = false; setLoading(false); return () => active.abort(); }
     pending.current = true; setLoading(true);
     async function load() {
-      if (!search) return fetchEvents(filter, from, to, 0, active.signal);
+      if (!search && filter !== 'upcoming') return fetchEvents(filter, from, to, 0, active.signal);
       const matches: DisplayEvent[] = [];
       const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('lt');
       const term = normalize(search);
       let offset: number | null = 0;
+      let total = 0;
+      const tomorrow = selectedDates('tomorrow', '', '')?.from;
       while (offset !== null) {
         const page = await fetchEvents(filter, from, to, offset, active.signal, 100);
-        matches.push(...page.items.filter(event => normalize([event.title, event.venue ?? '', ...event.artists.map(artist => artist.name)].map(displayText).join(' ')).includes(term)));
+        total = page.total;
+        matches.push(...(search ? page.items.filter(event => normalize([event.title, event.venue ?? '', ...event.artists.map(artist => artist.name)].map(displayText).join(' ')).includes(term)) : page.items));
         if (page.nextOffset !== null && page.nextOffset <= offset) throw new Error('Invalid pagination');
         offset = page.nextOffset;
+        // The API is ordered by start date. Load through tomorrow so both sections
+        // have accurate limits even when a day spans several API pages.
+        if (!search && page.items.some(event => event.event_date && tomorrow && event.event_date > tomorrow)) break;
       }
-      return { items: matches, total: matches.length, nextOffset: null };
+      return { items: matches, total: search ? matches.length : total, nextOffset: search ? null : offset };
     }
     load().then(page => {
       if (current !== generation.current) return;

@@ -1,8 +1,8 @@
 type DatedEvent = { id: number; event_date: string | null };
-export type EventListItem<T> = { type: 'heading'; date: string | null; key: string } | { type: 'row'; events: T[]; key: string };
+export type EventListItem<T> = { type: 'heading'; date: string | null; key: string } | { type: 'row'; events: T[]; key: string } | { type: 'more'; date: string; remaining: number; key: string };
 
 // Ongoing events appear on the first day of the selected range, rather than under a past date.
-export function groupEventRows<T extends DatedEvent>(events: T[], columns: number, rangeStart: string): EventListItem<T>[] {
+export function groupEventRows<T extends DatedEvent>(events: T[], columns: number, rangeStart: string, limits: Record<string, number> = {}): EventListItem<T>[] {
   const groups = new Map<string, T[]>();
   for (const event of events) {
     const date = event.event_date ? (event.event_date < rangeStart ? rangeStart : event.event_date) : '';
@@ -13,10 +13,12 @@ export function groupEventRows<T extends DatedEvent>(events: T[], columns: numbe
   const result: EventListItem<T>[] = [];
   for (const [date, group] of groups) {
     result.push({ type: 'heading', date: date || null, key: `date-${date || 'unknown'}` });
-    for (let i = 0; i < group.length; i += columns) {
-      const row = group.slice(i, i + columns);
+    const visible = group.slice(0, limits[date] ?? group.length);
+    for (let i = 0; i < visible.length; i += columns) {
+      const row = visible.slice(i, i + columns);
       result.push({ type: 'row', events: row, key: `row-${row[0].id}` });
     }
+    if (date && visible.length < group.length) result.push({ type: 'more', date, remaining: group.length - visible.length, key: `more-${date}` });
   }
   return result;
 }
