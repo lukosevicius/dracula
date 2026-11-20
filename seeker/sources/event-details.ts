@@ -92,9 +92,9 @@ export function suggestArtists(event: {title: string; content_html: string}, art
   const titleText=normalized(event.title), title=` ${titleText} `, body=` ${normalized(event.content_html)} `;
   return artists.map(a=>{
     const name=normalized(a.name); if(name.length<5 || reviews.has(a.mbid))return null;
-    const singleWord=!name.includes(' '), needle=` ${name} `;
-    const inTitle=singleWord ? titleText===name : title.includes(needle);
-    const inBody=!singleWord && body.includes(needle);
+    const needle=` ${name} `;
+    const inTitle=title.includes(needle);
+    const inBody=body.includes(needle);
     if (!inTitle && !inBody) return null;
     const original = textFromHtml(inTitle ? event.title : event.content_html).replace(/\s+/g,' ').trim();
     const sections = original.match(/[^.!?\n]+(?:[.!?]|$)/g) || [original];
