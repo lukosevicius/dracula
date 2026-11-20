@@ -1,8 +1,8 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import type { PublicEvent } from '../../../seeker/types';
+import type { DisplayEvent } from '../utils/events-api';
 import { calendarFile } from '../utils/calendar';
 
-export function CalendarButton({ event }: { event: PublicEvent }) {
+export function CalendarButton({ event }: { event: DisplayEvent }) {
   if (!event.event_date) return null;
   function download() {
     const content = calendarFile(event);

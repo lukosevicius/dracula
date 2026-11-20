@@ -1,4 +1,4 @@
-import type { PublicEvent } from '../../../seeker/types';
+import type { DisplayEvent } from './events-api';
 import { displayText, eventSource } from './event-format';
 
 function escapeText(value: string) {
@@ -43,10 +43,20 @@ function vilniusUtc(date: string, time: string) {
   return new Date(instant).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
 }
 
-export function calendarFile(event: PublicEvent, now = new Date()) {
+export function calendarFile(event: DisplayEvent, now = new Date()) {
   if (!event.event_date) return null;
   const time = event.event_time && /^([01]\d|2[0-3]):[0-5]\d$/.test(event.event_time) ? event.event_time : null;
   const source = eventSource(event.about_url, event.source_url);
+  const tickets = eventSource(null, event.ticket_url || '');
+  const eventUrl = `https://app.dracula.lt/events/${event.id}`;
+  const description = [
+    event.description?.trim(),
+    event.artists?.length ? `Atlikėjai: ${event.artists.map(artist => displayText(artist.name)).join(', ')}` : '',
+    event.price_text ? `Kaina: ${displayText(event.price_text)}` : event.price_type === 'free' ? 'Kaina: Nemokamas' : '',
+    `Renginys Dracula: ${eventUrl}`,
+    source ? `Renginio nuoroda: ${source.url}` : '',
+    tickets ? `Bilietai: ${tickets.url}` : '',
+  ].filter(Boolean).join('\n\n');
   const lines = [
     'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Dracula//Events//LT', 'CALSCALE:GREGORIAN', 'BEGIN:VEVENT',
     `UID:event-${event.id}@dracula.lt`, `DTSTAMP:${now.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')}`,
@@ -58,7 +68,8 @@ export function calendarFile(event: PublicEvent, now = new Date()) {
     lines.push(`DTEND;VALUE=DATE:${compactDate(nextDate(event.event_end_date || event.event_date))}`);
   }
   if (event.venue) lines.push(`LOCATION:${escapeText(displayText(event.venue))}`);
-  if (source) lines.push(`URL:${source.url}`);
+  lines.push(`URL:${eventUrl}`);
+  lines.push(`DESCRIPTION:${escapeText(description)}`);
   lines.push('END:VEVENT', 'END:VCALENDAR');
   return lines.map(foldLine).join('\r\n') + '\r\n';
 }
