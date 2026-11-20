@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { EventRecord, ReviewStatus } from '../../types';
-import { api, errorMessage, formatDate, labels, reviews, safeUrl, sourceNames, type EventRow } from './data';
+import { api, errorMessage, formatDate, labels, priceInfo, reviews, safeUrl, sourceNames, type EventRow } from './data';
 import { Description } from './event-description';
 import { Feedback, Icon } from './workspace';
 
@@ -30,8 +30,8 @@ function manualFields(value: string | undefined): string[] {
   }
 }
 
-export default function EventEditor({ row, onSaved, onRefresh, refreshing }: {
-  row: EventRow; onSaved: () => Promise<void>; onRefresh: () => void; refreshing: boolean;
+export default function EventEditor({ row, today, onSaved, onRefresh, refreshing }: {
+  row: EventRow; today: string; onSaved: () => Promise<void>; onRefresh: () => void; refreshing: boolean;
 }) {
   const [info, setInfo] = useState<EventDetailsResponse | null>(null);
   const [draft, setDraft] = useState<DetailsDraft>({});
@@ -54,8 +54,9 @@ export default function EventEditor({ row, onSaved, onRefresh, refreshing }: {
   useEffect(() => { void load(); }, [load, lastChecked]);
   useEffect(() => { setDraft(current => ({ ...current, review_status: undefined })); }, [row.review_status]);
 
-  const priceText = priceDraft.text ?? row.price_text ?? '';
-  const priceType = priceDraft.type ?? row.price_type ?? 'unknown';
+  const storedPrice = priceInfo(row);
+  const priceText = priceDraft.text ?? storedPrice.text;
+  const priceType = priceDraft.type ?? storedPrice.type;
   const fields = Object.fromEntries(detailsFields.map(([name]) => [name, draft[name] ?? row[name] ?? '']));
   const review = draft.review_status ?? row.review_status;
   const manual = manualFields(info?.event.manual_fields);
@@ -63,6 +64,7 @@ export default function EventEditor({ row, onSaved, onRefresh, refreshing }: {
   const about = safeUrl(row.about_url);
   const original = safeUrl(row.source_url);
   const image = info?.image;
+  const publicEvent = row.review_status === 'music' && (!row.event_date || (row.event_end_date || row.event_date) >= today);
 
   async function saveRequest(action: string, body: unknown, afterSave: () => void | Promise<void>, success: string) {
     setSaving(true);
@@ -106,6 +108,7 @@ export default function EventEditor({ row, onSaved, onRefresh, refreshing }: {
       <div className="editor-top">
         <h3>Event details</h3>
         <div className="link-list">
+          {publicEvent && <a href={`https://app.dracula.lt/events/${row.id}`} target="_blank" rel="noreferrer">View in Dracula <Icon name="external" size={13} /></a>}
           {tickets && <a href={tickets} target="_blank" rel="noreferrer"><Icon name="ticket" size={15} /> Tickets <Icon name="external" size={13} /></a>}
           {about && <a href={about} target="_blank" rel="noreferrer">Event information <Icon name="external" size={13} /></a>}
           {original && !info?.sources.length && <a href={original} target="_blank" rel="noreferrer">Original listing <Icon name="external" size={13} /></a>}
@@ -115,7 +118,7 @@ export default function EventEditor({ row, onSaved, onRefresh, refreshing }: {
           })}
         </div>
       </div>
-      {row.source_key === 'avilys' && <p className="editor-note">Avilys start time {info?.event.source_timestamp || 'unavailable'}. Verify the timezone, price and possible duplicates before marking as Music.</p>}
+      {row.source_key === 'avilys' && <p className="editor-note">Avilys source start time: {info?.event.source_timestamp || 'unavailable'}</p>}
       <form className="editor-form" onSubmit={saveDetails}>
         {detailsFields.map(([name, label, type]) => (
           <label className="field" key={name}>

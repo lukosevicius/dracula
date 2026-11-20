@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { DateFilter, ReviewStatus } from '../../types';
-import { api, errorMessage, formatDate, isActive, labels, plainText, reviews, sourceNames, useJobs, type EventPage, type EventRow } from './data';
+import { api, errorMessage, formatDate, isActive, labels, plainText, priceInfo, reviews, sourceNames, useJobs, type EventPage, type EventRow } from './data';
+import { useSavedEvents } from './saved-events';
 import EventEditor from './event-editor';
 import { AvilysImport, VilniusImport, VilniusNotes } from './imports';
 import { Disclosure, Feedback, Icon, Metrics, PageHeading, Pagination, PanelHeading, SearchField } from './workspace';
@@ -34,10 +35,10 @@ function dateRange(filter: DateFilter, from: string, to: string, today: string) 
   return null;
 }
 
-function EventItem({ row, today, open, toggle, selected, select, disabled, review, confirm, editor, showSource }: {
+function EventItem({ row, today, open, toggle, selected, select, disabled, review, confirm, editor, showSource, saved, toggleSaved }: {
   row: EventRow; today: string; open: boolean; toggle: () => void; selected: boolean;
   select: (checked: boolean) => void; disabled: boolean; review: (status: ReviewStatus) => void;
-  confirm: () => void; editor: ReactNode; showSource: boolean;
+  confirm: () => void; editor: ReactNode; showSource: boolean; saved: boolean; toggleSaved: () => void;
 }) {
   const title = plainText(row.title);
   const assistantPending = !!row.assistant_reviewed_at && !row.assistant_confirmed_at;
@@ -45,6 +46,7 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, revie
   const past = !!row.event_date && (row.event_end_date || row.event_date) < today;
   const prepared = row.review_status === 'music' && !past;
   const time = row.event_time?.slice(0, 5);
+  const price = priceInfo(row);
   return (
     <article className={`event-item ${open ? 'event-open' : ''} ${selected ? 'event-selected' : ''}`}>
       <div className="event-row">
@@ -59,8 +61,8 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, revie
             {row.event_date && row.event_date.slice(0, 4) !== today.slice(0, 4) && <span>{row.event_date.slice(0, 4)}</span>}
             {time && <span title="Event time"><Icon name="clock" size={13} /> {time}</span>}
             {row.venue && <span title="Venue"><Icon name="pin" size={13} /> {row.venue}</span>}
-            {(row.price_text || row.price_type === 'free' || row.price_type === 'paid') && <span title="Price"><Icon name="ticket" size={13} /> {row.price_text || (row.price_type === 'free' ? 'Free' : 'Paid')}</span>}
-            {!time && !row.venue && !row.price_text && (!row.price_type || row.price_type === 'unknown') && <span>Details incomplete</span>}
+            {(price.text || price.type === 'free' || price.type === 'paid') && <span title="Price"><Icon name="ticket" size={13} /> {price.text || (price.type === 'free' ? 'Free' : 'Paid')}</span>}
+            {!time && !row.venue && !price.text && price.type === 'unknown' && <span>Details incomplete</span>}
             {showSource && <span>{sourceNames[row.source_key] ?? row.source_key}</span>}
           </span>
         </button>
@@ -73,6 +75,7 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, revie
           </label>
           <small>{assistantPending ? 'Needs your check' : past ? 'Past event' : prepared ? 'Ready for Dracula' : ''}</small>
         </div>
+        <button type="button" className="icon-button save-event-button" aria-label={saved ? `Remove ${title} from saved events` : `Save ${title}`} aria-pressed={saved} title={saved ? 'Remove from saved events' : 'Save event'} onClick={toggleSaved}><Icon name="save" /></button>
         <button type="button" className="icon-button event-expand" aria-label={`${open ? 'Hide' : 'Show'} details for ${title}`} aria-expanded={open} aria-controls={open ? `event-details-${row.id}` : undefined} onClick={toggle}><Icon name="down" /></button>
       </div>
       {open && (
@@ -104,6 +107,7 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
   const [sourceFilter, setSourceFilter] = useState(defaultSource);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [specificDateMode, setSpecificDateMode] = useState(false);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [includeImages, setIncludeImages] = useState(false);
@@ -118,6 +122,7 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
   const [loading, setLoading] = useState(true);
   const requestId = useRef(0);
   const catalogue = useRef<HTMLElement>(null);
+  const { isSaved, toggle: toggleSaved } = useSavedEvents();
   const today = dateFormatter.format(new Date());
   const invalid = when === 'custom' && (!from || (!!to && to < from));
   const extraCount = Number(readiness !== 'all') + Number(assistantReview !== 'all') + Number(sourceFilter !== defaultSource);
@@ -182,6 +187,7 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
     setSourceFilter(defaultSource);
     setFrom('');
     setTo('');
+    setSpecificDateMode(false);
     setPage(1);
   }
 
@@ -282,7 +288,7 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
             <div className="catalogue-tools event-tools">
               <SearchField label="Search by event title" value={query} onChange={value => updateFilters(setQuery, value)} />
               <div className="filter-grid">
-                <label className="field">When <select value={when} onChange={event => updateFilters(setWhen, event.target.value as DateFilter)}>
+                <label className="field">When <select value={when} onChange={event => { setSpecificDateMode(false); updateFilters(setWhen, event.target.value as DateFilter); }}>
                   {dateOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 </select></label>
                 <label className="field">Price <select value={price} onChange={event => updateFilters(setPrice, event.target.value)}>
@@ -292,7 +298,36 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
                   <option value="all">All statuses</option>{reviews.map(status => <option key={status} value={status}>{labels[status]}</option>)}
                 </select></label>
               </div>
-              {when === 'custom' && <div className="field-grid custom-dates">
+              <div className="date-quick-filters" role="group" aria-label="Quick date filters">
+                {(['today', 'tomorrow'] as const).map(filter => <button
+                  key={filter}
+                  type="button"
+                  className={`secondary-button date-filter-button ${when === filter ? 'active' : ''}`}
+                  aria-pressed={when === filter}
+                  onClick={() => { setSpecificDateMode(false); setFrom(''); setTo(''); updateFilters(setWhen, filter); }}
+                >{filter === 'today' ? 'Today' : 'Tomorrow'}</button>)}
+                <button
+                  type="button"
+                  className={`secondary-button date-filter-button ${specificDateMode && when === 'custom' ? 'active' : ''}`}
+                  aria-pressed={specificDateMode && when === 'custom'}
+                  onClick={() => {
+                    setSpecificDateMode(true);
+                    setFrom('');
+                    setTo('');
+                    updateFilters(setWhen, 'custom');
+                  }}
+                >Specific date</button>
+                {specificDateMode && when === 'custom' && <label className="field specific-date-field">Date
+                  <input type="date" value={from} onChange={event => {
+                    const date = event.target.value;
+                    setLoading(true);
+                    setPage(1);
+                    setFrom(date);
+                    setTo(date);
+                  }} />
+                </label>}
+              </div>
+              {when === 'custom' && !specificDateMode && <div className="field-grid custom-dates">
                 <label className="field">From <input type="date" value={from} onChange={event => updateFilters(setFrom, event.target.value)} /></label>
                 <label className="field">To <input type="date" min={from || undefined} value={to} onChange={event => updateFilters(setTo, event.target.value)} /></label>
               </div>}
@@ -331,7 +366,8 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
                   selected={selected.includes(row.id)} select={checked => setSelection([row.id], checked)} disabled={bulkPending || pending.includes(row.id) || loading}
                   review={status => void changeRow(row.id, 'review', { review_status: status }, 'Review saved.')}
                   confirm={() => void changeRow(row.id, 'confirm-assistant-review', {}, 'Assistant review checked.')}
-                  editor={<EventEditor row={row} onSaved={() => loadCurrent.current()} onRefresh={() => void startVilnius('details-event', row.id)} refreshing={busy} />} />
+                  editor={<EventEditor row={row} today={today} onSaved={() => loadCurrent.current()} onRefresh={() => void startVilnius('details-event', row.id)} refreshing={busy} />}
+                  saved={isSaved(row.id)} toggleSaved={() => toggleSaved(row)} />
               ))}
               {!rows.length && !loadError && !invalid && <p className="empty-state" role="status">{loading ? 'Loading events…' : 'No events match these filters.'}</p>}
             </div>

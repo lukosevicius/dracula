@@ -19,6 +19,7 @@ const paths = {
   filter: 'M4 7h16M7 12h10m-7 5h4',
   pin: 'M18 10c0 5-6 10-6 10s-6-5-6-10a6 6 0 1 1 12 0Zm-4 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z',
   ticket: 'M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4V7Zm9 0v2m0 2v2m0 2v2',
+  save: 'M5 3h12l4 4v14H3V3h2Zm2 0v6h10V3M7 21v-8h10v8',
 } as const;
 
 type IconName = keyof typeof paths;
@@ -30,6 +31,7 @@ export function Icon({ name, size = 17 }: { name: IconName; size?: number }) {
 const navigation = [
   { label: 'Catalogue', items: [
     { path: '/', name: 'Artists', icon: 'library' },
+    { path: '/saved-events.html', name: 'Saved events', icon: 'save' },
   ] },
   { label: 'Event sources', items: [
     { path: '/avilys.html', name: 'Avilys', icon: 'avilys' },

@@ -24,6 +24,11 @@ export async function importAvilysPage(pool: Pool, data: unknown){
     const lease=leases[0],hash=createHash('sha256').update(input.job.owner).digest('hex');
     if(!lease||Number(lease.job_id)!==input.job.id||Number(lease.expires_at)<=Date.now()||!timingSafeEqual(Buffer.from(lease.owner_hash),Buffer.from(hash)))throw fail(409,'Import lease expired.');
     const now=new Date().toISOString();
+    const [legacyPrices]=await conn.execute<RowDataPacket[]>(`SELECT p.event_id,p.price_text FROM event_prices p
+      JOIN event_sources s ON s.event_id=p.event_id WHERE s.source_key='avilys' AND p.manual=0
+      AND p.price_text IN ('Avilys: free (verify)','Avilys: paid (verify)')`,[]);
+    for(const price of legacyPrices)await conn.execute('UPDATE event_prices SET price_type=?,price_text=NULL,checked_at=? WHERE event_id=? AND manual=0',[
+      price.price_text==='Avilys: free (verify)'?'free':'paid',now,price.event_id]);
     for(const e of input.items){
       const [links]=await conn.execute<RowDataPacket[]>("SELECT event_id FROM event_sources WHERE source_key='avilys' AND source_id=? FOR UPDATE",[String(e.id)]);
       const sourceUrl=`https://avilys.app/event/${e.id}`, description=esc(e.description), metadata=JSON.stringify(e), original=url(e.sourceUrl);
@@ -34,8 +39,9 @@ export async function importAvilysPage(pool: Pool, data: unknown){
         const from=typeof e.priceFrom==='number'||typeof e.priceFrom==='string'?Number(e.priceFrom):NaN;
         const to=typeof e.priceTo==='number'||typeof e.priceTo==='string'?Number(e.priceTo):NaN;
         const priced=Number.isFinite(from)&&from>0;
-        const priceText=priced?(Number.isFinite(to)&&to>from?`${from}–${to} €`:`${from} €`):(e.free===true?'Avilys: free (verify)':e.free===false?'Avilys: paid (verify)':null);
-        if(priceText)await conn.execute('INSERT INTO event_prices(event_id,price_text,price_type,manual,checked_at) VALUES(?,?,?,?,?)',[insert.insertId,priceText,priced?'paid':'unknown',0,now]);
+        const priceText=priced?(Number.isFinite(to)&&to>from?`${from}–${to} €`:`${from} €`):null;
+        const priceType=priced?'paid':e.free===true?'free':e.free===false?'paid':'unknown';
+        if(priceText||priceType!=='unknown')await conn.execute('INSERT INTO event_prices(event_id,price_text,price_type,manual,checked_at) VALUES(?,?,?,?,?)',[insert.insertId,priceText,priceType,0,now]);
         added++;
       }else{
         // Do not overwrite reviewed event fields or source association on refresh.

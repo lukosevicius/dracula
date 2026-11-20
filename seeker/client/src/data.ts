@@ -11,6 +11,14 @@ export type EventRow = Omit<EventRecord, 'source_id' | 'artist_links' | 'artist_
   assistant_notes: string | null;
 };
 
+export function priceInfo(row: Pick<EventRow, 'source_key' | 'price_text' | 'price_type'>) {
+  const legacy = row.source_key === 'avilys' && /^Avilys: (free|paid) \(verify\)$/.exec(row.price_text || '');
+  return {
+    text: legacy ? '' : row.price_text || '',
+    type: legacy && row.price_type === 'unknown' ? legacy[1] as 'free' | 'paid' : row.price_type || 'unknown',
+  };
+}
+
 export type EventPage = {
   events: EventRow[];
   total: number;
