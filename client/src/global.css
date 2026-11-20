@@ -16,3 +16,13 @@ html, body, #root {
 html {
   color-scheme: dark;
 }
+
+/* Keep the browser's focus ring off the text; highlight the whole search box instead. */
+input[aria-label="Ieškoti renginio, vietos arba atlikėjo"]:focus {
+  outline: none;
+}
+
+div:has(> input[aria-label="Ieškoti renginio, vietos arba atlikėjo"]:focus-visible) {
+  outline: 2px solid #ed7d83;
+  outline-offset: 2px;
+}
