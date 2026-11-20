@@ -21,3 +21,9 @@
 .error { color: #ff939c; line-height: 1.5; }
 .success { color: #a4dda9; }
 .signIn { margin-top: 24px; min-height: 46px; }
+.deleteSection { border-top: 1px solid #403541; margin-top: 32px; padding-top: 22px; color: #beb3c1; line-height: 1.6; font-size: 14px; }
+.deleteSection h2 { color: #f9f6fa; font-size: 18px; }
+.deleteActions { display: flex; flex-wrap: wrap; gap: 10px; }
+.deleteButton { cursor: pointer; border: 1px solid #d16a76; border-radius: 999px; padding: 11px 20px; background: transparent; color: #ff9fa9; font: inherit; font-weight: 700; }
+.deleteButton:disabled { opacity: .55; cursor: default; }
+.deleteButton:focus-visible { outline: 3px solid #ff8792; outline-offset: 3px; }

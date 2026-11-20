@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, ForbiddenException, Get, HttpCode, Inject, Options, Patch, Post, Req, Res, UnauthorizedException, UnsupportedMediaTypeException } from '@nestjs/common';
+import { BadRequestException, Controller, Delete, ForbiddenException, Get, HttpCode, Inject, Options, Patch, Post, Req, Res, UnauthorizedException, UnsupportedMediaTypeException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { APP_CONFIG, type AppConfig } from '../config/config.js';
 import { AuthService } from './auth.service.js';
@@ -27,7 +27,7 @@ export class AuthController {
     res.vary('Origin'); res.setHeader('Access-Control-Allow-Origin',req.headers.origin!);
     res.setHeader('Access-Control-Allow-Credentials','true');
     res.setHeader('Access-Control-Allow-Headers','Content-Type');
-    res.setHeader('Access-Control-Allow-Methods','GET, POST, PATCH, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods','GET, POST, PATCH, DELETE, OPTIONS');
   }
   @Options('me') @HttpCode(204)
   preflightMe(@Req() req: Request, @Res({passthrough:true}) res: Response): void { this.preflight(req,res); }
@@ -52,6 +52,13 @@ export class AuthController {
     const body=await jsonBody(req);
     if (typeof body.displayName!=='string' || !body.displayName.trim() || Array.from(body.displayName.trim()).length>191) throw new BadRequestException('Invalid display name');
     return {user:await this.auth.update(session,body.displayName.trim())};
+  }
+  @Delete('me') @HttpCode(200)
+  async deleteAccount(@Req() req: Request, @Res({passthrough:true}) res: Response) {
+    this.origin(req);
+    await this.auth.deleteAccount(cookie(req,this.name('session')));
+    res.clearCookie(this.name('session'),this.options());
+    return {ok:true};
   }
   @Post('auth/logout') @HttpCode(200)
   async logout(@Req() req: Request, @Res({passthrough:true}) res: Response) {

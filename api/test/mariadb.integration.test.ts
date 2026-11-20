@@ -225,13 +225,34 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
         assert.equal((await fetch(`${authRoot}/v1/me`,{headers:{cookie:session}})).status,401);
         const expired=await challenge();await pool.query('UPDATE auth_challenges SET expires_at=DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 1 SECOND)');
         assert.equal((await login(expired)).status,401);
+        const firstLogin=await login(await challenge());assert.equal(firstLogin.status,200);
+        const firstSession=firstLogin.headers.getSetCookie().find(value=>value.startsWith('dracula_session='))!.split(';')[0];
+        const secondLogin=await login(await challenge());assert.equal(secondLogin.status,200);
+        const secondSession=secondLogin.headers.getSetCookie().find(value=>value.startsWith('dracula_session='))!.split(';')[0];
+        const accountId=(await firstLogin.json()).user.id;
+        assert.equal((await fetch(`${authRoot}/v1/me`,{method:'DELETE',headers:{origin:'https://attacker.example',cookie:firstSession}})).status,403);
+        assert.equal((await fetch(`${authRoot}/v1/me`,{method:'DELETE',headers:{origin}})).status,401);
+        const deleted=await fetch(`${authRoot}/v1/me`,{method:'DELETE',headers:{origin,cookie:firstSession}});
+        assert.equal(deleted.status,200);assert.match(deleted.headers.getSetCookie().join(';'),/dracula_session=;/);
+        assert.equal((await fetch(`${authRoot}/v1/me`,{headers:{cookie:secondSession}})).status,401);
+        const [[accountRows]]=await pool.execute<RowDataPacket[]>('SELECT COUNT(*) AS n FROM users WHERE id=?',[accountId]);
+        const [[identityRows]]=await pool.execute<RowDataPacket[]>('SELECT COUNT(*) AS n FROM user_identities WHERE user_id=?',[accountId]);
+        const [[sessionRows]]=await pool.execute<RowDataPacket[]>('SELECT COUNT(*) AS n FROM user_sessions WHERE user_id=?',[accountId]);
+        assert.equal(accountRows.n,0);assert.equal(identityRows.n,0);assert.equal(sessionRows.n,0);
+        await pool.execute("INSERT INTO user_sessions (user_id,session_hash,expires_at,revoked_at) VALUES (?,?,DATE_SUB(UTC_TIMESTAMP(3),INTERVAL 1 MINUTE),NULL),(?,?,DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 DAY),UTC_TIMESTAMP(3))",[otherId,Buffer.alloc(32,2),otherId,Buffer.alloc(32,3)]);
+        await challenge();
+        const [[expiredSessionRows]]=await pool.execute<RowDataPacket[]>('SELECT COUNT(*) AS n FROM user_sessions WHERE user_id=?',[otherId]);assert.equal(expiredSessionRows.n,0);
+        await pool.execute("UPDATE auth_rate_limits SET attempts=300, window_start=UTC_TIMESTAMP(3) WHERE bucket='challenge'");
+        assert.equal((await fetch(`${authRoot}/v1/auth/challenge`,{method:'POST',headers:{origin}})).status,429);
+        await pool.execute("UPDATE auth_rate_limits SET window_start=DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 2 MINUTE) WHERE bucket='challenge'");
+        await challenge();
       } finally {await authApp.close();}
 
-      for (const name of ['001-auto-increment.sql','002-job-leases.sql','003-musicbrainz-jobs.sql','004-event-city.sql','005-event-images.sql','006-user-accounts.sql','007-auth-challenges.sql']) await copyFile(new URL(`../migrations/${name}`,import.meta.url),join(migrationDir,name));
+      for (const name of ['001-auto-increment.sql','002-job-leases.sql','003-musicbrainz-jobs.sql','004-event-city.sql','005-event-images.sql','006-user-accounts.sql','007-auth-challenges.sql','008-auth-rate-limits.sql']) await copyFile(new URL(`../migrations/${name}`,import.meta.url),join(migrationDir,name));
       await writeFile(join(migrationDir,'004-event-city.sql'),'SELECT 1;');
       await assert.rejects(migrate(migrationDb,'status',migrationDir),/Checksum mismatch/);
       await copyFile(new URL('../migrations/004-event-city.sql',import.meta.url),join(migrationDir,'004-event-city.sql'));
-      await writeFile(join(migrationDir,'008-failure.sql'),'CREATE TABLE migration_partial (id INT); INVALID SQL;');
+      await writeFile(join(migrationDir,'009-failure.sql'),'CREATE TABLE migration_partial (id INT); INVALID SQL;');
       await assert.rejects(migrate(migrationDb,'up',migrationDir));
       await assert.rejects(migrate(migrationDb,'up',migrationDir),/is applying/);
     } finally { migrationDb.release(); await rm(migrationDir,{recursive:true,force:true}); }

@@ -1,4 +1,4 @@
-import { Inject, Injectable, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
+import { HttpException, Inject, Injectable, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { OAuth2Client } from 'google-auth-library';
 import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
@@ -9,6 +9,7 @@ const hash = (value: string) => createHash('sha256').update(value, 'utf8').diges
 const token = () => randomBytes(32).toString('base64url');
 interface Challenge extends RowDataPacket { nonce_hash: Buffer }
 interface User extends RowDataPacket { id: number; display_name: string; profile_image_url: string | null; status: string }
+interface RateLimit extends RowDataPacket { attempts: number }
 
 @Injectable()
 export class AuthService {
@@ -16,15 +17,26 @@ export class AuthService {
   constructor(@Inject(DatabaseService) private readonly db: DatabaseService, @Inject(APP_CONFIG) private readonly config: AppConfig) {}
   enabled(): boolean { return Boolean(this.config.googleClientId && this.config.authOrigins?.length); }
   private requireEnabled(): void { if (!this.enabled()) throw new ServiceUnavailableException('User sign-in is not configured'); }
+  private async limit(bucket: 'challenge' | 'login', maximum: number): Promise<void> {
+    await this.db.pool.execute(`INSERT INTO auth_rate_limits (bucket,window_start,attempts) VALUES (?,UTC_TIMESTAMP(3),1)
+      ON DUPLICATE KEY UPDATE attempts=IF(window_start < DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 1 MINUTE),1,attempts+1),
+      window_start=IF(window_start < DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 1 MINUTE),UTC_TIMESTAMP(3),window_start)`,[bucket]);
+    const [rows]=await this.db.pool.execute<RateLimit[]>('SELECT attempts FROM auth_rate_limits WHERE bucket=?',[bucket]);
+    if (!rows[0] || rows[0].attempts>maximum) throw new HttpException('Too many sign-in attempts. Try again shortly.',429);
+  }
   async challenge(): Promise<{challenge: string; nonce: string}> {
     this.requireEnabled();
+    await this.limit('challenge',300);
     const challenge=token(), nonce=token();
     await this.db.pool.execute('DELETE FROM auth_challenges WHERE expires_at<=UTC_TIMESTAMP(3)');
+    await this.db.pool.execute('DELETE FROM user_sessions WHERE expires_at<=UTC_TIMESTAMP(3)');
+    await this.db.pool.execute('DELETE FROM user_sessions WHERE revoked_at IS NOT NULL');
     await this.db.pool.execute('INSERT INTO auth_challenges (challenge_hash,nonce_hash,expires_at) VALUES (?,?,DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 5 MINUTE))',[hash(challenge),hash(nonce)]);
     return {challenge,nonce};
   }
   async login(credential: string, challenge: string): Promise<{session: string; user: {id: number; displayName: string; profileImageUrl: string | null}}> {
     this.requireEnabled();
+    await this.limit('login',150);
     if (!/^[A-Za-z0-9_-]{43}$/.test(challenge) || credential.length > 8192 || credential.length < 1) throw new UnauthorizedException('Invalid sign-in');
     let payload;
     try { payload=(await this.google.verifyIdToken({idToken:credential,audience:this.config.googleClientId})).getPayload(); }
@@ -69,5 +81,11 @@ export class AuthService {
   async logout(session: string): Promise<void> {
     this.requireEnabled();
     if (/^[A-Za-z0-9_-]{43}$/.test(session)) await this.db.pool.execute('UPDATE user_sessions SET revoked_at=UTC_TIMESTAMP(3) WHERE session_hash=? AND revoked_at IS NULL',[hash(session)]);
+  }
+  async deleteAccount(session: string): Promise<void> {
+    this.requireEnabled();
+    if (!/^[A-Za-z0-9_-]{43}$/.test(session)) throw new UnauthorizedException();
+    const [result]=await this.db.pool.execute<ResultSetHeader>("DELETE u FROM users u JOIN user_sessions s ON s.user_id=u.id WHERE s.session_hash=? AND s.revoked_at IS NULL AND s.expires_at>UTC_TIMESTAMP(3) AND u.status='active'",[hash(session)]);
+    if (result.affectedRows!==1) throw new UnauthorizedException();
   }
 }

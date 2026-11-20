@@ -16,7 +16,7 @@ export class CommonHeadersMiddleware implements NestMiddleware {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Access-Control-Allow-Credentials', 'true');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
       }
       if (req.method === 'OPTIONS') { res.status(origin && this.config.authOrigins?.includes(origin) ? 204 : 403).end(); return; }
     } else res.setHeader('Access-Control-Allow-Origin', '*');

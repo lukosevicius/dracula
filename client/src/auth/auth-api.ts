@@ -19,3 +19,4 @@ export const updateProfile = (displayName: string) => request<{ user: UserProfil
   method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ displayName }),
 });
 export const logout = () => request<{ ok: boolean }>('/v1/auth/logout', { method: 'POST' });
+export const deleteAccount = () => request<{ ok: boolean }>('/v1/me', { method: 'DELETE' });
