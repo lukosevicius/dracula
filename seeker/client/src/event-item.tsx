@@ -1,11 +1,11 @@
-import type { ReactNode } from 'react';
+import { isValidElement, memo, type ReactNode } from 'react';
 import type { ReviewStatus } from '../../types';
 import { formatDate, labels, plainText, priceInfo, reviews, sourceNames, type EventRow } from './data';
 import { Icon } from './workspace';
 
 const monthFormatter = new Intl.DateTimeFormat('en-GB', { month: 'short', timeZone: 'UTC' });
 
-export default function EventItem({ row, today, open, toggle, selected, select, disabled, review, confirm, editor, showSource, saved, toggleSaved, changeInterestScore, selectionEnabled = true }: {
+function EventItem({ row, today, open, toggle, selected, select, disabled, review, confirm, editor, showSource, saved, toggleSaved, changeInterestScore, selectionEnabled = true }: {
   row: EventRow; today: string; open: boolean; toggle: () => void; selected: boolean;
   select: (checked: boolean) => void; disabled: boolean; review: (status: ReviewStatus) => void;
   confirm: () => void; editor: ReactNode; showSource: boolean; saved: boolean; toggleSaved: () => void;
@@ -77,3 +77,22 @@ export default function EventItem({ row, today, open, toggle, selected, select, 
     </article>
   );
 }
+
+function sameEditor(previous: ReactNode, next: ReactNode) {
+  if (previous === next) return true;
+  if (!isValidElement(previous) || !isValidElement(next) || previous.type !== next.type || previous.key !== next.key) return false;
+  const previousProps = previous.props as Record<string, unknown>;
+  const nextProps = next.props as Record<string, unknown>;
+  return Object.keys(previousProps).every(key => typeof previousProps[key] === 'function' || previousProps[key] === nextProps[key])
+    && Object.keys(nextProps).every(key => typeof nextProps[key] === 'function' || previousProps[key] === nextProps[key]);
+}
+
+export default memo(EventItem, (previous, next) => previous.row === next.row
+  && previous.today === next.today
+  && previous.open === next.open
+  && previous.selected === next.selected
+  && previous.disabled === next.disabled
+  && previous.showSource === next.showSource
+  && previous.saved === next.saved
+  && previous.selectionEnabled === next.selectionEnabled
+  && (!previous.open || sameEditor(previous.editor, next.editor)));

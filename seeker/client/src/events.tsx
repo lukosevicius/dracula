@@ -14,6 +14,20 @@ const dateOptions: [DateFilter, string][] = [
 ];
 const dateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Vilnius', year: 'numeric', month: '2-digit', day: '2-digit' });
 
+function preserveUnchangedRows(previous: EventPage | null, next: EventPage): EventPage {
+  if (!previous) return next;
+  const previousById = new Map(previous.events.map(event => [event.id, event]));
+  return {
+    ...next,
+    events: next.events.map(event => {
+      const oldEvent = previousById.get(event.id);
+      return oldEvent && Object.keys(event).every(key => oldEvent[key as keyof typeof oldEvent] === event[key as keyof typeof event])
+        ? oldEvent
+        : event;
+    }),
+  };
+}
+
 function shift(date: string, days: number) {
   const value = new Date(`${date}T12:00:00Z`);
   value.setUTCDate(value.getUTCDate() + days);
@@ -66,21 +80,21 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
   const [loading, setLoading] = useState(true);
   const requestId = useRef(0);
   const catalogue = useRef<HTMLElement>(null);
-  const { events: savedEvents, isSaved, toggle: toggleSaved, loading: savedEventsLoading, error: savedEventsError, pendingIds: savedPendingIds } = useSavedEvents();
+  const { events: savedEvents, isSaved, toggle: toggleSaved, update: updateSavedEvent, loading: savedEventsLoading, error: savedEventsError, pendingIds: savedPendingIds } = useSavedEvents();
   const today = dateFormatter.format(new Date());
   const invalid = when === 'custom' && (!from || (!!to && to < from));
   const extraCount = Number(readiness !== 'all') + Number(assistantReview !== 'all') + Number(sourceFilter !== defaultSource);
   const isFiltered = Boolean(query || when !== 'upcoming' || price !== 'all' || review !== 'all' || extraCount || savedOnly || sort !== 'date');
   const sourceSavedEvents = savedEvents.filter(event => event.source_key === source);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     const id = ++requestId.current;
     setLoadError('');
     if (invalid) {
-      setLoading(false);
+      if (!silent) setLoading(false);
       return;
     }
-    setLoading(true);
+    if (!silent) setLoading(true);
     const params = new URLSearchParams({ page: String(page), limit: String(pageSize), review, readiness, assistantReview, search: query, price, source: sourceFilter, when, today, sort });
     const range = dateRange(when, from, to, today);
     if (range) {
@@ -92,11 +106,11 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
       if (id !== requestId.current) return;
       const finalPage = Math.max(1, Math.ceil(result.total / pageSize));
       if (page > finalPage) setPage(finalPage);
-      else setData(result);
+      else setData(current => preserveUnchangedRows(current, result));
     } catch (error) {
       if (id === requestId.current) setLoadError(errorMessage(error));
     } finally {
-      if (id === requestId.current) setLoading(false);
+      if (id === requestId.current && !silent) setLoading(false);
     }
   }, [page, review, readiness, assistantReview, query, price, sourceFilter, when, from, to, today, invalid, sort]);
   const loadCurrent = useRef(load);
@@ -158,7 +172,15 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
     setMessage('');
     try {
       await api(`/api/events/${id}/${action}`, body);
-      await loadCurrent.current();
+      if (action === 'interest-score') {
+        const interest_score = (body as { interest_score: 1 | 2 | 3 | 4 | 5 }).interest_score;
+        setData(current => current ? { ...current, events: current.events.map(event => event.id === id ? { ...event, interest_score } : event) } : current);
+        const saved = savedEvents.find(event => event.id === id);
+        if (saved) updateSavedEvent({ ...saved, interest_score });
+        await loadCurrent.current(true);
+      } else {
+        await loadCurrent.current();
+      }
       setMessage(success);
     } catch (error) {
       setActionError(true);
