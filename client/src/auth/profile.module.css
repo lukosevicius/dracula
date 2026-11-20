@@ -21,6 +21,7 @@
 .error { color: #ff939c; line-height: 1.5; }
 .success { color: #a4dda9; }
 .signIn { margin-top: 24px; min-height: 46px; }
+.googleButton { width: 280px; max-width: 100%; }
 .deleteSection { border-top: 1px solid #403541; margin-top: 32px; padding-top: 22px; color: #beb3c1; line-height: 1.6; font-size: 14px; }
 .deleteSection h2 { color: #f9f6fa; font-size: 18px; }
 .deleteActions { display: flex; flex-wrap: wrap; gap: 10px; }

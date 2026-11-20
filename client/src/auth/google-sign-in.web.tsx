@@ -36,7 +36,8 @@ export function GoogleSignIn() {
         try {const {user}=await googleLogin(response.credential); if(current===sequence.current) setSignedIn(user);}
         catch (failure) {if(current===sequence.current) {setError(failure instanceof AuthError && failure.status===401 ? 'Prisijungimo laikas baigėsi. Bandykite dar kartą.' : 'Nepavyko prisijungti. Patikrinkite ryšį ir bandykite dar kartą.');setStep('expired');}}
       },error_callback:()=>{if(current===sequence.current){setError('Prisijungimas nutrauktas. Bandykite dar kartą.');setStep('expired');}}});
-      button.current.replaceChildren(); google.renderButton(button.current,{theme:'outline',size:'large',text:'continue_with',shape:'pill'}); setStep('ready');
+      const width = Math.min(280, button.current.parentElement?.clientWidth || 280);
+      button.current.replaceChildren(); google.renderButton(button.current,{theme:'outline',size:'large',text:'continue_with',shape:'pill',width}); setStep('ready');
     } catch {if(current===sequence.current){setError('Nepavyko paruošti prisijungimo. Bandykite dar kartą.');setStep('expired');}}
   },[setSignedIn]);
   useEffect(()=>{void start();return()=>{sequence.current++;window.google?.accounts.id.cancel();};},[start]);
@@ -44,7 +45,7 @@ export function GoogleSignIn() {
   return <div className={styles.signIn}>
     {step==='expired' && <button className={styles.primaryButton} onClick={()=>void start()}>Bandyti dar kartą</button>}
     {(step==='loading'||step==='signing-in') && <p role="status">{step==='loading'?'Ruošiamas prisijungimas...':'Jungiama...'}</p>}
-    <div ref={button} hidden={step!=='ready'} />
+    <div ref={button} className={styles.googleButton} hidden={step!=='ready'} />
     {error && <p className={styles.error} role="alert">{error}</p>}
   </div>;
 }
