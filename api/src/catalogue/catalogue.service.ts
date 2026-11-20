@@ -63,6 +63,12 @@ export class CatalogueService {
     const [rows] = await this.db.pool.execute<EventRow[]>(`SELECT ${columns} ${joins} WHERE ${ready} AND e.id=? LIMIT 1`, [today,id]);
     return (await this.map(rows))[0] ?? null;
   }
+  async saved(userId: number) {
+    const [rows] = await this.db.pool.execute<EventRow[]>(`SELECT ${columns} ${joins}
+      JOIN user_saved_events saved ON saved.event_id=e.id
+      WHERE saved.user_id=? AND e.review_status='music' ORDER BY saved.created_at DESC,e.id DESC`, [userId]);
+    return this.map(rows);
+  }
   async hasImage(name: string, today = vilniusToday()) {
     const [rows] = await this.db.pool.execute<RowDataPacket[]>(`SELECT e.id ${joins} WHERE ${ready} AND COALESCE(i.local_name,ei.local_name)=? LIMIT 1`, [today,name]);
     return rows.length > 0;

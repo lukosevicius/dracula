@@ -7,7 +7,7 @@ export class CommonHeadersMiddleware implements NestMiddleware {
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
   use(req: Request, res: Response, next: NextFunction): void {
     const path = new URL(req.originalUrl, 'http://localhost').pathname;
-    const isUserRoute = path === '/v1/me' || path.startsWith('/v1/auth/');
+    const isUserRoute = (path === '/v1/me' || path.startsWith('/v1/me/')) || path.startsWith('/v1/auth/');
     if (isUserRoute) {
       res.setHeader('Cache-Control', 'no-store');
       res.vary('Origin');

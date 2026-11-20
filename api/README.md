@@ -55,6 +55,8 @@ The hosted image files are stored outside the deployment directory. One image wa
 
 `006-user-accounts.sql` adds the foundation for user profiles, linked identities, and revocable sessions. Provider subjects use case-sensitive comparison, and session hashes are stored as 32-byte binary values; application code must hash session secrets before saving them and handle session dates in UTC. Deleting a user cascades to their identities and sessions. Email is not stored. This migration does not enable sign-in or create any user accounts.
 
+`009-saved-events.sql` adds account-specific saved events. Apply it before deploying the API and client versions that use saved-event endpoints. Guest saves are merged into the signed-in account on the next client load.
+
 Schema changes are separate from API deployment. `migrations/001` through `003` describe changes already included in `schema.sql`. They must not be replayed against an existing catalogue. API migration history is recorded separately in `api_schema_migrations`; the older `schema_migrations` table belongs to Seeker and is not modified.
 
 Apply `004-event-city.sql` before deploying the API version that writes `events.city`. Pause event imports between the migration and deployment so the old API cannot add rows without a city after the backfill. The migration assigns `Vilnius` to existing Vilnius Events records and reads the city from stored Avilys metadata. The column is nullable for events whose city is unknown.

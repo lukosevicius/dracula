@@ -2,6 +2,8 @@ import { BadRequestException, Controller, Delete, ForbiddenException, Get, HttpC
 import type { Request, Response } from 'express';
 import { APP_CONFIG, type AppConfig } from '../config/config.js';
 import { AuthService } from './auth.service.js';
+import { DatabaseService } from '../database/database.service.js';
+import { CatalogueService } from '../catalogue/catalogue.service.js';
 
 async function jsonBody(req: Request): Promise<Record<string, unknown>> {
   if (!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')) throw new UnsupportedMediaTypeException('Expected JSON');
@@ -17,7 +19,7 @@ function cookie(req: Request, name: string): string {
 }
 @Controller('v1')
 export class AuthController {
-  constructor(@Inject(AuthService) private readonly auth: AuthService, @Inject(APP_CONFIG) private readonly config: AppConfig) {}
+  constructor(@Inject(AuthService) private readonly auth: AuthService, @Inject(APP_CONFIG) private readonly config: AppConfig, @Inject(DatabaseService) private readonly db: DatabaseService, @Inject(CatalogueService) private readonly catalogue: CatalogueService) {}
   private get secure(): boolean { return new URL(this.config.publicBaseUrl).protocol==='https:'; }
   private name(kind: string): string { return `${this.secure ? '__Host-' : ''}dracula_${kind}`; }
   private options() { return {httpOnly:true,secure:this.secure,sameSite:'lax' as const,path:'/'}; }
@@ -31,6 +33,8 @@ export class AuthController {
   }
   @Options('me') @HttpCode(204)
   preflightMe(@Req() req: Request, @Res({passthrough:true}) res: Response): void { this.preflight(req,res); }
+  @Options('me/saved-events') @HttpCode(204)
+  preflightSaved(@Req() req: Request, @Res({passthrough:true}) res: Response): void { this.preflight(req,res); }
   @Options('auth/*path') @HttpCode(204)
   preflightAuth(@Req() req: Request, @Res({passthrough:true}) res: Response): void { this.preflight(req,res); }
   @Post('auth/challenge') @HttpCode(200)
@@ -47,6 +51,29 @@ export class AuthController {
     return {user:result.user};
   }
   @Get('me') async me(@Req() req: Request) { return {user:await this.auth.current(cookie(req,this.name('session')))}; }
+  @Get('me/saved-events') async saved(@Req() req: Request) {
+    const user=await this.auth.current(cookie(req,this.name('session')));
+    return {events:await this.catalogue.saved(user.id)};
+  }
+  @Post('me/saved-events') @HttpCode(200)
+  async saveEvents(@Req() req: Request) {
+    this.origin(req);
+    const user=await this.auth.current(cookie(req,this.name('session')));
+    const body=await jsonBody(req);
+    if (!Array.isArray(body.ids) || body.ids.length>500 || !body.ids.every(id=>Number.isSafeInteger(id) && id>0 && id<=999999999999)) throw new BadRequestException('Invalid event IDs');
+    const ids=[...new Set(body.ids as number[])];
+    if (ids.length) await this.db.pool.execute(`INSERT IGNORE INTO user_saved_events (user_id,event_id) SELECT ?,id FROM events WHERE review_status='music' AND id IN (${ids.map(()=>'?').join(',')})`,[user.id,...ids]);
+    return {ok:true};
+  }
+  @Delete('me/saved-events/:id') @HttpCode(200)
+  async unsaveEvent(@Req() req: Request) {
+    this.origin(req);
+    const user=await this.auth.current(cookie(req,this.name('session')));
+    const id=req.params.id as string;
+    if (!/^[1-9]\d{0,11}$/.test(id)) throw new BadRequestException('Invalid event ID');
+    await this.db.pool.execute('DELETE FROM user_saved_events WHERE user_id=? AND event_id=?',[user.id,Number(id)]);
+    return {ok:true};
+  }
   @Patch('me') async update(@Req() req: Request) {
     this.origin(req); const session=cookie(req,this.name('session')); if (!session) throw new UnauthorizedException();
     const body=await jsonBody(req);
