@@ -1,0 +1,153 @@
+import type { ReactNode } from 'react';
+
+const logo = new URL('./assets/favicon.png', import.meta.url).href;
+
+const paths = {
+  library: 'M4 6v12M8 6v12M12 6v12m3-11 4 11',
+  calendar: 'M7 3v4m10-4v4M4 10h16M6 5h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm2 9h2m4 0h2m-8 3h2',
+  avilys: 'm12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Zm0 5 3.5 2v4L12 16l-3.5-2v-4L12 8Z',
+  spark: 'M12 2c0 6 4 10 10 10-6 0-10 4-10 10 0-6-4-10-10-10 6 0 10-4 10-10Z',
+  search: 'M21 21l-4.3-4.3M18 11a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z',
+  external: 'M13 5h6v6m0-6-9 9m7 0v5H5V7h5',
+  download: 'M12 3v12m-4-4 4 4 4-4m-12 5v4h16v-4',
+  clock: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-5v5l3 2',
+  plus: 'M12 5v14M5 12h14',
+  check: 'm5 12 4 4L19 6',
+  chevron: 'm9 5 7 7-7 7',
+  down: 'm6 9 6 6 6-6',
+  left: 'm15 5-7 7 7 7',
+  filter: 'M4 7h16M7 12h10m-7 5h4',
+  pin: 'M18 10c0 5-6 10-6 10s-6-5-6-10a6 6 0 1 1 12 0Zm-4 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z',
+  ticket: 'M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4V7Zm9 0v2m0 2v2m0 2v2',
+} as const;
+
+type IconName = keyof typeof paths;
+
+export function Icon({ name, size = 17 }: { name: IconName; size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>;
+}
+
+const navigation = [
+  { label: 'Catalogue', items: [
+    { path: '/', name: 'Artists', icon: 'library' },
+  ] },
+  { label: 'Event sources', items: [
+    { path: '/avilys.html', name: 'Avilys', icon: 'avilys' },
+    { path: '/vilnius-events.html', name: 'Vilnius Events', icon: 'calendar' },
+  ] },
+  { label: 'Tools', items: [
+    { path: '/ai-evaluation.html', name: 'AI evaluation', icon: 'spark' },
+  ] },
+] as const;
+
+export function Workspace({ children }: { children: ReactNode }) {
+  const current = navigation.flatMap(group => [...group.items]).find(item => item.path === window.location.pathname);
+  return (
+    <div className="workspace">
+      <a className="skip-link" href="#content">Skip to content</a>
+      <aside className="sidebar">
+        <a className="brand" href="/" aria-label="Seeker home">
+          <span className="brand-logo"><img src={logo} alt="" /></span>
+          <span><strong>Seeker</strong><small>Dracula workspace</small></span>
+        </a>
+        <nav aria-label="Main navigation">
+          {navigation.map(group => (
+            <div className="nav-group" key={group.label}>
+              <p>{group.label}</p>
+              {group.items.map(item => (
+                <a className="nav-link" key={item.path} href={item.path} aria-current={item === current ? 'page' : undefined}>
+                  <Icon name={item.icon} /> <span>{item.name}</span>
+                </a>
+              ))}
+            </div>
+          ))}
+        </nav>
+        <div className="sidebar-footer"><span className="local-dot" />Local workspace</div>
+      </aside>
+      <main className="main-content" id="content" tabIndex={-1}>
+        <header className="topbar">
+          <a href="/">Seeker</a><Icon name="chevron" size={13} /><strong>{current?.name ?? 'Artists'}</strong>
+        </header>
+        <div className="page-wrap">{children}</div>
+      </main>
+    </div>
+  );
+}
+
+export function PageHeading({ title, description, icon, href, linkLabel, tools }: {
+  title: string; description: string; icon: IconName; href?: string; linkLabel?: string; tools?: boolean;
+}) {
+  return (
+    <header className="page-heading">
+      <div className="heading-copy">
+        <div className="heading-icon"><Icon name={icon} size={22} /></div>
+        <h1>{title}</h1>
+        <p>{description}</p>
+      </div>
+      {(href || tools) && <div className="heading-actions">
+        {tools && <a className="secondary-button mobile-import-link" href="#import-tools"><Icon name="download" size={15} /> Import tools</a>}
+        {href && <a className="secondary-button source-link" href={href} target="_blank" rel="noreferrer">{linkLabel} <Icon name="external" size={15} /></a>}
+      </div>}
+    </header>
+  );
+}
+
+export function Metrics({ items }: { items: { label: string; value: ReactNode; icon: IconName }[] }) {
+  return (
+    <section className="metrics" aria-label="Overview">
+      {items.map(item => (
+        <div className="metric" key={item.label}>
+          <span className="metric-icon"><Icon name={item.icon} /></span>
+          <div><span className="metric-label">{item.label}</span><strong>{item.value}</strong></div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+export function PanelHeading({ title, description, icon, end }: { title: string; description?: string; icon?: IconName; end?: ReactNode }) {
+  return (
+    <header className="panel-heading">
+      <div className="panel-title">
+        {icon && <span className="panel-icon"><Icon name={icon} /></span>}
+        <div><h2>{title}</h2>{description && <p>{description}</p>}</div>
+      </div>
+      {end}
+    </header>
+  );
+}
+
+export function SearchField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="search-field">
+      <Icon name="search" />
+      <input type="search" aria-label={label} placeholder={label + '…'} value={value} onChange={event => onChange(event.target.value)} />
+    </label>
+  );
+}
+
+export function Pagination({ page, total, size, onChange }: { page: number; total: number; size: number; onChange: (page: number) => void }) {
+  const lastPage = Math.max(1, Math.ceil(total / size));
+  return (
+    <nav className="pagination" aria-label="Pagination">
+      <span>{total ? Math.min((page - 1) * size + 1, total) : 0}–{Math.min(page * size, total)} of {total.toLocaleString()}</span>
+      <div>
+        <button className="secondary-button" type="button" disabled={page <= 1} onClick={() => onChange(page - 1)}><Icon name="left" size={14} /> Previous</button>
+        <button className="secondary-button" type="button" disabled={page >= lastPage} onClick={() => onChange(page + 1)}>Next <Icon name="chevron" size={14} /></button>
+      </div>
+    </nav>
+  );
+}
+
+export function Disclosure({ title, children, className = '', id }: { title: ReactNode; children: ReactNode; className?: string; id?: string }) {
+  return (
+    <details className={`disclosure ${className}`} id={id} open={id && window.location.hash === `#${id}` ? true : undefined}>
+      <summary>{title}<Icon name="down" size={15} /></summary>
+      <div className="disclosure-body">{children}</div>
+    </details>
+  );
+}
+
+export function Feedback({ message, error = false }: { message: string; error?: boolean }) {
+  return <div className={`feedback ${error ? 'feedback-error' : ''}`} role={error ? 'alert' : 'status'}>{message}</div>;
+}

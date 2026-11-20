@@ -1,27 +1,233 @@
-import React, {useCallback,useEffect,useState} from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import type { ReviewStatus } from '../../types';
+import { api, errorMessage, formatDate, isActive, labels, plainText, useJobs, type EventPage } from './data';
+import { Disclosure, Feedback, Icon, PageHeading, Pagination, PanelHeading } from './workspace';
 
-type EventRow={id:number;title:string;event_date:string|null;review_status:string};
-type Page={events:EventRow[];total:number};
-type Performer={name:string;evidence:string;evidence_verified:boolean;matches:{mbid:string;name:string}[]};
-type Result={id:number;job_id:number;event_id:number;title:string;review_status:string;model:string;classification:'music'|'not_music'|'unsure'|null;explanation:string|null;performers_json:string;artist_decisions_json:string;input_tokens:number;output_tokens:number;cost_usd:number;status:string;error_message:string|null;review_decision:string};
-type Job={id:number;source:string;status:string;progress_json:string;error_message:string|null};
-const modelNames:Record<string,string>={'gemini-3.5-flash-lite':'Gemini 3.5 Flash-Lite','gemini-4-hydrogen':'Gemini 4 Hydrogen'};
-const labels:Record<string,string>={music:'Music',not_music:'Not music',unsure:'Unsure'};
-async function api<T>(path:string,body?:unknown):Promise<T>{const response=await fetch(path,body===undefined?undefined:{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const json:unknown=await response.json();if(!response.ok)throw new Error((json as {error?:string}).error||'Request failed.');return json as T;}
+type Performer = { name: string; evidence: string; evidence_verified: boolean; matches: { mbid: string; name: string }[] };
+type Result = {
+  id: number; job_id: number; event_id: number; title: string; review_status: ReviewStatus; model: string;
+  classification: ReviewStatus | null; explanation: string | null; performers_json: string; artist_decisions_json: string;
+  input_tokens: number; output_tokens: number; cost_usd: number; status: string; error_message: string | null; review_decision: string;
+};
+type Decision = 'accepted' | 'dismissed';
+
+const pageSize = 25;
+const modelNames: Record<string, string> = { 'gemini-3.5-flash-lite': 'Gemini 3.5 Flash-Lite', 'gemini-4-hydrogen': 'Gemini 4 Hydrogen' };
+
+function parseJson<T>(json: string, fallback: T): T {
+  try { return JSON.parse(json) ?? fallback; } catch { return fallback; }
+}
+
+function ModelResult({ result, decide, artist }: {
+  result: Result; decide: (decision: Decision) => void; artist: (mbid: string, decision: Decision) => void;
+}) {
+  const performers = parseJson<Performer[]>(result.performers_json, []);
+  const decisions = parseJson<{ mbid: string; decision: string }[]>(result.artist_decisions_json, []);
+  return (
+    <div className="ai-result">
+      <h4>{modelNames[result.model] || result.model}</h4>
+      {result.status === 'failed' ? <p className="error-text">{result.error_message}</p> : (
+        <>
+          <strong>{labels[result.classification || 'unsure']}</strong>
+          <p>{result.explanation}</p>
+          <div className="inline-actions">
+            <button className="secondary-button" onClick={() => decide('accepted')}>Accept classification</button>
+            <button className="text-button" onClick={() => decide('dismissed')}>Dismiss</button>
+            <small>{result.review_decision}</small>
+          </div>
+          <h4>Performers</h4>
+          {!performers.length && <p>None identified.</p>}
+          {performers.map((performer, index) => (
+            <div className="ai-performer" key={`${performer.name}-${index}`}>
+              <strong>{performer.name}</strong>
+              <p>“{performer.evidence}” {!performer.evidence_verified && <span className="error-text">· Quote unverified</span>}</p>
+              {!performer.matches.length && <p>No matching artist in the catalogue.</p>}
+              {performer.matches.map(match => (
+                <div className="inline-actions" key={match.mbid}>
+                  <span>{match.name} {decisions.find(decision => decision.mbid === match.mbid)?.decision}</span>
+                  <button className="secondary-button" onClick={() => artist(match.mbid, 'accepted')}>Accept</button>
+                  <button className="text-button" onClick={() => artist(match.mbid, 'dismissed')}>Dismiss</button>
+                </div>
+              ))}
+            </div>
+          ))}
+        </>
+      )}
+      <small>{result.input_tokens.toLocaleString()} input · {result.output_tokens.toLocaleString()} output tokens · ${result.cost_usd.toFixed(5)} USD estimated</small>
+    </div>
+  );
+}
+
 export default function AiEvaluation() {
- const [page,setPage]=useState(1),[events,setEvents]=useState<Page|null>(null),[selected,setSelected]=useState<number[]>([]),[amount,setAmount]=useState(10),[budget,setBudget]=useState('0.10');
- const [models,setModels]=useState<string[]>(['gemini-3.5-flash-lite']),[results,setResults]=useState<Result[]>([]),[jobs,setJobs]=useState<Job[]>([]),[configured,setConfigured]=useState(false),[message,setMessage]=useState('');
- const load=useCallback(async()=>{try{const [e,r,j]=await Promise.all([api<Page>(`/api/events?when=all&page=${page}&limit=25`),api<{results:Result[];configured:boolean}>('/api/ai-evaluations'),api<{jobs:Job[]}>('/api/jobs')]);setEvents(e);setResults(r.results);setConfigured(r.configured);setJobs(j.jobs);}catch(error){setMessage((error as Error).message);}},[page]);
- useEffect(()=>{void load();const timer=window.setInterval(()=>void load(),3000);return()=>window.clearInterval(timer);},[load]);
- const running=jobs.some(j=>j.source==='ai-evaluation'&&['queued','running'].includes(j.status));
- const toggle=(id:number)=>setSelected(current=>current.includes(id)?current.filter(x=>x!==id):[...current,id]);
- const selectFirst=async()=>{try{if(!Number.isInteger(amount)||amount<1||amount>5000)throw new Error('Choose between 1 and 5,000 events.');const data=await api<{ids:number[]}>(`/api/ai-evaluations/events?limit=${amount}`);setSelected(data.ids);setMessage(`Selected ${data.ids.length} events.`);}catch(e){setMessage((e as Error).message);}};
- const start=async()=>{try{setMessage('');await api('/api/jobs',{source:'ai-evaluation',action:'analyze',event_ids:selected,models,budget:Number(budget)});await load();}catch(e){setMessage((e as Error).message);}};
- const decide=async(result:Result,decision:'accepted'|'dismissed')=>{try{if(decision==='accepted'&&result.classification){await api(`/api/events/${result.event_id}/review`,{review_status:result.classification});}await api('/api/ai-evaluations/decision',{id:result.id,decision});await load();}catch(e){setMessage((e as Error).message);}};
- const artist=async(result:Result,mbid:string,decision:'accepted'|'dismissed')=>{try{await api(`/api/events/${result.event_id}/artist`,{mbid,decision});setMessage(`Artist ${decision}.`);await load();}catch(e){setMessage((e as Error).message);}};
- const groups=new Map<string,Result[]>();for(const result of results){const key=`${result.job_id}:${result.event_id}`;groups.set(key,[...(groups.get(key)||[]),result]);}
- return <div className="page-wrap info-page"><section className="page-heading"><div><p className="eyebrow">SEEKER <span>·</span> AI EVALUATION</p><h1>Test event analysis</h1><p className="page-description">Compare classification and performer suggestions on events you choose.</p></div></section>
- <section className="event-import-card ai-panel"><h2>1. Choose events</h2><p>Choose individually across pages, or select the first events in the catalogue.</p><div className="ai-controls"><label>NUMBER OF EVENTS <input type="number" min="1" max="5000" value={amount} onChange={e=>setAmount(Number(e.target.value))}/></label><button className="secondary-button" onClick={()=>void selectFirst()}>Select first {amount}</button><button className="text-button" onClick={()=>setSelected([])}>Clear selection</button><strong>{selected.length} selected</strong></div><div className="ai-event-list">{events?.events.map(event=><label key={event.id}><input type="checkbox" checked={selected.includes(event.id)} onChange={()=>toggle(event.id)}/><span>{event.title} <small>· {event.event_date||'Date unknown'} · {labels[event.review_status]}</small></span></label>)}</div><div className="event-pagination"><button className="secondary-button" disabled={page===1} onClick={()=>setPage(p=>p-1)}>Previous</button><span>Page {page} of {Math.max(1,Math.ceil((events?.total||0)/25))}</span><button className="secondary-button" disabled={!events||page*25>=events.total} onClick={()=>setPage(p=>p+1)}>Next</button></div></section>
- <section className="event-import-card ai-panel"><h2>2. Choose models and budget</h2><div className="ai-models">{Object.entries(modelNames).map(([id,name])=><label key={id}><input type="checkbox" checked={models.includes(id)} onChange={()=>setModels(current=>current.includes(id)?current.filter(m=>m!==id):[...current,id])}/>{name}</label>)}</div><div className="ai-controls"><label>MAXIMUM ESTIMATED SPEND (USD) <input type="number" min="0.001" step="0.01" value={budget} onChange={e=>setBudget(e.target.value)}/></label><button className="primary-button" disabled={running||!configured||!selected.length||!models.length} onClick={()=>void start()}>{running?'Analyzing…':'Analyze selected events'}</button></div><p>Seeker checks the token count and reserves the maximum output cost before each request. This is an estimate, not a provider-enforced billing limit. Event text is sent to Google.</p>{!configured&&<p className="ai-warning">Add GEMINI_API_KEY to seeker/.env and restart Seeker.</p>}<p className="event-feedback" role="status">{message}</p>{jobs.filter(j=>j.source==='ai-evaluation').slice(0,4).map(job=>{let p:Record<string,number>={};try{p=JSON.parse(job.progress_json) as Record<string,number>;}catch{}return <p key={job.id}>Run #{job.id} · {job.status} · {p.completed||0}/{p.total||'—'} requests · estimated ${Number(p.cost_usd||0).toFixed(4)}{job.error_message&&` · ${job.error_message}`}</p>;})}</section>
- <section className="ai-results"><h2>3. Review results</h2><p>Showing the latest 1,000 model results; older results remain saved.</p><p>Accepting a classification changes the event’s review status. Artist decisions are separate.</p>{!results.length&&<p>No analysis results yet.</p>}{[...groups.entries()].map(([key,group])=><article className="content-card ai-result-group" key={key}><h3>{group[0].title}</h3><p>Run #{group[0].job_id} · Current review: {labels[group[0].review_status]}</p><div className="ai-result-grid">{group.map(result=>{let performers:Performer[]=[],decisions:{mbid:string;decision:string}[]=[];try{performers=JSON.parse(result.performers_json) as Performer[];decisions=JSON.parse(result.artist_decisions_json) as typeof decisions;}catch{}return <div className="ai-result" key={result.id}><h4>{modelNames[result.model]||result.model}</h4>{result.status==='failed'?<p className="ai-warning">{result.error_message}</p>:<><strong>{labels[result.classification||'unsure']}</strong><p>{result.explanation}</p><div className="ai-controls"><button className="secondary-button" onClick={()=>void decide(result,'accepted')}>Accept classification</button><button className="text-button" onClick={()=>void decide(result,'dismissed')}>Dismiss</button><small>{result.review_decision}</small></div><h4>Performers</h4>{!performers.length&&<p>None identified.</p>}{performers.map((performer,index)=><div className="ai-performer" key={`${performer.name}-${index}`}><strong>{performer.name}</strong><p>“{performer.evidence}” {!performer.evidence_verified&&<span className="ai-warning">· Quote not verified</span>}</p>{!performer.matches.length&&<p>No matching artist in the catalogue.</p>}{performer.matches.map(match=><div key={match.mbid}><span>{match.name} {decisions.find(d=>d.mbid===match.mbid)?.decision&&`· ${decisions.find(d=>d.mbid===match.mbid)?.decision}`}</span> <button className="event-artist-action" onClick={()=>void artist(result,match.mbid,'accepted')}>Accept</button><button className="event-artist-action" onClick={()=>void artist(result,match.mbid,'dismissed')}>Dismiss</button></div>)}</div>)}</>}<p className="ai-usage">{result.input_tokens.toLocaleString()} input · {result.output_tokens.toLocaleString()} output tokens · ${result.cost_usd.toFixed(5)} estimated</p></div>;})}</div></article>)}</section></div>;
+  const [page, setPage] = useState(1);
+  const [events, setEvents] = useState<EventPage | null>(null);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [amount, setAmount] = useState(10);
+  const [budget, setBudget] = useState('0.10');
+  const [models, setModels] = useState<string[]>(['gemini-3.5-flash-lite']);
+  const [results, setResults] = useState<Result[]>([]);
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [eventsError, setEventsError] = useState('');
+  const [resultsError, setResultsError] = useState('');
+  const [message, setMessage] = useState('');
+  const [hasError, setHasError] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setEventsError('');
+    void api<EventPage>(`/api/events?when=all&page=${page}&limit=${pageSize}`).then(value => {
+      if (active) setEvents(value);
+    }).catch(error => {
+      if (active) setEventsError(errorMessage(error));
+    });
+    return () => { active = false; };
+  }, [page]);
+
+  const loadResults = useCallback(async () => {
+    try {
+      const value = await api<{ results: Result[]; configured: boolean }>('/api/ai-evaluations');
+      setResults(value.results);
+      setConfigured(value.configured);
+      setResultsError('');
+    } catch (error) {
+      setResultsError(errorMessage(error));
+    }
+  }, []);
+
+  const { jobs, start, startingSource } = useJobs(finished => {
+    if (finished.some(job => job.source === 'ai-evaluation')) void loadResults();
+  });
+  const recentJobs = jobs.filter(job => job.source === 'ai-evaluation').slice(0, 4);
+  const running = startingSource === 'ai-evaluation' || recentJobs.some(isActive);
+  useEffect(() => {
+    void loadResults();
+    if (!running) return;
+    const timer = window.setInterval(() => void loadResults(), 3000);
+    return () => window.clearInterval(timer);
+  }, [loadResults, running]);
+
+  const updateSelection = (id: number) => setSelected(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id]);
+
+  async function report(action: () => Promise<void>, success = '') {
+    setMessage('');
+    setHasError(false);
+    try {
+      await action();
+      setMessage(success);
+    } catch (error) {
+      setHasError(true);
+      setMessage(errorMessage(error));
+    }
+  }
+
+  async function selectFirst() {
+    setSelecting(true);
+    try {
+      await report(async () => {
+        const value = await api<{ ids: number[] }>(`/api/ai-evaluations/events?limit=${amount}`);
+        setSelected(value.ids);
+      });
+    } finally {
+      setSelecting(false);
+    }
+  }
+
+  const groups = new Map<string, Result[]>();
+  for (const result of results) {
+    const key = `${result.job_id}:${result.event_id}`;
+    groups.set(key, [...(groups.get(key) || []), result]);
+  }
+
+  return (
+    <>
+      <PageHeading title="AI evaluation" description="Compare model classifications and artist suggestions on imported events." icon="spark" />
+      <div className="ai-layout">
+        <section className="panel">
+          <PanelHeading title="Choose events" end={<span className="count-label">{selected.length.toLocaleString()} selected</span>} />
+          <div className="ai-picker-tools">
+            <label className="field">Number of events <input type="number" min="1" max="5000" value={amount || ''} onChange={event => setAmount(Number(event.target.value))} /></label>
+            <button className="secondary-button" disabled={selecting || !Number.isInteger(amount) || amount < 1 || amount > 5000} onClick={() => void selectFirst()}>Select first {amount || ''}</button>
+            <button className="text-button" disabled={!selected.length || selecting} onClick={() => setSelected([])}>Clear selection</button>
+          </div>
+          {eventsError && <div className="catalogue-error"><Feedback message={eventsError} error /></div>}
+          <div className="ai-event-list" aria-busy={events?.page !== page && !eventsError}>
+            {events?.events.map(event => (
+              <label key={event.id}>
+                <input type="checkbox" checked={selected.includes(event.id)} disabled={selecting} onChange={() => updateSelection(event.id)} />
+                <span>{plainText(event.title)}<small>{event.event_date ? formatDate(event.event_date) : 'Date unknown'} · {labels[event.review_status]}</small></span>
+              </label>
+            ))}
+            {!events && !eventsError && <p className="empty-state" role="status">Loading events…</p>}
+            {events && !events.events.length && <p className="empty-state">No events to evaluate.</p>}
+          </div>
+          {events && events.total > pageSize && <Pagination page={page} total={events.total} size={pageSize} onChange={setPage} />}
+        </section>
+
+        <section className="panel ai-config">
+          <PanelHeading title="Run analysis" icon="spark" />
+          <div className="panel-body stack">
+            <div className="model-options" role="group" aria-label="Models">
+              {Object.entries(modelNames).map(([id, name]) => (
+                <label className="checkbox-label" key={id}>
+                  <input type="checkbox" checked={models.includes(id)} onChange={() => setModels(current => current.includes(id) ? current.filter(model => model !== id) : [...current, id])} />{name}
+                </label>
+              ))}
+            </div>
+            <label className="field">Maximum estimated spend (USD)
+              <input type="number" min="0.001" max="1000" step="0.001" value={budget} onChange={event => setBudget(event.target.value)} />
+            </label>
+            <button className="primary-button" disabled={running || !configured || !selected.length || !models.length || Number(budget) <= 0 || Number(budget) > 1000} onClick={() => void report(() => start('ai-evaluation', 'analyze', { event_ids: selected, models, budget: Number(budget) }))}>
+              <Icon name="spark" /> {running ? 'Analyzing…' : 'Analyze selected events'}
+            </button>
+            <p>Seeker checks token usage and reserves the maximum output cost before each request. Google receives the event text. The spend limit uses estimated costs.</p>
+            {configured === false && <Feedback message="Add GEMINI_API_KEY to seeker/.env and restart Seeker." error />}
+            <Feedback message={message} error={hasError} />
+          </div>
+          <Disclosure title="Recent runs">
+            <div className="job-activity">
+              {!recentJobs.length && <p>No analysis runs recorded.</p>}
+              {recentJobs.map(job => {
+                const progress = parseJson<Record<string, number>>(job.progress_json, {});
+                return (
+                  <div className="activity-item" key={job.id}>
+                    <div><strong>Run #{job.id}</strong><span className={`job-status status-${job.status}`}>{job.status}</span></div>
+                    <small>{progress.completed || 0}/{progress.total || '—'} requests · ${Number(progress.cost_usd || 0).toFixed(4)} USD estimated</small>
+                    {job.error_message && <small className="error-text">{job.error_message}</small>}
+                  </div>
+                );
+              })}
+            </div>
+          </Disclosure>
+        </section>
+      </div>
+
+      <section className="ai-results">
+        <h2>Review results</h2>
+        <p>Accept classifications to update event review status. Review the suggested artists below each classification.</p>
+        <Feedback message={resultsError} error />
+        {configured !== null && !results.length && <div className="panel"><p className="empty-state">Analysis results will appear here.</p></div>}
+        {results.length >= 1000 && <p>Showing the latest 1,000 model results.</p>}
+        {[...groups.entries()].map(([key, group]) => (
+          <article className="panel" key={key}>
+            <PanelHeading title={plainText(group[0].title)} description={`Run #${group[0].job_id} · Current review: ${labels[group[0].review_status]}`} />
+            <div className="panel-body ai-result-grid">{group.map(result => (
+              <ModelResult key={result.id} result={result}
+                decide={decision => void report(async () => {
+                  if (decision === 'accepted' && result.classification) {
+                    await api(`/api/events/${result.event_id}/review`, { review_status: result.classification });
+                  }
+                  await api('/api/ai-evaluations/decision', { id: result.id, decision });
+                  await loadResults();
+                }, `Classification ${decision}.`)}
+                artist={(mbid, decision) => void report(async () => {
+                  await api(`/api/events/${result.event_id}/artist`, { mbid, decision });
+                  await loadResults();
+                }, `Artist ${decision}.`)} />
+            ))}</div>
+          </article>
+        ))}
+      </section>
+    </>
+  );
 }
