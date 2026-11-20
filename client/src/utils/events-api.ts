@@ -10,8 +10,8 @@ async function request<T>(path: string, signal: AbortSignal): Promise<T | null> 
   if (!response.ok) throw new Error(`API returned ${response.status}`);
   return response.json();
 }
-export async function fetchEvents(filter: string, from: string, to: string, offset: number, signal: AbortSignal): Promise<EventPage> {
-  const query = new URLSearchParams({ filter, offset: String(offset), limit: '30' });
+export async function fetchEvents(filter: string, from: string, to: string, offset: number, signal: AbortSignal, limit = 30): Promise<EventPage> {
+  const query = new URLSearchParams({ filter, offset: String(offset), limit: String(limit) });
   if (filter === 'custom') { query.set('from', from); if (to) query.set('to', to); }
   const page = await request<EventPage>(`/v1/events?${query}`, signal);
   if (!page || !Array.isArray(page.items) || !Number.isInteger(page.total)) throw new Error('Invalid API response');

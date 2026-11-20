@@ -1,0 +1,3 @@
+import { StyleSheet, Text, View } from 'react-native';
+export default function FollowingPage() { return <View style={styles.container}><Text style={styles.eyebrow}>SEKU</Text><Text style={styles.title}>Netrukus</Text><Text style={styles.copy}>Ši funkcija dar ruošiama. Netrukus čia galėsi sekti tai, kas tau įdomu.</Text></View>; }
+const styles = StyleSheet.create({ container: { width: '100%', maxWidth: 1264, alignSelf: 'center', paddingHorizontal: 18, paddingTop: 40, gap: 12 }, eyebrow: { color: '#ed7d83', fontSize: 11, fontWeight: '800', letterSpacing: 2 }, title: { color: '#fff', fontSize: 38, fontWeight: '800' }, copy: { color: '#b9b0bd', fontSize: 16, lineHeight: 24, maxWidth: 500 } });

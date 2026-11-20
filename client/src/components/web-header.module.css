@@ -39,3 +39,9 @@
 .closeDialog { position: absolute; top: 14px; right: 18px; border: 0; background: transparent; color: #beb3c1; font: inherit; font-size: 28px; line-height: 1; cursor: pointer; }
 .closeDialog:hover { color: #fff; }
 .closeDialog:focus-visible { outline: 3px solid #ff8792; outline-offset: 3px; }
+
+.desktopNav { display: none; align-items: center; gap: 24px; margin-left: auto; }
+.desktopNav a { color: #e4dbe3; text-decoration: none; font-size: 14px; font-weight: 600; }
+.desktopNav a:hover { color: #fff; }
+.desktopNav a:focus-visible { outline: 3px solid #ff8792; outline-offset: 4px; }
+@media (min-width: 700px) { .desktopNav { display: flex; } }
