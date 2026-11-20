@@ -15,7 +15,8 @@
   .content { padding: 0 32px; }
 }
 .content { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
-.signIn, .account { color: #f4e9ed; text-decoration: none; font-size: 14px; font-weight: 700; border: 1px solid #544551; border-radius: 999px; padding: 9px 16px; }
+.signIn, .account { color: #f4e9ed; text-decoration: none; font-family: inherit; font-size: 14px; font-weight: 700; border: 1px solid #544551; border-radius: 999px; padding: 9px 16px; }
+.signIn { background: transparent; cursor: pointer; }
 .account { display: flex; align-items: center; gap: 9px; padding: 5px 12px 5px 5px; max-width: 220px; }
 .signIn:hover, .account:hover { background: #2a202b; }
 .signIn:focus-visible, .account:focus-visible { outline: 3px solid #ff8792; outline-offset: 3px; }
@@ -33,3 +34,8 @@
 .menuItem:focus-visible { outline: 2px solid #ff8792; }
 .menuItem:disabled { opacity: .6; cursor: default; }
 .menuError { margin: 5px 12px; color: #ff939c; font-size: 13px; }
+.dialog { position: fixed; box-sizing: border-box; width: min(716px, calc(100% - 32px)); max-width: none; max-height: calc(100% - 32px); padding: clamp(24px, 5vw, 40px); border: 1px solid #403541; border-radius: 20px; background: #1d1822; color: #f9f6fa; font-family: system-ui, sans-serif; }
+.dialog::backdrop { background: #09070ccc; }
+.closeDialog { position: absolute; top: 14px; right: 18px; border: 0; background: transparent; color: #beb3c1; font: inherit; font-size: 28px; line-height: 1; cursor: pointer; }
+.closeDialog:hover { color: #fff; }
+.closeDialog:focus-visible { outline: 3px solid #ff8792; outline-offset: 3px; }
