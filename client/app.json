@@ -21,6 +21,8 @@
     },
     "web": {
       "output": "single",
+      "themeColor": "#100e15",
+      "backgroundColor": "#100e15",
       "favicon": "./assets/images/dracula-favicon.png"
     },
     "plugins": [

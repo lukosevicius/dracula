@@ -1,3 +1,4 @@
+import '../global.css';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, type Href } from 'expo-router';
 import { useAuth } from '../auth/auth-context';
