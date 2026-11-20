@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import type { EventRecord, ReviewStatus } from '../../types';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import type { ArtistsDashboard, DashboardArtist, EventRecord, ReviewStatus } from '../../types';
 import { api, errorMessage, formatDate, labels, priceInfo, reviews, safeUrl, sourceNames, type EventRow } from './data';
 import { Description } from './event-description';
 import { Feedback, Icon } from './workspace';
@@ -30,6 +30,8 @@ function manualFields(value: string | undefined): string[] {
   }
 }
 
+const normalizeArtistName = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('lt');
+
 export default function EventEditor({ row, today, onSaved, onRefresh, refreshing }: {
   row: EventRow; today: string; onSaved: () => Promise<void>; onRefresh: () => void; refreshing: boolean;
 }) {
@@ -40,6 +42,10 @@ export default function EventEditor({ row, today, onSaved, onRefresh, refreshing
   const [message, setMessage] = useState('');
   const [saveError, setSaveError] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [artistQuery, setArtistQuery] = useState('');
+  const [artists, setArtists] = useState<DashboardArtist[] | null>(null);
+  const [artistsLoading, setArtistsLoading] = useState(false);
+  const [artistsError, setArtistsError] = useState('');
   const id = row.id;
   const lastChecked = row.details_checked_at;
 
@@ -65,6 +71,26 @@ export default function EventEditor({ row, today, onSaved, onRefresh, refreshing
   const original = safeUrl(row.source_url);
   const image = info?.image;
   const publicEvent = row.review_status === 'music' && (!row.event_date || (row.event_end_date || row.event_date) >= today);
+  const matchedArtists = useMemo(() => {
+    const query = normalizeArtistName(artistQuery.trim());
+    if (!query || !artists) return [];
+    const alreadyLinked = new Set(info?.event.artist_links.map(artist => artist.artist_mbid) ?? []);
+    return artists.filter(artist => !alreadyLinked.has(artist.mbid) && normalizeArtistName(artist.name).includes(query)).slice(0, 12);
+  }, [artistQuery, artists, info]);
+
+  const loadArtists = useCallback(async () => {
+    if (artists || artistsLoading) return;
+    setArtistsLoading(true);
+    setArtistsError('');
+    try {
+      const dashboard = await api<ArtistsDashboard>('/api/dashboard');
+      setArtists(dashboard.artists);
+    } catch (error) {
+      setArtistsError(errorMessage(error));
+    } finally {
+      setArtistsLoading(false);
+    }
+  }, [artists, artistsLoading]);
 
   async function saveRequest(action: string, body: unknown, afterSave: () => void | Promise<void>, success: string) {
     setSaving(true);
@@ -101,6 +127,11 @@ export default function EventEditor({ row, today, onSaved, onRefresh, refreshing
 
   function decideArtist(mbid: string, decision: string) {
     void saveRequest('artist', { mbid, decision }, load, 'Artist review saved.');
+  }
+
+  function assignArtist(artist: DashboardArtist) {
+    setArtistQuery('');
+    decideArtist(artist.mbid, 'accepted');
   }
 
   return (
@@ -153,6 +184,23 @@ export default function EventEditor({ row, today, onSaved, onRefresh, refreshing
         <>
           <section className="editor-section">
             <h3>Artist matches</h3>
+            <div className="artist-search-select">
+              <label className="field">Assign artist from catalogue
+                <div className="search-field">
+                  <Icon name="search" size={15} />
+                  <input type="search" value={artistQuery} placeholder="Search artists…" role="combobox" aria-autocomplete="list" aria-expanded={!!artistQuery.trim()} aria-controls={artistQuery.trim() ? 'artist-search-options' : undefined} onFocus={() => void loadArtists()} onChange={event => { setArtistQuery(event.target.value); void loadArtists(); }} />
+                </div>
+              </label>
+              {!!artistQuery.trim() && <div className="artist-search-options" id="artist-search-options" role="listbox" aria-label="Artist search results">
+                {artistsLoading && <p className="muted">Loading artists…</p>}
+                {!artistsLoading && artistsError && <div className="artist-search-error"><p className="error-text">{artistsError}</p><button className="text-button" type="button" onClick={() => void loadArtists()}>Retry</button></div>}
+                {!artistsLoading && !artistsError && !matchedArtists.length && <p className="muted">No artists found.</p>}
+                {!artistsLoading && matchedArtists.map(artist => <button className="artist-search-option" type="button" role="option" aria-selected="false" key={artist.mbid} disabled={saving} onClick={() => assignArtist(artist)}>
+                  <strong>{artist.name}</strong><small>{artist.artist_type || 'Artist'}{artist.area ? ` · ${artist.area}` : ''}</small>
+                </button>)}
+                {!artistsLoading && matchedArtists.length === 12 && <p className="artist-search-hint">Showing the first 12 results. Type more to narrow the list.</p>}
+              </div>}
+            </div>
             <p className="muted">Confirmed artists · {info.event.artist_links.map(artist => artist.name).join(', ') || 'None'}</p>
             {info.event.artist_links.length > 0 && <div className="inline-actions">{info.event.artist_links.map(artist => (
               <button key={artist.artist_mbid} type="button" className="secondary-button" disabled={saving} onClick={() => decideArtist(artist.artist_mbid, 'remove')}>Remove {artist.name}</button>
