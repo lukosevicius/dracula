@@ -67,7 +67,7 @@ export function createCentralDashboard(api:CentralApi, userAgent='Seeker/0.1.0')
         if(!value){send(404,{error:'Image not found.'});return true;}
         response.writeHead(200,{'content-type':value.type,'cache-control':'private, no-store','x-content-type-options':'nosniff'});response.end(value.bytes);return true;
       }
-      const route=/^\/api\/events\/(\d{1,12})(?:\/(review|details|artist|price|matches|confirm-assistant-review))?$/.exec(url.pathname);
+      const route=/^\/api\/events\/(\d{1,12})(?:\/(review|details|artist|price|interest-score|matches|confirm-assistant-review))?$/.exec(url.pathname);
       if(route && Number(route[1])>0) {
         const id=Number(route[1]), action=route[2];
         if(request.method==='GET' && (!action || action==='details' || action==='matches')) {
@@ -87,7 +87,7 @@ export function createCentralDashboard(api:CentralApi, userAgent='Seeker/0.1.0')
           else send(200,{event:{...event,artist_links:accepted,artist_suggestions:suggestions},image:result.image || null,sources:result.sources,matches});
           return true;
         }
-        if(request.method==='POST' && action && ['review','details','artist','price','confirm-assistant-review'].includes(action)) {
+        if(request.method==='POST' && action && ['review','details','artist','price','interest-score','confirm-assistant-review'].includes(action)) {
           if(!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type'] || '')){send(415,{error:'Expected JSON.'});return true;}
           let size=0;const chunks:Buffer[]=[];
           for await(const chunk of request){const buffer=Buffer.from(chunk);size+=buffer.length;if(size>8192){send(413,{error:'Request too large.'});return true;}chunks.push(buffer);}
@@ -96,6 +96,7 @@ export function createCentralDashboard(api:CentralApi, userAgent='Seeker/0.1.0')
           else if(action==='details')await api.details(id,body as unknown as EventDetails & {review_status:ReviewStatus});
           else if(action==='artist')await api.artist(id,body.mbid as string,body.decision as ArtistDecision);
           else if(action==='price')await api.price(id,body as {price_text:string|null;price_type:'free'|'paid'|'unknown'});
+          else if(action==='interest-score')await api.interestScore(id,body.interest_score as 1|2|3);
           else await api.confirmAssistantReview(id);
           send(200,{id});return true;
         }

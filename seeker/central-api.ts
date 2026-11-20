@@ -38,7 +38,7 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
     if (!body || body.ok !== true) throw new Error('Central API returned an invalid response; check the event before retrying.');
     return body;
   }
-  async function edit(id: number, action: 'review' | 'details' | 'artist' | 'price' | 'confirm-assistant-review', payload: object): Promise<void> {
+  async function edit(id: number, action: 'review' | 'details' | 'artist' | 'price' | 'interest-score' | 'confirm-assistant-review', payload: object): Promise<void> {
     validateId(id);
     await post(`/v1/admin/events/${id}/${action}`,payload);
   }
@@ -162,6 +162,7 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
     details: (id:number, details:Details) => edit(id,'details',details),
     artist: (id:number, mbid:string, decision:ArtistDecision) => edit(id,'artist',{mbid,decision}),
     price: (id:number, price:Price) => edit(id,'price',price),
+    interestScore: (id:number, interest_score:1|2|3) => edit(id,'interest-score',{interest_score}),
     confirmAssistantReview: (id:number) => edit(id,'confirm-assistant-review',{}),
   };
 }

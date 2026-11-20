@@ -9,7 +9,7 @@ export interface PageOptions { offset: number; limit: number; filter: DateFilter
 interface EventRow extends RowDataPacket { id: number; title: string; event_date: string | null; event_end_date: string | null; event_time: string | null; venue: string | null; ticket_url: string | null; source_url: string; about_url: string | null; price_text: string | null; price_type: string | null; content_html: string | null; local_name: string | null }
 interface ArtistRow extends RowDataPacket { event_id: number; mbid: string; name: string }
 interface CountRow extends RowDataPacket { total: number | string }
-const columns = `e.id,e.title,e.event_date,e.event_end_date,e.event_time,e.venue,e.ticket_url,
+const columns = `e.id,e.title,e.event_date,e.event_end_date,e.event_time,e.venue,e.ticket_url,e.interest_score,
  s.source_url,s.about_url,s.content_html,COALESCE(i.local_name,ei.local_name) AS local_name,p.price_text,p.price_type`;
 const joins = `FROM events e JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY CASE WHEN source_key='vilnius-events' THEN 0 ELSE 1 END,id LIMIT 1)
  LEFT JOIN vilnius_events v ON s.source_key='vilnius-events' AND v.source_id=CAST(s.source_id AS UNSIGNED)
@@ -50,7 +50,7 @@ export class CatalogueService {
       clause=` AND NULLIF(e.event_date,'') IS NOT NULL AND e.event_date<=? AND ${end}>=?`; params=[finish,start];
     }
     const [countRows] = await this.db.pool.execute<CountRow[]>(`SELECT COUNT(*) AS total ${joins} WHERE ${ready}${clause}`, [today,...params]);
-    const [rows] = await this.db.pool.execute<EventRow[]>(`SELECT ${columns} ${joins} WHERE ${ready}${clause} ORDER BY CASE WHEN NULLIF(e.event_date,'') IS NULL THEN 1 ELSE 0 END, e.event_date, COALESCE(e.event_time,''), e.id LIMIT ? OFFSET ?`, [today,...params,limit,offset]);
+    const [rows] = await this.db.pool.execute<EventRow[]>(`SELECT ${columns} ${joins} WHERE ${ready}${clause} ORDER BY CASE WHEN NULLIF(e.event_date,'') IS NULL THEN 1 ELSE 0 END, e.event_date, e.interest_score DESC, COALESCE(e.event_time,''), e.id LIMIT ? OFFSET ?`, [today,...params,limit,offset]);
     const items=await this.map(rows); const total=Number(countRows[0].total);
     return {items,total,nextOffset:offset+items.length<total ? offset+items.length : null};
   }
@@ -66,7 +66,7 @@ export class CatalogueService {
   async saved(userId: number) {
     const [rows] = await this.db.pool.execute<EventRow[]>(`SELECT ${columns} ${joins}
       JOIN user_saved_events saved ON saved.event_id=e.id
-      WHERE saved.user_id=? AND e.review_status='music' ORDER BY saved.created_at DESC,e.id DESC`, [userId]);
+      WHERE saved.user_id=? AND e.review_status='music' ORDER BY e.interest_score DESC,saved.created_at DESC,e.id DESC`, [userId]);
     return this.map(rows);
   }
   async hasImage(name: string, today = vilniusToday()) {

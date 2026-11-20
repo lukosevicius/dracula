@@ -70,7 +70,7 @@ export class AdminController {
       const isJobStart=path==='/v1/admin/jobs/start', isImageUpload=path==='/v1/admin/images';
       const isAvilysImageUpload=path==='/v1/admin/event-images/avilys';
       const jobUpdate=/^\/v1\/admin\/jobs\/(\d{1,12})$/.exec(path);
-      const route=/^\/v1\/admin\/events\/(\d{1,12})\/(review|details|artist|price|confirm-assistant-review|enrich)$/.exec(path);
+      const route=/^\/v1\/admin\/events\/(\d{1,12})\/(review|details|artist|price|interest-score|confirm-assistant-review|enrich)$/.exec(path);
       if (!isVilnius && !isAvilys && !isReservation && !isArtistImport && !isArtistReservation && !isAiSave && !aiDecision && !isJobStart && !isImageUpload && !isAvilysImageUpload && !isSeekerSave && !isSeekerSettings && !jobUpdate && (!route || !Number.isSafeInteger(Number(route[1])) || Number(route[1])<1)) return json(res,404,{error:'Not found'});
       if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || ''))return json(res,415,{error:'Expected JSON'});
       const max=isImageUpload||isAvilysImageUpload?17*1024*1024:isVilnius||isAvilys||isArtistImport?6*1024*1024:isAiSave||route?.[2]==='enrich'?512*1024:isSeekerSettings?65536:isSeekerSave?8192:8192;
@@ -98,6 +98,7 @@ export class AdminController {
         case 'details': await admin.details(id,body); break;
         case 'artist': await admin.artist(id,body); break;
         case 'price': await admin.price(id,body); break;
+        case 'interest-score': await admin.interestScore(id,body); break;
         case 'confirm-assistant-review': await admin.confirmAssistantReview(id); break;
         case 'enrich': await this.imports.enrich(id,body); break;
       }
