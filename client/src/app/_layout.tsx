@@ -14,10 +14,10 @@ function BrandTitle() {
   </Pressable></Link>;
 }
 function AppLayout() {
-  const { error } = useSavedEvents();
+  const { error, retry } = useSavedEvents();
   return <View style={{ flex: 1, backgroundColor: '#100e15' }}><StatusBar style="light" />
     <View style={{ flex: 1 }}><Stack screenOptions={{ headerStyle: { backgroundColor: '#100e15' }, headerTintColor: '#fff', headerShadowVisible: false, contentStyle: { backgroundColor: '#100e15' }, header: process.env.EXPO_OS === 'web' ? () => <WebHeader><BrandTitle /></WebHeader> : undefined, headerTitle: () => <BrandTitle /> }} /></View>
-    {error ? <Text accessibilityRole="alert" style={styles.error}>Nepavyko išsaugoti pakeitimų. Patikrinkite įrenginio saugyklą.</Text> : null}
+    {error ? <View style={{ alignItems: 'center' }}><Text accessibilityRole="alert" style={styles.error}>Nepavyko sinchronizuoti išsaugotų renginių.</Text><Pressable accessibilityRole="button" onPress={retry}><Text style={styles.error}>Bandyti dar kartą</Text></Pressable></View> : null}
     <BottomNav />
   </View>;
 }
