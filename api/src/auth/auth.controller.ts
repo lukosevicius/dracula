@@ -55,6 +55,30 @@ export class AuthController {
     const user=await this.auth.current(cookie(req,this.name('session')));
     return {events:await this.catalogue.saved(user.id)};
   }
+  @Get('me/followed-artists') async followedArtists(@Req() req: Request) {
+    const user=await this.auth.current(cookie(req,this.name('session')));
+    const [artists]=await this.db.pool.execute('SELECT a.mbid,a.name FROM user_followed_artists f JOIN artists a ON a.mbid=f.artist_mbid WHERE f.user_id=? ORDER BY a.name',[user.id]);
+    return {artists};
+  }
+  @Post('me/followed-artists') @HttpCode(200)
+  async followArtists(@Req() req: Request) {
+    this.origin(req);
+    const user=await this.auth.current(cookie(req,this.name('session')));
+    const body=await jsonBody(req);
+    if (!Array.isArray(body.ids) || body.ids.length>100 || !body.ids.every(id=>typeof id==='string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id))) throw new BadRequestException('Invalid artist IDs');
+    const ids=[...new Set(body.ids as string[])];
+    if(ids.length) await this.db.pool.execute(`INSERT IGNORE INTO user_followed_artists (user_id,artist_mbid) SELECT ?,mbid FROM artists WHERE mbid IN (${ids.map(()=>'?').join(',')})`,[user.id,...ids]);
+    return {ok:true};
+  }
+  @Delete('me/followed-artists/:id') @HttpCode(200)
+  async unfollowArtist(@Req() req: Request) {
+    this.origin(req);
+    const user=await this.auth.current(cookie(req,this.name('session')));
+    const id=req.params.id as string;
+    if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id)) throw new BadRequestException('Invalid artist ID');
+    await this.db.pool.execute('DELETE FROM user_followed_artists WHERE user_id=? AND artist_mbid=?',[user.id,id]);
+    return {ok:true};
+  }
   @Post('me/saved-events') @HttpCode(200)
   async saveEvents(@Req() req: Request) {
     this.origin(req);

@@ -61,6 +61,8 @@ The hosted image files are stored outside the deployment directory. One image wa
 
 `011-event-interest-score.sql` adds an `interest_score` to events. Existing and newly imported events default to 1; Seeker can set scores from 1 to 5. Apply it before deploying API or Seeker versions that read or write the score.
 
+`012-followed-artists.sql` creates account-specific artist follows. Apply it before deploying API and client versions that use artist following. Guest follows are merged after sign-in. The public artist endpoint and event artist filter require the updated API, so deploy the API before the updated client.
+
 Schema changes are separate from API deployment. `migrations/001` through `003` describe changes already included in `schema.sql`. They must not be replayed against an existing catalogue. API migration history is recorded separately in `api_schema_migrations`; the older `schema_migrations` table belongs to Seeker and is not modified.
 
 Apply `004-event-city.sql` before deploying the API version that writes `events.city`. Pause event imports between the migration and deployment so the old API cannot add rows without a city after the backfill. The migration assigns `Vilnius` to existing Vilnius Events records and reads the city from stored Avilys metadata. The column is nullable for events whose city is unknown.

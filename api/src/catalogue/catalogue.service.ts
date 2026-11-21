@@ -5,7 +5,7 @@ import { DatabaseService } from '../database/database.service.js';
 import { descriptionText } from './description.js';
 
 export type DateFilter = 'upcoming' | 'today' | 'tomorrow' | 'weekend' | 'custom' | 'all' | 'past' | 'unknown';
-export interface PageOptions { offset: number; limit: number; filter: DateFilter; from: string; to: string }
+export interface PageOptions { offset: number; limit: number; filter: DateFilter; from: string; to: string; artists?: string[] }
 interface EventRow extends RowDataPacket { id: number; interest_score: number; title: string; event_date: string | null; event_end_date: string | null; event_time: string | null; venue: string | null; ticket_url: string | null; source_url: string; about_url: string | null; price_text: string | null; price_type: string | null; content_html: string | null; local_name: string | null }
 interface ArtistRow extends RowDataPacket { event_id: number; mbid: string; name: string }
 interface CountRow extends RowDataPacket { total: number | string }
@@ -35,7 +35,7 @@ export class CatalogueService {
       artists: artists.filter(a => a.event_id === row.id).map(({mbid,name}) => ({mbid,name})),
     }));
   }
-  async page({offset, limit, filter, from, to}: PageOptions, today = vilniusToday()) {
+  async page({offset, limit, filter, from, to, artists}: PageOptions, today = vilniusToday()) {
     const shift = (date: string, days: number) => { const d = new Date(`${date}T00:00:00Z`); d.setUTCDate(d.getUTCDate()+days); return d.toISOString().slice(0,10); };
     const end = "COALESCE(NULLIF(e.event_end_date,''),e.event_date)";
     let clause = ''; let params: string[] = [];
@@ -49,10 +49,18 @@ export class CatalogueService {
       if (filter==='weekend') { const day=new Date(`${today}T00:00:00Z`).getUTCDay(); start=shift(today,day===0?-1:6-day); finish=shift(start,1); }
       clause=` AND NULLIF(e.event_date,'') IS NOT NULL AND e.event_date<=? AND ${end}>=?`; params=[finish,start];
     }
+    if (artists?.length) {
+      clause += ` AND EXISTS (SELECT 1 FROM event_artist_decisions d WHERE d.event_id=e.id AND d.decision='accepted' AND d.artist_mbid IN (${artists.map(() => '?').join(',')}))`;
+      params.push(...artists);
+    }
     const [countRows] = await this.db.pool.execute<CountRow[]>(`SELECT COUNT(*) AS total ${joins} WHERE ${ready}${clause}`, [today,...params]);
     const [rows] = await this.db.pool.execute<EventRow[]>(`SELECT ${columns} ${joins} WHERE ${ready}${clause} ORDER BY CASE WHEN NULLIF(e.event_date,'') IS NULL THEN 1 ELSE 0 END, e.event_date, e.interest_score DESC, COALESCE(e.event_time,''), e.id LIMIT ? OFFSET ?`, [today,...params,limit,offset]);
     const items=await this.map(rows); const total=Number(countRows[0].total);
     return {items,total,nextOffset:offset+items.length<total ? offset+items.length : null};
+  }
+  async artist(mbid: string) {
+    const [rows] = await this.db.pool.execute<RowDataPacket[]>('SELECT mbid,name FROM artists WHERE mbid=? LIMIT 1', [mbid]);
+    return rows[0] ? {mbid:rows[0].mbid,name:rows[0].name} : null;
   }
   async list(after: number, limit: number, today = vilniusToday()) {
     const [rows] = await this.db.pool.execute<EventRow[]>(`SELECT ${columns} ${joins} WHERE ${ready} AND e.id>? ORDER BY e.id LIMIT ?`, [today,after,limit + 1]);

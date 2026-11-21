@@ -149,6 +149,10 @@ svg { display: block; flex-shrink: 0; }
 .panel-heading h2 { font-size: 17px; line-height: 1.25; letter-spacing: -.023em; }
 .panel-heading p { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.35; }
 .panel-body, .catalogue-tools { padding: 0 17px 16px; }
+.settings-body { display: grid; justify-items: start; gap: 12px; }
+.settings-body .field { width: min(100%, 440px); }
+.settings-body .muted { margin: 0; }
+.startup-loading { padding: 24px; color: var(--muted); }
 .stack { display: grid; gap: 10px; }
 .stack > p { color: var(--muted); line-height: 1.5; }
 .count-label { padding: 4px 8px; border: 1px solid var(--border-light); border-radius: 6px; background: var(--raised); color: var(--muted); font: 11px var(--mono); white-space: nowrap; }

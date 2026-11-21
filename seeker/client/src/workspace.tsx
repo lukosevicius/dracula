@@ -22,6 +22,7 @@ const paths = {
   save: 'M5 3h12l4 4v14H3V3h2Zm2 0v6h10V3M7 21v-8h10v8',
   menu: 'M4 6h16M4 12h16M4 18h16',
   close: 'm6 6 12 12M18 6 6 18',
+  settings: 'M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm0-5v2m0 13v2m9-8h-2m-14 0H3m15.36-6.36-1.42 1.42M7.06 16.94l-1.42 1.42m12.72 0-1.42-1.42M7.06 7.06 5.64 5.64',
 } as const;
 
 type IconName = keyof typeof paths;
@@ -32,7 +33,7 @@ export function Icon({ name, size = 17 }: { name: IconName; size?: number }) {
 
 const navigation = [
   { label: 'Catalogue', items: [
-    { path: '/', name: 'Artists', icon: 'library' },
+    { path: '/artists.html', name: 'Artists', icon: 'library' },
     { path: '/saved-events.html', name: 'Saved events', icon: 'save' },
   ] },
   { label: 'Event sources', items: [
@@ -41,6 +42,9 @@ const navigation = [
   ] },
   { label: 'Tools', items: [
     { path: '/ai-evaluation.html', name: 'AI evaluation', icon: 'spark' },
+  ] },
+  { label: 'Preferences', items: [
+    { path: '/settings.html', name: 'Settings', icon: 'settings' },
   ] },
 ] as const;
 

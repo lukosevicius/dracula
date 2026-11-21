@@ -181,6 +181,7 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
       await migrationDb.execute("INSERT INTO users (display_name) VALUES ('Test user'), ('Second user')");
       const [users]=await migrationDb.query<RowDataPacket[]>("SELECT id FROM users ORDER BY id");
       const [userId, otherId]=users.map(row=>row.id);
+      await migrationDb.execute('INSERT INTO user_followed_artists(user_id,artist_mbid) VALUES (?,?)',[userId,mbid]);
       await migrationDb.execute("INSERT INTO user_identities (user_id,provider,provider_subject) VALUES (?, 'google', 'CaseSensitive')",[userId]);
       await assert.rejects(migrationDb.execute("INSERT INTO user_identities (user_id,provider,provider_subject) VALUES (?, 'google', 'CaseSensitive')",[otherId]),{code:'ER_DUP_ENTRY'});
       await migrationDb.execute("INSERT INTO user_identities (user_id,provider,provider_subject) VALUES (?, 'google', 'casesensitive')",[otherId]);
@@ -188,6 +189,8 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
       await migrationDb.execute("INSERT INTO user_sessions (user_id,session_hash,expires_at) VALUES (?,?,?)",[userId,sessionHash,'2099-01-01 00:00:00']);
       await assert.rejects(migrationDb.execute("INSERT INTO user_sessions (user_id,session_hash,expires_at) VALUES (?,?,?)",[otherId,sessionHash,'2099-01-01 00:00:00']),{code:'ER_DUP_ENTRY'});
       await migrationDb.execute('DELETE FROM users WHERE id=?',[userId]);
+      const [[remainingFollows]]=await migrationDb.execute<RowDataPacket[]>('SELECT COUNT(*) AS n FROM user_followed_artists WHERE user_id=?',[userId]);
+      assert.equal(Number(remainingFollows.n),0);
       const [[remainingIdentities]]=await migrationDb.execute<RowDataPacket[]>('SELECT COUNT(*) AS n FROM user_identities WHERE user_id=?',[userId]);
       const [[remainingSessions]]=await migrationDb.execute<RowDataPacket[]>('SELECT COUNT(*) AS n FROM user_sessions WHERE user_id=?',[userId]);
       assert.equal(remainingIdentities.n,0); assert.equal(remainingSessions.n,0);
