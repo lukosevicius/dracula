@@ -11,6 +11,42 @@ permissions:
   contents: read
 
 jobs:
+  migration-notice:
+    name: Flag database migration changes
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Remind maintainers to prepare production migrations
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ || "$BASE_SHA" =~ ^0+$ ]]; then
+            echo "::warning::Cannot determine the previous commit; review API migrations manually."
+            exit 0
+          fi
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "::warning::Previous commit is unavailable; review API migrations manually."
+            exit 0
+          fi
+          changes=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- api/migrations/)
+          if [[ -n "$changes" ]]; then
+            echo "::warning::API migrations changed. Before releasing, review compatibility and backups, then run Database migrations on main with action up."
+            {
+              echo '### Production database migration required'
+              echo 'Review compatibility with the currently deployed API and verify a backup. After merging to main, run **Database migrations** with action **up**, then retry **Publish API release** if necessary.'
+              echo 'Changed migration files:'
+              echo '```'
+              printf '%s\n' "$changes"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   seeker:
     name: Seeker tests and types
     runs-on: ubuntu-latest

@@ -91,7 +91,10 @@ jobs:
           chmod 600 "$HOME/.ssh/known_hosts"
           ssh -f -N -M -S "$HOME/.ssh/dracula-tunnel" -L 127.0.0.1:13306:127.0.0.1:3306 -p "$SSH_PORT" -i "$HOME/.ssh/dracula_migrate" -o BatchMode=yes -o StrictHostKeyChecking=yes -o ExitOnForwardFailure=yes "$HOSTINGER_SSH_USER@$SSH_HOST"
           trap 'ssh -S "$HOME/.ssh/dracula-tunnel" -O exit -p "$SSH_PORT" "$HOSTINGER_SSH_USER@$SSH_HOST" >/dev/null 2>&1 || true' EXIT
-          DB_HOST=127.0.0.1 DB_PORT=13306 npm run migrate -- check
+          if ! DB_HOST=127.0.0.1 DB_PORT=13306 npm run migrate -- check; then
+            echo "::error::Migration check failed. Review the output above. For pending migrations, verify compatibility and backups, run the Database migrations workflow on main with action up, then rerun this release. Do not apply migrations if the error reports invalid or changed history."
+            exit 1
+          fi
       - name: Advance API deployment branch
         run: |
           set -euo pipefail
