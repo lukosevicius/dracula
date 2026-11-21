@@ -58,7 +58,7 @@ export default function EventPage() {
         <Text style={[styles.title, desktop && styles.titleDesktop]}>{title}</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}><CalendarButton event={event} /><SaveButton event={event} /></View>
         {event.venue ? <View style={styles.section}><Text style={styles.label}>VIETA</Text><Text style={styles.value}>{displayText(event.venue)}</Text></View> : null}
-        {event.artists.length ? <View style={styles.section}><Text style={styles.label}>ATLIKĖJAI</Text><Text style={styles.value}>{event.artists.map(artist => displayText(artist.name)).join(' · ')}</Text></View> : null}
+        {event.artists.length ? <View style={styles.section}><Text style={styles.label}>ATLIKĖJAI</Text>{event.artists.map(artist => <Link key={artist.mbid} href={{pathname:'/artists/[id]',params:{id:artist.mbid}}} style={styles.link}>{displayText(artist.name)} →</Link>)}</View> : null}
         {desktop ? links : null}
       </View>
     </View>

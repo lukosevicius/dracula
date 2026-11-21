@@ -17,9 +17,16 @@
 .content { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 @media (display-mode: standalone) {
   .header {
+    --header-top-space: env(safe-area-inset-top, 0px);
     box-sizing: border-box;
-    height: calc(64px + env(safe-area-inset-top, 0px));
-    padding-top: env(safe-area-inset-top, 0px);
+    height: calc(64px + var(--header-top-space));
+    padding-top: var(--header-top-space);
+  }
+}
+@media (display-mode: standalone) and (max-width: 699px) {
+  .header {
+    /* The iPhone status-bar fade extends past the top safe area. */
+    --header-top-space: calc(env(safe-area-inset-top, 0px) + min(28px, env(safe-area-inset-top, 0px)));
   }
 }
 .signIn, .account { color: #f4e9ed; text-decoration: none; font-family: inherit; font-size: 14px; font-weight: 700; border: 1px solid #544551; border-radius: 999px; padding: 9px 16px; }

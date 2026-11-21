@@ -5,6 +5,7 @@ import { WebHeader } from '../components/web-header';
 import { BottomNav } from '../components/bottom-nav';
 import { AuthProvider } from '../auth/auth-context';
 import { SavedEventsProvider, useSavedEvents } from '../utils/saved-events';
+import { FollowedArtistsProvider } from '../utils/followed-artists';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 function BrandTitle() {
@@ -21,5 +22,5 @@ function AppLayout() {
     <BottomNav />
   </View>;
 }
-export default function RootLayout() { return <AuthProvider><SavedEventsProvider><AppLayout /></SavedEventsProvider></AuthProvider>; }
+export default function RootLayout() { return <AuthProvider><SavedEventsProvider><FollowedArtistsProvider><AppLayout /></FollowedArtistsProvider></SavedEventsProvider></AuthProvider>; }
 const styles = StyleSheet.create({ brand: { flexDirection: 'row', alignItems: 'center', gap: 10 }, logo: { width: 46, height: 46, borderRadius: 8 }, brandName: { color: '#fff', fontSize: 18, fontWeight: '700' }, error: { color: '#ffaaaa', textAlign: 'center', padding: 8 } });
