@@ -36,7 +36,7 @@ export function useEvents(filter: string, from: string, to: string, invalid: boo
         matches.push(...page.items.filter(event => (!freeOnly || event.price_type === 'free') && (!search || normalize([event.title, event.venue ?? '', ...event.artists.map(artist => artist.name)].map(displayText).join(' ')).includes(term))));
         if (page.nextOffset !== null && page.nextOffset <= offset) throw new Error('Invalid pagination');
         offset = page.nextOffset;
-        // The API is ordered by start date. Load through tomorrow so both sections
+        // The API is ordered by displayed date. Load through tomorrow so both sections
         // have accurate limits even when a day spans several API pages.
         if (!search && !freeOnly && page.items.some(event => event.event_date && tomorrow && event.event_date > tomorrow)) break;
       }

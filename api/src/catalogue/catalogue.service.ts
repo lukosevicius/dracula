@@ -38,7 +38,7 @@ export class CatalogueService {
   async page({offset, limit, filter, from, to, artists}: PageOptions, today = vilniusToday()) {
     const shift = (date: string, days: number) => { const d = new Date(`${date}T00:00:00Z`); d.setUTCDate(d.getUTCDate()+days); return d.toISOString().slice(0,10); };
     const end = "COALESCE(NULLIF(e.event_end_date,''),e.event_date)";
-    let clause = ''; let params: string[] = [];
+    let clause = ''; let params: string[] = []; let groupStart = today;
     if (filter === 'unknown') clause = " AND NULLIF(e.event_date,'') IS NULL";
     else if (filter === 'past') { clause = ` AND NULLIF(e.event_date,'') IS NOT NULL AND ${end}<?`; params=[today]; }
     else if (filter === 'upcoming') { clause = ` AND NULLIF(e.event_date,'') IS NOT NULL AND ${end}>=?`; params=[today]; }
@@ -47,6 +47,7 @@ export class CatalogueService {
       if (filter==='today') start=finish=today;
       if (filter==='tomorrow') start=finish=shift(today,1);
       if (filter==='weekend') { const day=new Date(`${today}T00:00:00Z`).getUTCDay(); start=shift(today,day===0?-1:6-day); finish=shift(start,1); }
+      groupStart=start;
       clause=` AND NULLIF(e.event_date,'') IS NOT NULL AND e.event_date<=? AND ${end}>=?`; params=[finish,start];
     }
     if (artists?.length) {
@@ -54,7 +55,7 @@ export class CatalogueService {
       params.push(...artists);
     }
     const [countRows] = await this.db.pool.execute<CountRow[]>(`SELECT COUNT(*) AS total ${joins} WHERE ${ready}${clause}`, [today,...params]);
-    const [rows] = await this.db.pool.execute<EventRow[]>(`SELECT ${columns} ${joins} WHERE ${ready}${clause} ORDER BY CASE WHEN NULLIF(e.event_date,'') IS NULL THEN 1 ELSE 0 END, e.event_date, e.interest_score DESC, COALESCE(e.event_time,''), e.id LIMIT ? OFFSET ?`, [today,...params,limit,offset]);
+    const [rows] = await this.db.pool.execute<EventRow[]>(`SELECT ${columns} ${joins} WHERE ${ready}${clause} ORDER BY CASE WHEN NULLIF(e.event_date,'') IS NULL THEN 1 ELSE 0 END, CASE WHEN e.event_date<? THEN ? ELSE e.event_date END, e.interest_score DESC, COALESCE(e.event_time,''), e.id LIMIT ? OFFSET ?`, [today,...params,groupStart,groupStart,limit,offset]);
     const items=await this.map(rows); const total=Number(countRows[0].total);
     return {items,total,nextOffset:offset+items.length<total ? offset+items.length : null};
   }

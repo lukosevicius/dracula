@@ -33,6 +33,32 @@ function fixture() {
   return { db, pool };
 }
 
+test('ongoing events appear in the relevant day and are ranked by score across pages', async () => {
+  const {db,pool}=fixture();
+  db.exec(`DELETE FROM event_sources; DELETE FROM events;
+    INSERT INTO events(id,title,event_date,event_end_date,event_time,review_status,interest_score) VALUES
+      (10,'Ongoing low','2026-11-19','2026-11-22',NULL,'music',1),
+      (11,'Today high','2026-11-21',NULL,'20:00','music',5),
+      (12,'Today middle','2026-11-21',NULL,'19:00','music',3),
+      (13,'Tomorrow high','2026-11-22',NULL,NULL,'music',5),
+      (14,'Undated',NULL,NULL,NULL,'music',5);
+    INSERT INTO event_sources SELECT id,id,'avilys',CAST(id AS TEXT),'https://example.com',NULL,'' FROM events;`);
+  const catalogue=new CatalogueService({pool} as unknown as DatabaseService,loadConfig(env));
+  try {
+    const options={offset:0,limit:2,filter:'upcoming' as const,from:'',to:''};
+    const first=await catalogue.page(options,'2026-11-21');
+    const second=await catalogue.page({...options,offset:2},'2026-11-21');
+    assert.deepEqual(first.items.map(event=>event.id),[11,12]);
+    assert.deepEqual(second.items.map(event=>event.id),[10,13]);
+    const today=await catalogue.page({...options,filter:'today',limit:10},'2026-11-21');
+    assert.deepEqual(today.items.map(event=>event.id),[11,12,10]);
+    const tomorrow=await catalogue.page({...options,filter:'tomorrow',limit:10},'2026-11-21');
+    assert.deepEqual(tomorrow.items.map(event=>event.id),[13,10]);
+    const all=await catalogue.page({...options,filter:'all',limit:10},'2026-11-21');
+    assert.deepEqual(all.items.map(event=>event.id),[11,12,10,13,14]);
+  } finally { db.close(); }
+});
+
 test('Nest public endpoints preserve the existing API contract', async () => {
   const {db,pool} = fixture();
   const directory = await mkdtemp(join(tmpdir(),'dracula-nest-'));
