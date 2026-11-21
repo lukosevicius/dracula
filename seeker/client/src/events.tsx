@@ -293,7 +293,7 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
                   <option value="all">All statuses</option>{reviews.map(status => <option key={status} value={status}>{labels[status]}</option>)}
                 </select></label>
                 <label className="field">Sort by <select value={sort} onChange={event => updateFilters(setSort, event.target.value as typeof sort)}>
-                  <option value="date">Event date</option><option value="score-asc">Interest score · low to high</option><option value="score-desc">Interest score · high to low</option>
+                  <option value="date">Event date</option><option value="score-asc">Score: low to high</option><option value="score-desc">Score: high to low</option>
                 </select></label>
               </div>
               <div className="date-quick-filters" role="group" aria-label="Quick date filters">

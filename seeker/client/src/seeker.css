@@ -330,7 +330,11 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
 .editor-section { margin-top: 13px; padding-top: 13px; border-top: 1px solid var(--border); }
 .editor-section p, .artist-match + .artist-match { margin-top: 6px; }
 .editor-section .inline-actions { margin-top: 7px; }
-.artist-match { display: flex; justify-content: space-between; align-items: center; gap: 7px; padding: 8px 10px; margin-top: 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); overflow-wrap: anywhere; }
+.artist-match { display: grid; grid-template-columns: minmax(0, 1fr) auto; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 10px; margin-top: 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); overflow-wrap: anywhere; }
+.artist-match > div:first-child { min-width: 0; }
+.artist-match-reason { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+.artist-match .inline-actions { flex-wrap: nowrap; }
+.artist-match .inline-actions button { flex: 0 0 auto; white-space: nowrap; }
 .artist-search-select { position: relative; margin: 9px 0 12px; }
 .artist-search-select .field { width: min(100%, 440px); }
 .artist-search-options { position: absolute; z-index: 5; top: 100%; left: 0; width: min(100%, 440px); max-height: 280px; overflow-y: auto; border: 1px solid var(--border-light); border-radius: 8px; background: var(--raised); box-shadow: 0 12px 30px #0008; }
@@ -453,7 +457,11 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
   .event-review { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 6px; min-width: 0; }
   .event-review > small:empty { display: none; }
   .review-select select { min-height: 36px; }
+  .filter-disclosure .filter-grid { grid-template-columns: minmax(0, 1fr); }
   .event-details { border-radius: 0 0 9px 9px; }
+  .artist-match { grid-template-columns: minmax(0, 1fr); align-items: start; }
+  .artist-match .inline-actions { width: 100%; }
+  .artist-match .inline-actions button { min-height: 38px; }
   .editor-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .assistant-note { flex-wrap: wrap; }
 }
