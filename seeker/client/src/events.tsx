@@ -49,10 +49,10 @@ function dateRange(filter: DateFilter, from: string, to: string, today: string) 
   return null;
 }
 
-export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
-  const name = avilys ? 'Avilys' : 'Vilnius Events';
-  const source = avilys ? 'avilys' : 'vilnius-events';
-  const defaultSource = avilys ? source : 'all';
+export default function EventsPage({ avilys = false, all = false }: { avilys?: boolean; all?: boolean }) {
+  const name = all ? 'All events' : avilys ? 'Avilys' : 'Vilnius Events';
+  const source = all ? 'all' : avilys ? 'avilys' : 'vilnius-events';
+  const defaultSource = source;
   const [data, setData] = useState<EventPage | null>(null);
   const [query, setQuery] = useState('');
   const [price, setPrice] = useState('all');
@@ -85,7 +85,7 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
   const invalid = when === 'custom' && (!from || (!!to && to < from));
   const extraCount = Number(readiness !== 'all') + Number(assistantReview !== 'all') + Number(sourceFilter !== defaultSource);
   const isFiltered = Boolean(query || when !== 'upcoming' || price !== 'all' || review !== 'all' || extraCount || savedOnly || sort !== 'date');
-  const sourceSavedEvents = savedEvents.filter(event => event.source_key === source);
+  const sourceSavedEvents = savedEvents.filter(event => all || event.source_key === source);
 
   const load = useCallback(async (silent = false) => {
     const id = ++requestId.current;
@@ -270,13 +270,13 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
 
   return (
     <>
-      <PageHeading title={name} description={avilys ? 'Import and review Vilnius music events from Avilys.' : 'Review imported events and manage the Go Vilnius feed.'} icon={avilys ? 'avilys' : 'calendar'} href={avilys ? 'https://avilys.app/paieska' : 'https://www.vilnius-events.lt/'} linkLabel={`Open ${name}`} tools />
-      {!avilys && <Metrics items={[
+      <PageHeading title={name} description={all ? 'Review events from all sources.' : avilys ? 'Import and review Vilnius music events from Avilys.' : 'Review imported events and manage the Go Vilnius feed.'} icon={avilys ? 'avilys' : 'calendar'} href={all ? undefined : avilys ? 'https://avilys.app/paieska' : 'https://www.vilnius-events.lt/'} linkLabel={`Open ${name}`} tools={!all} />
+      {all && <Metrics items={[
         { label: 'Events across all sources', value: data?.counts.total.toLocaleString() ?? '—', icon: 'calendar' },
         { label: 'Ready for Dracula', value: data?.readyCount.toLocaleString() ?? '—', icon: 'check' },
         { label: 'Unsure across all sources', value: data?.counts.unsure.toLocaleString() ?? '—', icon: 'filter' },
       ]} />}
-      <div className="workspace-grid">
+      <div className={all ? 'main-stack' : 'workspace-grid'}>
         <div className="main-stack">
           <section className="panel catalogue" ref={catalogue}>
             <PanelHeading title="Imported events" end={savedOnly ? <span className="count-label">{rows.length} saved matching</span> : data && !invalid && <span className="count-label">{data.total.toLocaleString()} matching</span>} />
@@ -338,7 +338,7 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
                     <label className="field">Assistant review <select value={assistantReview} onChange={event => updateFilters(setAssistantReview, event.target.value)}>
                       <option value="all">All events</option><option value="pending">Needs my check</option>
                     </select></label>
-                    {!avilys && <label className="field">Source <select value={sourceFilter} onChange={event => updateFilters(setSourceFilter, event.target.value)}>
+                    {all && <label className="field">Source <select value={sourceFilter} onChange={event => updateFilters(setSourceFilter, event.target.value)}>
                       <option value="all">All sources</option>{data?.sources.map(item => <option key={item.source_key} value={item.source_key}>{sourceNames[item.source_key] ?? item.source_key}</option>)}
                     </select></label>}
                   </div>
@@ -367,7 +367,7 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
             {loadError && <div className="catalogue-error"><Feedback message={loadError} error /><button className="secondary-button" type="button" onClick={() => void load()}>Retry</button></div>}
             <div className="event-list" aria-busy={loading}>
               {rows.map(row => (
-                <EventItem key={row.id} row={row} today={today} showSource={!avilys} open={open === row.id} toggle={() => setOpen(current => current === row.id ? null : row.id)}
+                <EventItem key={row.id} row={row} today={today} showSource={all} open={open === row.id} toggle={() => setOpen(current => current === row.id ? null : row.id)}
                   selected={selected.includes(row.id)} select={checked => setSelection([row.id], checked)} disabled={bulkPending || pending.includes(row.id) || loading || savedEventsLoading || savedPendingIds.includes(row.id)}
                   review={status => void changeRow(row.id, 'review', { review_status: status }, 'Review saved.')}
                   confirm={() => void changeRow(row.id, 'confirm-assistant-review', {}, 'Assistant review checked.')}
@@ -382,9 +382,9 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
               catalogue.current?.scrollIntoView({ block: 'start' });
             }} />}
           </section>
-          {!avilys && <VilniusNotes />}
+          {!avilys && !all && <VilniusNotes />}
         </div>
-        <aside className="context-column" id="import-tools" tabIndex={-1} aria-label="Event source tools">
+        {!all && <aside className="context-column" id="import-tools" tabIndex={-1} aria-label="Event source tools">
           {avilys
             ? <AvilysImport jobs={jobs} busy={busy} start={start} />
             : <VilniusImport pages={pages} setPages={setPages} includeImages={includeImages} setIncludeImages={setIncludeImages} nextPage={data?.nextPage} jobs={jobs} busy={busy} run={action => void startVilnius(action)} runs={data?.runs ?? []} />}
@@ -395,7 +395,7 @@ export default function EventsPage({ avilys = false }: { avilys?: boolean }) {
               <button className="secondary-button" type="button" disabled={bulkPending || pending.length > 0} onClick={() => void bulkReview('music', true)}>Mark all Unsure as Music</button>
             </div>
           </Disclosure>
-        </aside>
+        </aside>}
       </div>
     </>
   );

@@ -292,6 +292,8 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
 .selection-actions strong { margin-right: 4px; font-size: 12px; }
 .selection-actions button { min-height: 29px; padding: 4px 7px; font-size: 12px; }
 .event-list { min-width: 0; }
+.duplicate-pair { border-top: 1px solid var(--border); }
+.duplicate-pair > h3 { padding: 10px 17px; color: var(--muted); font-size: 12px; }
 .event-item + .event-item { border-top: 1px solid var(--border); }
 .event-row { display: grid; grid-template-columns: 16px 42px minmax(0, 1fr) 108px 32px 29px; align-items: center; gap: 10px; min-height: 69px; padding: 8px 13px 8px 17px; }
 .event-row-saved { grid-template-columns: 42px minmax(0, 1fr) 108px 32px 29px; }

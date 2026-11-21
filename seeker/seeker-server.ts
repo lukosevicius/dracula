@@ -8,7 +8,7 @@ import type { createGoogleSignIn } from './google-sign-in.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const clientDir = join(root, 'client', 'dist');
-const dashboardPages = new Set(['/', '/artists.html', '/artist.html', '/vilnius-events.html', '/avilys.html', '/ai-evaluation.html', '/saved-events.html', '/settings.html']);
+const dashboardPages = new Set(['/', '/artists.html', '/artist.html', '/vilnius-events.html', '/avilys.html', '/all-events.html', '/possible-duplicates.html', '/ai-evaluation.html', '/saved-events.html', '/settings.html']);
 const installAssets = new Set(['/manifest.webmanifest', '/icons/icon-180.png', '/icons/icon-192.png', '/icons/icon-512.png']);
 const types: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',

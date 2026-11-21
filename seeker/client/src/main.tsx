@@ -4,6 +4,7 @@ import AiEvaluation from './ai-evaluation';
 import ArtistPage from './artist';
 import ArtistsPage from './artists';
 import EventsPage from './events';
+import DuplicatesPage from './duplicates';
 import { SavedEventsPage, SavedEventsProvider } from './saved-events';
 import SettingsPage, { defaultStartPage, validStartPage } from './settings';
 import { api } from './data';
@@ -32,6 +33,8 @@ const page = path === '/' ? <StartupPage />
   : path === '/artist.html' ? <ArtistPage mbid={new URLSearchParams(window.location.search).get('id') || ''} />
   : path === '/settings.html' ? <SettingsPage />
   : path === '/ai-evaluation.html' ? <AiEvaluation />
+  : path === '/all-events.html' ? <EventsPage all />
+  : path === '/possible-duplicates.html' ? <DuplicatesPage />
   : path === '/avilys.html' ? <EventsPage avilys />
   : path === '/vilnius-events.html' ? <EventsPage />
   : path === '/saved-events.html' ? <SavedEventsPage />

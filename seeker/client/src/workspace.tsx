@@ -37,8 +37,10 @@ const navigation = [
     { path: '/saved-events.html', name: 'Saved events', icon: 'save' },
   ] },
   { label: 'Event sources', items: [
+    { path: '/all-events.html', name: 'All', icon: 'calendar' },
     { path: '/avilys.html', name: 'Avilys', icon: 'avilys' },
     { path: '/vilnius-events.html', name: 'Vilnius Events', icon: 'calendar' },
+    { path: '/possible-duplicates.html', name: 'Possible duplicates', icon: 'search' },
   ] },
   { label: 'Tools', items: [
     { path: '/ai-evaluation.html', name: 'AI evaluation', icon: 'spark' },
