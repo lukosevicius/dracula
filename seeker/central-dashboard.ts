@@ -46,6 +46,13 @@ export function createCentralDashboard(api:CentralApi, userAgent='Seeker/0.1.0',
       const avilysImage=/^\/api\/avilys-images\/(\d{1,12})$/.exec(url.pathname);
       if(request.method==='GET'&&avilysImage){const value=await api.getAvilysImage(Number(avilysImage[1]));if(!value){send(404,{error:'Image not found.'});return true;}response.writeHead(200,{'content-type':value.type,'cache-control':'private, no-store','x-content-type-options':'nosniff'});response.end(Buffer.from(value.bytes));return true;}
       if(request.method==='GET' && url.pathname==='/api/dashboard'){send(200,await api.artistsDashboard());return true;}
+      const artistDetail = /^\/api\/artists\/([^/]+)$/.exec(url.pathname);
+      if (request.method === 'GET' && artistDetail) {
+        const detail = await api.getArtist(artistDetail[1]);
+        if (detail) send(200, detail);
+        else send(404, { error: 'Artist not found.' });
+        return true;
+      }
       if(request.method==='GET' && url.pathname==='/api/ai-evaluations/events'){send(200,{ids:await api.aiIds(Number(url.searchParams.get('limit')||1))});return true;}
       if(request.method==='GET' && url.pathname==='/api/ai-evaluations'){send(200,{results:await api.aiResults(),configured:!!process.env.GEMINI_API_KEY});return true;}
       if(request.method==='POST' && url.pathname==='/api/ai-evaluations/decision'){

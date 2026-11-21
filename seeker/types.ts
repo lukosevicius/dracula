@@ -70,6 +70,20 @@ export interface DashboardArtist extends Artist {
   source_url: string;
   first_seen_at: string;
 }
+export interface ArtistConcert {
+  id: number;
+  title: string;
+  event_date: string | null;
+  event_end_date: string | null;
+  event_time: string | null;
+  venue: string | null;
+}
+export interface SeekerArtistDetail {
+  artist: DashboardArtist;
+  upcoming: ArtistConcert[];
+  past: ArtistConcert[];
+  undated: ArtistConcert[];
+}
 export interface MusicBrainzRun extends ImportRun { mode: 'next' | 'start' | 'all' }
 export interface ArtistsDashboard {
   totalArtists: number;

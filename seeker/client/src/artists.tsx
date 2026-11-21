@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ArtistsDashboard } from '../../types';
-import { api, errorMessage, formatDate, isActive, safeUrl, useJobs } from './data';
+import { api, artistHref, errorMessage, formatDate, isActive, useJobs } from './data';
 import { ImportHistory, MusicBrainzNotes, RecentJobs } from './imports';
 import { Disclosure, Feedback, Icon, Metrics, PageHeading, Pagination, PanelHeading, SearchField } from './workspace';
 
@@ -69,19 +69,16 @@ export default function ArtistsPage() {
               <div className="table-wrap">
                 <table className="artist-table">
                   <thead><tr><th scope="col">Artist</th><th scope="col">Area</th><th scope="col">First seen</th></tr></thead>
-                  <tbody>{visibleArtists.map(artist => {
-                    const url = safeUrl(artist.source_url);
-                    return (
-                      <tr key={artist.mbid}>
-                        <td>
-                          {url ? <a className="artist-link" href={url} target="_blank" rel="noreferrer" aria-label={`Open ${artist.name} on MusicBrainz`}><strong>{artist.name}</strong><Icon name="external" size={13} /></a> : <strong>{artist.name}</strong>}
-                          <small>{artist.artist_type || 'Artist'}</small>
-                        </td>
-                        <td>{artist.area || artist.country || '—'}</td>
-                        <td>{formatDate(artist.first_seen_at)}</td>
-                      </tr>
-                    );
-                  })}</tbody>
+                  <tbody>{visibleArtists.map(artist => (
+                    <tr key={artist.mbid}>
+                      <td>
+                        <a className="artist-link" href={artistHref(artist.mbid)}><strong>{artist.name}</strong><Icon name="chevron" size={13} /></a>
+                        <small>{artist.artist_type || 'Artist'}</small>
+                      </td>
+                      <td>{artist.area || artist.country || '—'}</td>
+                      <td>{artist.first_seen_at ? formatDate(artist.first_seen_at) : '—'}</td>
+                    </tr>
+                  ))}</tbody>
                 </table>
               </div>
             )}

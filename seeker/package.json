@@ -13,6 +13,7 @@
     "build": "npm run build:server && npm run build:client",
     "build:server": "tsc -p tsconfig.json",
     "build:client": "vite build --config client/vite.config.ts",
+    "commit:push": "bash scripts/commit-push.sh",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p database/tsconfig.json && tsc --noEmit -p sources/tsconfig.json && tsc --noEmit -p client/tsconfig.json",
     "test": "npm run build && node --test dist/test/*.test.js"
   },

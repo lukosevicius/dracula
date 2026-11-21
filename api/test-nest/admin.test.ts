@@ -21,6 +21,7 @@ const backend={
   getImage:async (id: number)=>id===5?{local_name:'5.jpg',mime_type:'image/jpeg',source_url:'https://example.com',source_modified:null}:id===6?{local_name:'6.jpg',mime_type:'image/jpeg'}:null,
   listMedia:async (after: number,limit: number)=>[after,limit], enrichmentCandidates:async (mode: string,after: number,id: number)=>[mode,after,id],
   artistsDashboard:async()=>({artists:[]}),review:async()=>{},details:async()=>{},artist:async()=>{},price:async()=>{},confirmAssistantReview:async()=>{},enrichEvent:async()=>{},
+  getArtist: async (mbid: string) => mbid === 'missing' ? null : { artist: { mbid }, past: [], upcoming: [], undated: [] },
   importVilniusPage:async()=>({added:1}),importAvilysPage:async()=>({added:1}),importMusicBrainzPage:async()=>({added:1}),
   reserveVilniusRequest:async()=>({waitMs:0}),reserveMusicBrainz:async()=>({waitMs:0}),saveImage:async()=>({saved:true}),
   jobs:{list:async()=>[],start:async()=>({id:1}),update:async()=>{}},
@@ -56,6 +57,13 @@ test('Nest admin routes match legacy authorization, requests and protected image
       for(const [header,value] of Object.entries(expected.headers)) assert.equal(response.headers.get(header),value,`${path}: ${header}`);
       assert.equal(await response.text(),expected.body,path);
     }
+    const mbid = '12345678-1234-1234-1234-123456789abc';
+    const artistUrl = current + '/v1/admin/artists/';
+    assert.equal((await fetch(artistUrl + mbid)).status, 401);
+    const artist = await fetch(artistUrl + mbid, { headers: auth });
+    assert.equal(artist.status, 200);
+    assert.deepEqual(await artist.json(), { artist: { mbid }, past: [], upcoming: [], undated: [] });
+    assert.equal((await fetch(artistUrl + 'missing', { headers: auth })).status, 404);
   } finally {await app.close();await rm(dir,{recursive:true,force:true});}
 });
 
@@ -66,6 +74,39 @@ test('Nest disables admin without a token and validates configured token',async(
   try {await app.listen(0,'127.0.0.1');const base=`http://127.0.0.1:${app.getHttpServer().address().port}`;assert.equal((await fetch(base+'/v1/admin/events/1',{headers:{authorization:`Bearer ${token}`}})).status,404);}
   finally {await app.close();}
   assert.throws(()=>createAdmin({} as unknown as import('mysql2/promise').Pool,'weak'),/at least 32 URL-safe/);
+});
+
+test('Seeker artist details show accepted past, ongoing, future, and undated concerts', async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(':memory:');
+  const mbid = '12345678-1234-1234-1234-123456789abc';
+  db.exec(`CREATE TABLE artists(mbid TEXT,name TEXT,artist_type TEXT,area TEXT,country TEXT,source_url TEXT,first_seen_at TEXT);
+    CREATE TABLE events(id INTEGER,title TEXT,event_date TEXT,event_end_date TEXT,event_time TEXT,venue TEXT);
+    CREATE TABLE event_artist_decisions(event_id INTEGER,artist_mbid TEXT,decision TEXT);
+    INSERT INTO artists VALUES('${mbid}','Band','Group','Vilnius','LT','https://musicbrainz.org','2026-11-12');
+    INSERT INTO events VALUES(1,'Past','2000-01-01',NULL,NULL,NULL),
+      (2,'Future','2099-12-01',NULL,'19:00','Club'),(3,'Unknown',NULL,NULL,NULL,NULL),
+      (4,'Dismissed','2099-12-02',NULL,NULL,NULL),(5,'Ongoing','2026-01-01','2099-12-01',NULL,NULL),
+      (6,'More recent','2026-01-01','2026-01-02',NULL,NULL),(7,'Another artist','2099-12-01',NULL,NULL,NULL);
+    INSERT INTO event_artist_decisions VALUES(1,'${mbid}','accepted'),(2,'${mbid}','accepted'),
+      (3,'${mbid}','accepted'),(4,'${mbid}','dismissed'),(5,'${mbid}','accepted'),(6,'${mbid}','accepted'),
+      (7,'other','accepted');`);
+  const pool = {
+    async execute(sql: string, values: import('node:sqlite').SQLInputValue[]) {
+      return [db.prepare(sql).all(...values)];
+    },
+  };
+  const admin = createAdmin(pool as unknown as import('mysql2/promise').Pool, token);
+  try {
+    const detail = await admin.getArtist(mbid);
+    assert.ok(detail);
+    assert.equal(detail.artist.first_seen_at, '2026-11-12');
+    assert.deepEqual(detail.upcoming.map(event => event.id), [5, 2]);
+    assert.deepEqual(detail.past.map(event => event.id), [6, 1]);
+    assert.deepEqual(detail.undated.map(event => event.id), [3]);
+    assert.equal(await admin.getArtist('12345678-1234-1234-1234-123456789def'), null);
+    await assert.rejects(admin.getArtist('invalid'), { status: 400 });
+  } finally { db.close(); }
 });
 
 test('Nest admin edits persist both event records and reject invalid input', async()=>{

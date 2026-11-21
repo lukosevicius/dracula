@@ -75,6 +75,9 @@ test('hosted sign-in requires the approved Google identity and protects dashboar
   assert.equal((await send('/icons/other.png')).status, 401);
   assert.equal((await send('/manifest.webmanifest', 'POST', { origin })).status, 401);
   assert.equal((await send('/api/events')).status, 401);
+  const artistPath = '/artist.html?id=12345678-1234-1234-1234-123456789abc';
+  assert.match((await send(artistPath)).body, /Sign in with Google/);
+  assert.equal((await send('/api/artists/12345678-1234-1234-1234-123456789abc')).status, 401);
   assert.equal((await send('/assets/index.js')).status, 401);
   assert.equal((await send('//')).status, 400);
   assert.equal((await send('/', 'GET', { host: 'temporary.hostingersite.com' })).status, 403);
@@ -106,6 +109,7 @@ test('hosted sign-in requires the approved Google identity and protects dashboar
   assert.match(dashboard.body, /rel="manifest" href="\/manifest\.webmanifest"/);
   assert.equal(dashboard.headers.get('referrer-policy'), 'same-origin');
   assert.doesNotMatch(dashboard.body, /Sign in with Google/);
+  assert.match((await send(artistPath, 'GET', { cookie })).body, /data-hosted/);
   assert.equal((await send('/api/events', 'GET', { cookie })).status, 204);
   assert.equal((await send('/api/events/1/review', 'POST', { cookie, origin: 'https://app.example.com' })).status, 403);
   assert.equal((await send('/api/events/1/review', 'POST', { cookie })).status, 403);

@@ -81,6 +81,27 @@ export function createAdmin(pool: Pool, token: string) {
         await conn.commit();return {totalArtists:artists.length,lastRun:runs[0]||null,recentRuns:runs,artists,sourceState:state[0]||null,importInProgress:false};
       }catch(cause){await conn.rollback();throw cause;}}finally{conn.release();}
     },
+    async getArtist(mbid: string) {
+      if (!/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(mbid)) throw error(400, 'Invalid artist ID.');
+      const [artists] = await pool.execute<RowDataPacket[]>(
+        'SELECT mbid,name,artist_type,area,country,source_url,first_seen_at FROM artists WHERE mbid=?', [mbid],
+      );
+      if (!artists.length) return null;
+      const [concerts] = await pool.execute<RowDataPacket[]>(
+        `SELECT e.id,e.title,e.event_date,e.event_end_date,e.event_time,e.venue
+         FROM event_artist_decisions d JOIN events e ON e.id=d.event_id
+         WHERE d.artist_mbid=? AND d.decision='accepted'
+         ORDER BY e.event_date,e.event_time IS NULL,e.event_time,e.id`, [mbid],
+      );
+      const today = vilniusToday();
+      const past = [], upcoming = [], undated = [];
+      for (const concert of concerts) {
+        if (!concert.event_date) undated.push(concert);
+        else if ((concert.event_end_date || concert.event_date) < today) past.push(concert);
+        else upcoming.push(concert);
+      }
+      return { artist: artists[0], past: past.reverse(), upcoming, undated };
+    },
     async reserveVilniusRequest() {
       const conn=await pool.getConnection();
       try {

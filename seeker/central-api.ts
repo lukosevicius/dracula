@@ -1,5 +1,5 @@
 import type {AvilysEvent} from './sources/avilys.js';
-import type { ArtistDecision, ArtistsDashboard, EventDetails, ReviewStatus } from './types.js';
+import type { ArtistDecision, ArtistsDashboard, EventDetails, ReviewStatus, SeekerArtistDetail } from './types.js';
 
 type Price = { price_text: string | null; price_type: 'free' | 'paid' | 'unknown' };
 type Details = EventDetails & { review_status: ReviewStatus };
@@ -71,6 +71,14 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
     async artistsDashboard():Promise<ArtistsDashboard>{
       let response:Response;try{response=await fetch(new URL('/v1/admin/artists',base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch{throw new Error('Central API request failed.');}
       if(!response.ok)throw new Error(`Central API read failed (HTTP ${response.status}).`);const value=await response.json();if(!Array.isArray(value.artists)||!Array.isArray(value.recentRuns))throw new Error('Central API returned invalid artists.');return value;
+    },
+    async getArtist(mbid: string): Promise<SeekerArtistDetail | null> {
+      try {
+        return await get(`/v1/admin/artists/${encodeURIComponent(mbid)}`);
+      } catch (error) {
+        if ((error as { status?: number }).status === 404) return null;
+        throw error;
+      }
     },
     async getImageInfo(id:number):Promise<{source_url:string;source_modified:string|null}|null> {
       validateId(id);let response:Response;

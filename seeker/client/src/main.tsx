@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { useEffect } from 'react';
 import AiEvaluation from './ai-evaluation';
+import ArtistPage from './artist';
 import ArtistsPage from './artists';
 import EventsPage from './events';
 import { SavedEventsPage, SavedEventsProvider } from './saved-events';
@@ -27,6 +28,7 @@ function StartupPage() {
 
 const page = path === '/' ? <StartupPage />
   : path === '/artists.html' ? <ArtistsPage />
+  : path === '/artist.html' ? <ArtistPage mbid={new URLSearchParams(window.location.search).get('id') || ''} />
   : path === '/settings.html' ? <SettingsPage />
   : path === '/ai-evaluation.html' ? <AiEvaluation />
   : path === '/avilys.html' ? <EventsPage avilys />

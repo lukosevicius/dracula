@@ -34,6 +34,11 @@ export class AdminController {
       if(req.method==='DELETE'&&savedEvent&&Number(savedEvent[1])>0){await admin.removeSavedEvent(Number(savedEvent[1]));return json(res,200,{ok:true});}
       if (req.method==='GET' && path==='/v1/admin/jobs') return json(res,200,{jobs:await this.imports.jobs.list()});
       if (req.method==='GET' && path==='/v1/admin/artists') return json(res,200,await admin.artistsDashboard());
+      const artistDetail = /^\/v1\/admin\/artists\/([^/]+)$/.exec(path);
+      if (req.method === 'GET' && artistDetail) {
+        const detail = await admin.getArtist(artistDetail[1]);
+        return detail ? json(res, 200, detail) : json(res, 404, { error: 'Artist not found.' });
+      }
       if (req.method==='GET' && path==='/v1/admin/ai/artists') return json(res,200,{artists:await this.imports.ai.artists()});
       if (req.method==='GET' && path==='/v1/admin/ai/results') return json(res,200,{results:await this.imports.ai.list()});
       if (req.method==='GET' && path==='/v1/admin/ai/events') return json(res,200,{ids:await this.imports.ai.eventIds(Number(url.searchParams.get('limit')||1))});

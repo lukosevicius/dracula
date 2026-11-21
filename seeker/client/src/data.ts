@@ -85,6 +85,7 @@ export function safeUrl(url: string | null | undefined) {
 
 export const plainText = (html: string) => new DOMParser().parseFromString(html, 'text/html').body.textContent || '';
 export const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
+export const artistHref = (mbid: string) => `/artist.html?id=${encodeURIComponent(mbid)}`;
 
 export async function api<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, body === undefined ? undefined : {

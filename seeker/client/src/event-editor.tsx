@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { ArtistsDashboard, DashboardArtist, EventRecord, ReviewStatus } from '../../types';
-import { api, errorMessage, formatDate, labels, priceInfo, reviews, safeUrl, sourceNames, type EventRow } from './data';
+import { api, artistHref, errorMessage, formatDate, labels, priceInfo, reviews, safeUrl, sourceNames, type EventRow } from './data';
 import { Description } from './event-description';
 import { Feedback, Icon } from './workspace';
 
@@ -201,14 +201,16 @@ export default function EventEditor({ row, today, onSaved, onRefresh, refreshing
                 {!artistsLoading && matchedArtists.length === 12 && <p className="artist-search-hint">Showing the first 12 results. Type more to narrow the list.</p>}
               </div>}
             </div>
-            <p className="muted">Confirmed artists · {info.event.artist_links.map(artist => artist.name).join(', ') || 'None'}</p>
+            <p className="muted">Confirmed artists · {info.event.artist_links.length ? info.event.artist_links.map((artist, index) => (
+              <span key={artist.artist_mbid}>{index > 0 && ', '}<a href={artistHref(artist.artist_mbid)}>{artist.name}</a></span>
+            )) : 'None'}</p>
             {info.event.artist_links.length > 0 && <div className="inline-actions">{info.event.artist_links.map(artist => (
               <button key={artist.artist_mbid} type="button" className="secondary-button" disabled={saving} onClick={() => decideArtist(artist.artist_mbid, 'remove')}>Remove {artist.name}</button>
             ))}</div>}
             {!info.event.artist_suggestions.length && <p className="muted">No suggested artist matches.</p>}
             {info.event.artist_suggestions.map(artist => (
               <div className="artist-match" key={artist.mbid}>
-                <div><strong>{artist.name}</strong><small className="artist-match-reason">Matched in {artist.reason.toLocaleLowerCase()}</small></div>
+                <div><a href={artistHref(artist.mbid)}><strong>{artist.name}</strong></a><small className="artist-match-reason">Matched in {artist.reason.toLocaleLowerCase()}</small></div>
                 <div className="inline-actions">
                   <button className="secondary-button" type="button" disabled={saving} onClick={() => decideArtist(artist.mbid, 'accepted')}>Accept</button>
                   <button className="text-button" type="button" disabled={saving} onClick={() => decideArtist(artist.mbid, 'dismissed')}>Dismiss</button>
