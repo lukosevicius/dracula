@@ -6,6 +6,7 @@ import { BottomNav } from '../components/bottom-nav';
 import { AuthProvider } from '../auth/auth-context';
 import { SavedEventsProvider, useSavedEvents } from '../utils/saved-events';
 import { FollowedArtistsProvider } from '../utils/followed-artists';
+import { PullToRefresh } from '../components/pull-to-refresh';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 function BrandTitle() {
@@ -16,7 +17,7 @@ function BrandTitle() {
 }
 function AppLayout() {
   const { error, retry } = useSavedEvents();
-  return <View style={{ flex: 1, backgroundColor: '#100e15' }}><StatusBar style="light" />
+  return <View style={{ flex: 1, backgroundColor: '#100e15' }}><StatusBar style="light" /><PullToRefresh />
     <View style={{ flex: 1 }}><Stack screenOptions={{ headerStyle: { backgroundColor: '#100e15' }, headerTintColor: '#fff', headerShadowVisible: false, contentStyle: { backgroundColor: '#100e15' }, header: process.env.EXPO_OS === 'web' ? () => <WebHeader><BrandTitle /></WebHeader> : undefined, headerTitle: () => <BrandTitle /> }} /></View>
     {error ? <View style={{ alignItems: 'center' }}><Text accessibilityRole="alert" style={styles.error}>Nepavyko sinchronizuoti išsaugotų renginių.</Text><Pressable accessibilityRole="button" onPress={retry}><Text style={styles.error}>Bandyti dar kartą</Text></Pressable></View> : null}
     <BottomNav />

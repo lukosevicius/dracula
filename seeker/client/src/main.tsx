@@ -8,6 +8,7 @@ import { SavedEventsPage, SavedEventsProvider } from './saved-events';
 import SettingsPage, { defaultStartPage, validStartPage } from './settings';
 import { api } from './data';
 import { Workspace } from './workspace';
+import { PullToRefresh } from './pull-to-refresh';
 import './seeker.css';
 
 const path = window.location.pathname;
@@ -36,4 +37,4 @@ const page = path === '/' ? <StartupPage />
   : path === '/saved-events.html' ? <SavedEventsPage />
   : <ArtistsPage />;
 
-createRoot(document.getElementById('root')!).render(<SavedEventsProvider><Workspace>{page}</Workspace></SavedEventsProvider>);
+createRoot(document.getElementById('root')!).render(<SavedEventsProvider><Workspace>{page}<PullToRefresh /></Workspace></SavedEventsProvider>);

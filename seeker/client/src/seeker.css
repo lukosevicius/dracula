@@ -38,6 +38,8 @@ svg { display: block; flex-shrink: 0; }
 .skip-link:focus { transform: none; }
 .muted { color: var(--muted); }
 .error-text { color: var(--accent); }
+.pull-refresh-indicator { position: fixed; z-index: 20; top: calc(env(safe-area-inset-top, 0px) + 10px); left: 50%; display: flex; align-items: center; gap: 8px; padding: 10px 14px; border: 1px solid var(--border-light); border-radius: 22px; background: var(--raised); color: var(--text); font-size: 12px; font-weight: 600; box-shadow: 0 8px 22px #0008; pointer-events: none; white-space: nowrap; }
+.pull-refresh-icon { color: var(--accent); font-size: 17px; line-height: 1; }
 
 .sidebar {
   position: fixed;
