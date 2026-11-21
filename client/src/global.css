@@ -17,6 +17,13 @@ html {
   color-scheme: dark;
 }
 
+@media (display-mode: standalone) {
+  #dracula-bottom-nav {
+    /* Override the shared React Native padding so the inset is counted once. */
+    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
+
 /* Keep the browser's focus ring off the text; highlight the whole search box instead. */
 input[aria-label="Ieškoti renginio, vietos arba atlikėjo"]:focus {
   outline: none;
