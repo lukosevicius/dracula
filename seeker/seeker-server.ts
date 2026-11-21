@@ -16,7 +16,7 @@ const types: Record<string, string> = {
   '.webmanifest': 'application/manifest+json',
 };
 
-type HostedAccess = { origin: string; signIn: ReturnType<typeof createGoogleSignIn> };
+type HostedAccess = { origin: string; signIn: ReturnType<typeof createGoogleSignIn>; releaseSha?: string };
 
 const signInPage = (denied: boolean) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -46,6 +46,7 @@ export function createSeekerServer(handle: ReturnType<typeof createCentralDashbo
       res.end(message);
     };
     if (!hosts.includes(req.headers.host ?? '')) return reject(403, 'Forbidden');
+    if (hosted?.releaseSha) res.setHeader('X-Seeker-Release', hosted.releaseSha);
     const origin = req.headers.origin;
     const isWrite = req.method !== 'GET' && req.method !== 'HEAD';
     if ((origin && !origins.has(origin)) || (hosted && isWrite && origin !== hosted.origin)) {

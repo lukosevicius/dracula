@@ -24,7 +24,9 @@ For local development, run `npm run dev` and open <http://127.0.0.1:4177>. Vite 
 
 In Google Auth Platform, create a dedicated OAuth client of type **Web application**, with `https://seeker.dracula.lt/auth/google/callback` as its authorized redirect URI. Seeker requests only `openid` and `email`, which Google allows while the project is in Testing.
 
-Create a separate **Node.js web app** in Hostinger. Choose the **Other** framework preset, Node 22.x or newer, build command `npm run build`, and entry file `dist/hosted-server.js`. Upload a ZIP with `package.json` at its root and set the project root to `./`. Exclude the root `public/` and `test/` directories from the ZIP. Hostinger can serve legacy root `public/` files directly, before the Node server checks the session. Include `client/public/` so Vite can copy the install manifest and icons. Also exclude local data, dependencies, build output, and environment files. Set these runtime variables in the hosting dashboard:
+The **Publish Seeker release** GitHub Actions workflow runs when Seeker or its deployment files change on `main`. It tests the revision, packages tracked Seeker source, and deploys to the existing `seeker.dracula.lt` Node.js app. The workflow reuses `HOSTINGER_API_TOKEN` and `HOSTINGER_SSH_USER` from the `production-api-migrations` GitHub environment. It verifies the live commit, signed-out access, and install manifest. To retry from the latest `main`, open the workflow in Actions and select **Run workflow**.
+
+The package excludes the legacy root `public/` directory, which Hostinger can serve before Node checks the session. It includes `client/public/` for the install manifest and icons. Keep these runtime variables in the hosting dashboard:
 
 | Variable | Value |
 | --- | --- |

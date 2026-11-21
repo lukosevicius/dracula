@@ -1,0 +1,96 @@
+name: Publish Seeker release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'seeker/**'
+      - '.github/workflows/deploy-seeker.yml'
+      - '.github/scripts/verify-seeker-deployment.mjs'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-seeker-release
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test Seeker
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: seeker
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: seeker/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+
+  publish:
+    name: Deploy and verify Seeker
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # This environment already holds the Hostinger token and account username.
+    environment: production-api-migrations
+    env:
+      SEEKER_DOMAIN: seeker.dracula.lt
+      RELEASE_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Prepare tracked Seeker source
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          mkdir "$RUNNER_TEMP/seeker-release"
+          git archive "$RELEASE_SHA:seeker" | tar -xf - -C "$RUNNER_TEMP/seeker-release"
+          cd "$RUNNER_TEMP/seeker-release"
+          # Hostinger can serve root public/ before the Google sign-in check.
+          rm -rf public test data node_modules dist
+          find . -name '.env*' -prune -exec rm -rf {} +
+          test -f package.json
+          test -f client/public/manifest.webmanifest
+          printf "export const releaseSha = '%s';\n" "$RELEASE_SHA" > release.ts
+      - name: Install pinned Hostinger CLI
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl --fail --silent --show-error --location --retry 3 --max-time 60 \
+            https://github.com/hostinger/api-cli/releases/download/v4.14.0/hostinger-4.14.0-linux-amd64.tar.gz \
+            -o hostinger-cli.tar.gz
+          printf '%s\n' 'c09cd8cf361f035f2ff1d9dd500331f575f4ddd0e618e8d28088381c8e6a6c9a  hostinger-cli.tar.gz' | sha256sum --check
+          tar -xzf hostinger-cli.tar.gz hostinger
+      - name: Publish to the existing Hostinger site
+        env:
+          HOSTINGER_API_TOKEN: ${{ secrets.HOSTINGER_API_TOKEN }}
+          HOSTINGER_SSH_USER: ${{ vars.HOSTINGER_SSH_USER }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin main
+          if ! git diff --quiet "$RELEASE_SHA" FETCH_HEAD -- seeker .github/workflows/deploy-seeker.yml .github/scripts/verify-seeker-deployment.mjs; then
+            echo "::error::main contains newer Seeker changes. Deploy from the latest main revision."
+            exit 1
+          fi
+          test -n "$HOSTINGER_API_TOKEN"
+          [[ "$HOSTINGER_SSH_USER" =~ ^[a-zA-Z0-9_-]+$ ]]
+          curl --fail --silent --show-error --max-time 20 -o /dev/null \
+            -H "Authorization: Bearer $HOSTINGER_API_TOKEN" \
+            "https://developers.hostinger.com/api/hosting/v1/accounts/$HOSTINGER_SSH_USER/websites/$SEEKER_DOMAIN/nodejs/builds/settings"
+          "$RUNNER_TEMP/hostinger" up "$RUNNER_TEMP/seeker-release" \
+            --domain "$SEEKER_DOMAIN" --source upload --type nodejs --app-type other \
+            --node-version 22 --root-directory . --build-script build --output-directory none \
+            --entry-file dist/hosted-server.js --package-manager npm --no-input --yes
+      - name: Verify the running release and signed-out access
+        run: node .github/scripts/verify-seeker-deployment.mjs "https://$SEEKER_DOMAIN" "$RELEASE_SHA"
