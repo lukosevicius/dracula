@@ -9,7 +9,7 @@ export default function SavedPage() {
   const { width } = useWindowDimensions();
   const columns = width >= 1100 ? 3 : width >= 700 ? 2 : 1;
   const padding = columns > 1 ? 32 : 18;
-  const cardWidth = columns > 1 ? (Math.min(width, 1264) - padding * 2 - (columns - 1) * 20) / columns : undefined;
+  const cardWidth = Math.max(0, (Math.min(width, 1264) - padding * 2 - (columns - 1) * 20) / columns);
   const rows = savedEventRows(events, columns, vilniusDate());
   return <FlatList key={columns} data={rows} keyExtractor={item => item.key} renderItem={({ item }) => item.type === 'heading' ? <View style={styles.dayHeading} accessibilityRole="header"><Text style={styles.dayTitle}>{item.title}</Text></View> : <View style={styles.cardRow}>{item.events.map(event => <EventCard key={event.id} event={event} width={cardWidth} />)}</View>} contentContainerStyle={{ width: '100%', maxWidth: 1264, alignSelf: 'center', paddingHorizontal: padding, paddingBottom: 32, gap: 18 }} ListHeaderComponent={<View style={styles.header}><Text style={styles.eyebrow}>TAVO RENGINIAI</Text><Text style={styles.title}>Išsaugoti</Text><Text style={styles.copy}>Renginiai, kuriuos norisi prisiminti.</Text>{error ? <Text accessibilityRole="alert" style={styles.error}>Nepavyko įkelti išsaugotų renginių. Bandykite dar kartą.</Text> : null}</View>} ListEmptyComponent={loading ? <Text style={styles.copy}>Kraunami išsaugoti renginiai...</Text> : !error ? <View style={styles.empty}><Text style={styles.emptyTitle}>Dar nėra išsaugotų renginių</Text><Text style={styles.copy}>Paspausk širdelę prie renginio, kad išsaugotum jį čia.</Text><Link href="/" style={styles.link}>Atrasti renginius →</Link></View> : null} />;
 }
