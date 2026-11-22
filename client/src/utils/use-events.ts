@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiUrl, fetchEvents, type DisplayEvent } from './events-api';
-import { displayText } from './event-format';
-import { selectedDates } from '../shared/event-date-filters';
+import { selectedDates, vilniusDate } from '../shared/event-date-filters';
+import { matchesEventSearch, normalizeEventSearch, transitionEvents } from './event-transition';
 
 type CachedEvents = { key: string; items: DisplayEvent[]; total: number; next: number | null };
 let cachedEvents: CachedEvents | null = null;
@@ -13,6 +13,7 @@ export function useEvents(filter: string, from: string, to: string, invalid: boo
   const [total, setTotal] = useState(() => initialCache.current?.total ?? 0);
   const [next, setNext] = useState<number | null>(() => initialCache.current?.next ?? null);
   const [loading, setLoading] = useState(Boolean(apiUrl) && !initialCache.current);
+  const [loadedKey, setLoadedKey] = useState(initialCache.current?.key ?? '');
   const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
   const generation = useRef(0);
@@ -28,21 +29,20 @@ export function useEvents(filter: string, from: string, to: string, invalid: boo
       initialCache.current = null;
       return () => { active.abort(); generation.current++; };
     }
-    setItems([]); setNext(null); setTotal(0); setError(false);
+    setNext(null); setError(false);
     if (invalid) { pending.current = false; setLoading(false); return () => active.abort(); }
     pending.current = true; setLoading(true);
     async function load() {
       if (!search && !freeOnly && filter !== 'upcoming') return fetchEvents(filter, from, to, 0, active.signal);
       const matches: DisplayEvent[] = [];
-      const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('lt');
-      const term = normalize(search);
+      const term = normalizeEventSearch(search);
       let offset: number | null = 0;
       let total = 0;
       const tomorrow = selectedDates('tomorrow', '', '')?.from;
       while (offset !== null) {
         const page = await fetchEvents(filter, from, to, offset, active.signal, 100);
         total = page.total;
-        matches.push(...page.items.filter(event => (!freeOnly || event.price_type === 'free') && (!search || normalize([event.title, event.venue ?? '', ...event.artists.map(artist => artist.name)].map(displayText).join(' ')).includes(term))));
+        matches.push(...page.items.filter(event => (!freeOnly || event.price_type === 'free') && matchesEventSearch(event, term)));
         if (page.nextOffset !== null && page.nextOffset <= offset) throw new Error('Invalid pagination');
         offset = page.nextOffset;
         // The API is ordered by displayed date. Load through tomorrow so both sections
@@ -54,14 +54,14 @@ export function useEvents(filter: string, from: string, to: string, invalid: boo
     load().then(page => {
       if (current !== generation.current) return;
       cachedEvents = { key, items: page.items, total: page.total, next: page.nextOffset };
-      setItems(page.items); setTotal(page.total); setNext(page.nextOffset);
+      setItems(page.items); setTotal(page.total); setNext(page.nextOffset); setLoadedKey(key);
     }).catch(() => { if (!active.signal.aborted && current === generation.current) setError(true); })
       .finally(() => { if (current === generation.current) { pending.current = false; setLoading(false); } });
     return () => { active.abort(); generation.current++; };
   }, [filter, from, to, invalid, search, freeOnly, retry, key]);
 
   function loadMore() {
-    if (!apiUrl || next == null || pending.current || invalid) return;
+    if (!apiUrl || loadedKey !== key || next == null || pending.current || invalid) return;
     const active = controller.current; if (!active) return;
     const current = generation.current; pending.current = true; setLoading(true); setError(false);
     fetchEvents(filter, from, to, next, active.signal).then(page => {
@@ -70,5 +70,9 @@ export function useEvents(filter: string, from: string, to: string, invalid: boo
     }).catch(() => { if (!active.signal.aborted && current === generation.current) setError(true); })
       .finally(() => { if (current === generation.current) { pending.current = false; setLoading(false); } });
   }
-  return { items, total, next, loading, error, loadMore, retry: () => setRetry(value => value + 1) };
+  const transitioning = loadedKey !== key;
+  const visibleItems = invalid ? [] : transitioning
+    ? transitionEvents(items, filter, from, to, vilniusDate(), search, freeOnly)
+    : items;
+  return { items: visibleItems, total, next: transitioning ? null : next, loading: loading || (transitioning && !invalid && !error), transitioning, error, loadMore, retry: () => setRetry(value => value + 1) };
 }
