@@ -59,6 +59,20 @@ test('ongoing events appear in the relevant day and are ranked by score across p
   } finally { db.close(); }
 });
 
+test('past public event details and images remain accessible while private events stay hidden', async () => {
+  const {db,pool}=fixture();
+  db.exec("INSERT INTO event_images VALUES(3,'past.jpg'),(4,'private.jpg')");
+  const catalogue=new CatalogueService({pool} as unknown as DatabaseService,loadConfig(env));
+  try {
+    const past=await catalogue.get(3,'2026-11-15');
+    assert.equal(past?.id,3);
+    assert.equal(past?.image_url,'https://api.example.com/v1/images/past.jpg');
+    assert.equal(await catalogue.hasImage('past.jpg','2026-11-15'),true);
+    assert.equal(await catalogue.get(4,'2026-11-15'),null);
+    assert.equal(await catalogue.hasImage('private.jpg','2026-11-15'),false);
+  } finally { db.close(); }
+});
+
 test('Nest public endpoints preserve the existing API contract', async () => {
   const {db,pool} = fixture();
   const directory = await mkdtemp(join(tmpdir(),'dracula-nest-'));

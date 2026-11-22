@@ -68,8 +68,8 @@ export class CatalogueService {
     const more = rows.length > limit; const items = await this.map(rows.slice(0, limit));
     return {items, next: more ? items.at(-1)!.id : null};
   }
-  async get(id: number, today = vilniusToday()) {
-    const [rows] = await this.db.pool.execute<EventRow[]>(`SELECT ${columns} ${joins} WHERE ${ready} AND e.id=? LIMIT 1`, [today,id]);
+  async get(id: number, _today = vilniusToday()) {
+    const [rows] = await this.db.pool.execute<EventRow[]>(`SELECT ${columns} ${joins} WHERE e.review_status='music' AND e.id=? LIMIT 1`, [id]);
     return (await this.map(rows))[0] ?? null;
   }
   async saved(userId: number) {
@@ -78,8 +78,8 @@ export class CatalogueService {
       WHERE saved.user_id=? AND e.review_status='music' ORDER BY e.interest_score DESC,saved.created_at DESC,e.id DESC`, [userId]);
     return this.map(rows);
   }
-  async hasImage(name: string, today = vilniusToday()) {
-    const [rows] = await this.db.pool.execute<RowDataPacket[]>(`SELECT e.id ${joins} WHERE ${ready} AND COALESCE(i.local_name,ei.local_name)=? LIMIT 1`, [today,name]);
+  async hasImage(name: string, _today = vilniusToday()) {
+    const [rows] = await this.db.pool.execute<RowDataPacket[]>(`SELECT e.id ${joins} WHERE e.review_status='music' AND COALESCE(i.local_name,ei.local_name)=? LIMIT 1`, [name]);
     return rows.length > 0;
   }
 }
