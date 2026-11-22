@@ -27,9 +27,8 @@ export function PullToRefresh() {
     function onStart(event: TouchEvent) {
       if (event.touches.length !== 1 || refreshing) return;
       const target = event.target;
-      if (target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"], [data-no-pull-refresh]')) return;
+      if (target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"], [data-no-pull-refresh], #dracula-bottom-nav')) return;
       const touch = event.touches[0];
-      if (touch.clientY > 140) return;
       const scroller = scrollContainer(target);
       canPull = !scroller || scroller.scrollTop <= 0;
       startY = canPull ? touch.clientY : null;
@@ -41,7 +40,7 @@ export function PullToRefresh() {
       if (startY === null || !canPull || event.touches.length !== 1) return;
       const delta = event.touches[0].clientY - startY;
       const deltaX = event.touches[0].clientX - (startX ?? event.touches[0].clientX);
-      if (Math.abs(deltaX) > Math.abs(delta)) {
+      if (Math.abs(deltaX) > 8 && Math.abs(deltaX) > Math.abs(delta)) {
         startY = null;
         currentPull = 0;
         setPull(0);
@@ -61,7 +60,7 @@ export function PullToRefresh() {
       if (currentPull >= threshold) {
         setRefreshing(true);
         setPull(threshold);
-        window.setTimeout(() => window.location.reload(), 160);
+        window.setTimeout(() => window.location.reload(), 400);
       } else {
         setPull(0);
       }
@@ -92,11 +91,9 @@ export function PullToRefresh() {
   }, [refreshing]);
 
   if (Platform.OS !== 'web' || (pull === 0 && !refreshing)) return null;
-  const ready = pull >= threshold || refreshing;
   const translateY = Math.max(-42, Math.min(0, pull * 0.45 - 42));
 
-  return <div className="dracula-pull-refresh-indicator" role="status" aria-live="polite" style={{ transform: `translate(-50%, ${translateY}px)` }}>
-    <span className="dracula-pull-refresh-icon" aria-hidden="true">{refreshing ? '↻' : ready ? '↑' : '↓'}</span>
-    <span>{refreshing ? 'Atnaujinama…' : ready ? 'Atleiskite, kad atnaujintume' : 'Traukite žemyn, kad atnaujintumėte'}</span>
+  return <div className="dracula-pull-refresh-indicator" role="status" aria-label={refreshing ? 'Atnaujinama' : 'Patraukite, kad atnaujintumėte'} style={{ transform: `translate(-50%, ${translateY}px)` }}>
+    <span className={`dracula-pull-refresh-icon${refreshing ? ' is-refreshing' : ''}`} aria-hidden="true">⚙️</span>
   </div>;
 }

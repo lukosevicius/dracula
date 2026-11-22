@@ -41,21 +41,17 @@ div:has(> input[aria-label="Ieškoti renginio, vietos arba atlikėjo"]:focus-vis
   left: 50%;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border: 1px solid #66515d;
-  border-radius: 22px;
-  background: #211922;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
   pointer-events: none;
-  box-shadow: 0 8px 22px #0008;
 }
 
 .dracula-pull-refresh-icon {
-  color: #f1c6c7;
-  font-size: 17px;
+  display: inline-block;
+  font-size: 23px;
   line-height: 1;
 }
+.dracula-pull-refresh-icon.is-refreshing { animation: dracula-refresh-spin 0.7s linear infinite; }
+@keyframes dracula-refresh-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .dracula-pull-refresh-icon.is-refreshing { animation-duration: 2s; } }
