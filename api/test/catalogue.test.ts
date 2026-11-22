@@ -38,7 +38,7 @@ test('catalogue retains public details, prices and accepted artists, with bounde
     const second=await catalogue.list(1,1,'2026-11-15');
     assert.deepEqual(second.items.map(event => event.id),[2]);
     assert.equal(second.next,null);
-    assert.equal(await catalogue.get(3,'2026-11-15'),null);
+    assert.equal((await catalogue.get(3,'2026-11-15'))?.id,3);
     assert.equal(await catalogue.get(4,'2026-11-15'),null);
     assert.equal(await catalogue.hasImage('5.jpg','2026-11-15'),true);
     assert.equal(await catalogue.hasImage('missing.jpg','2026-11-15'),false);
@@ -84,6 +84,7 @@ test('HTTP routes reject invalid pagination and never expose private events', as
   try {
     const url=`http://127.0.0.1:${app.address().port}`;
     assert.equal((await fetch(`${url}/v1/events?limit=101`)).status,400);
+    assert.equal((await fetch(`${url}/v1/events/3`)).status,200);
     assert.equal((await fetch(`${url}/v1/events/4`)).status,404);
     assert.equal((await fetch(`${url}/v1/events`,{method:'POST'})).status,405);
     assert.equal((await fetch(`${url}/v1/images/no.jpg`)).status,404);
