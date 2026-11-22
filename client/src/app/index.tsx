@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { DateFilter } from '../../../seeker/types';
 import { useEvents } from '../utils/use-events';
 import { EventCard } from '../components/event-card';
-import { eventGroupLabel, groupEventRows } from '../utils/event-groups';
+import { eventGroupLabel, groupEventRows, type EventListItem } from '../utils/event-groups';
+import type { DisplayEvent } from '../utils/events-api';
 import { selectedDates, vilniusDate } from '../shared/event-date-filters';
 
 const filters: { id: DateFilter; label: string }[] = [
@@ -20,16 +22,38 @@ function validDate(value: string) {
   return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
 }
 
+let homeState: { filtersOpen: boolean; freeOnly: boolean; search: string; expandedDates: string[]; filter: DateFilter; from: string; to: string; offset: number } | null = null;
+
 export default function Home() {
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [freeOnly, setFreeOnly] = useState(false);
-  const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const initial = useRef(homeState).current;
+  const [filtersOpen, setFiltersOpen] = useState(initial?.filtersOpen ?? false);
+  const [freeOnly, setFreeOnly] = useState(initial?.freeOnly ?? false);
+  const [search, setSearch] = useState(initial?.search ?? '');
+  const [debouncedSearch, setDebouncedSearch] = useState(initial?.search.trim() ?? '');
   useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300); return () => clearTimeout(timer); }, [search]);
-  const [expandedDates, setExpandedDates] = useState<string[]>([]);
-  const [filter, setFilter] = useState<DateFilter>('upcoming');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [expandedDates, setExpandedDates] = useState<string[]>(initial?.expandedDates ?? []);
+  const [filter, setFilter] = useState<DateFilter>(initial?.filter ?? 'upcoming');
+  const [from, setFrom] = useState(initial?.from ?? '');
+  const [to, setTo] = useState(initial?.to ?? '');
+  const focused = useRef(false);
+  const list = useRef<FlatList<EventListItem<DisplayEvent>>>(null);
+  const scrollOffset = useRef(initial?.offset ?? 0);
+  const restoreOffset = useRef(initial?.offset ?? 0);
+  const viewportHeight = useRef(0);
+  const contentHeight = useRef(0);
+  function restoreScroll() {
+    if (!focused.current || !restoreOffset.current || !viewportHeight.current || contentHeight.current - viewportHeight.current < restoreOffset.current - 1) return;
+    const offset = restoreOffset.current;
+    requestAnimationFrame(() => { list.current?.scrollToOffset({offset,animated:false}); restoreOffset.current=0; });
+  }
+  useFocusEffect(useCallback(() => {
+    focused.current=true;
+    restoreScroll();
+    return () => { focused.current=false; };
+  }, []));
+  useEffect(() => {
+    if (focused.current) homeState = { filtersOpen, freeOnly, search, expandedDates, filter, from, to, offset: scrollOffset.current };
+  }, [filtersOpen, freeOnly, search, expandedDates, filter, from, to]);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const columns = width >= 1100 ? 3 : width >= 700 ? 2 : 1;
@@ -49,7 +73,7 @@ export default function Home() {
   const limits: Record<string, number> = {};
   if (filter === 'upcoming') for (const day of [today, tomorrow]) if (!expandedDates.includes(day)) limits[day] = limit;
   const rows = groupEventRows(displayed, columns, rangeStart, limits);
-  return <FlatList key={columns} data={rows} keyExtractor={item => item.key} renderItem={({ item }) => {
+  return <FlatList ref={list} key={columns} data={rows} onLayout={(event: LayoutChangeEvent) => { viewportHeight.current=event.nativeEvent.layout.height; restoreScroll(); }} onContentSizeChange={(_width,height) => { contentHeight.current=height; restoreScroll(); }} onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) => { if (!focused.current || restoreOffset.current) return; scrollOffset.current=event.nativeEvent.contentOffset.y; if(homeState) homeState.offset=scrollOffset.current; }} scrollEventThrottle={100} keyExtractor={item => item.key} renderItem={({ item }) => {
     if (item.type === 'heading') {
       const label = eventGroupLabel(item.date, today);
       return <View style={styles.dayHeading} accessibilityRole="header"><Text style={styles.dayTitle}>{label.title}</Text>{label.date ? <Text style={styles.dayDate}>{label.date}</Text> : null}</View>;

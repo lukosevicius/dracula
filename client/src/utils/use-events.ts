@@ -3,11 +3,16 @@ import { apiUrl, fetchEvents, type DisplayEvent } from './events-api';
 import { displayText } from './event-format';
 import { selectedDates } from '../shared/event-date-filters';
 
+type CachedEvents = { key: string; items: DisplayEvent[]; total: number; next: number | null };
+let cachedEvents: CachedEvents | null = null;
+
 export function useEvents(filter: string, from: string, to: string, invalid: boolean, search: string, freeOnly: boolean) {
-  const [items, setItems] = useState<DisplayEvent[]>([]);
-  const [total, setTotal] = useState(0);
-  const [next, setNext] = useState<number | null>(null);
-  const [loading, setLoading] = useState(Boolean(apiUrl));
+  const key = JSON.stringify([filter, from, to, invalid, search, freeOnly]);
+  const initialCache = useRef(cachedEvents?.key === key ? cachedEvents : null);
+  const [items, setItems] = useState<DisplayEvent[]>(() => initialCache.current?.items ?? []);
+  const [total, setTotal] = useState(() => initialCache.current?.total ?? 0);
+  const [next, setNext] = useState<number | null>(() => initialCache.current?.next ?? null);
+  const [loading, setLoading] = useState(Boolean(apiUrl) && !initialCache.current);
   const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
   const generation = useRef(0);
@@ -19,6 +24,10 @@ export function useEvents(filter: string, from: string, to: string, invalid: boo
     const current = ++generation.current;
     controller.current?.abort();
     const active = new AbortController(); controller.current = active;
+    if (initialCache.current?.key === key) {
+      initialCache.current = null;
+      return () => { active.abort(); generation.current++; };
+    }
     setItems([]); setNext(null); setTotal(0); setError(false);
     if (invalid) { pending.current = false; setLoading(false); return () => active.abort(); }
     pending.current = true; setLoading(true);
@@ -44,11 +53,12 @@ export function useEvents(filter: string, from: string, to: string, invalid: boo
     }
     load().then(page => {
       if (current !== generation.current) return;
+      cachedEvents = { key, items: page.items, total: page.total, next: page.nextOffset };
       setItems(page.items); setTotal(page.total); setNext(page.nextOffset);
     }).catch(() => { if (!active.signal.aborted && current === generation.current) setError(true); })
       .finally(() => { if (current === generation.current) { pending.current = false; setLoading(false); } });
     return () => { active.abort(); generation.current++; };
-  }, [filter, from, to, invalid, search, freeOnly, retry]);
+  }, [filter, from, to, invalid, search, freeOnly, retry, key]);
 
   function loadMore() {
     if (!apiUrl || next == null || pending.current || invalid) return;
@@ -56,7 +66,7 @@ export function useEvents(filter: string, from: string, to: string, invalid: boo
     const current = generation.current; pending.current = true; setLoading(true); setError(false);
     fetchEvents(filter, from, to, next, active.signal).then(page => {
       if (current !== generation.current) return;
-      setItems(previous => [...previous, ...page.items]); setTotal(page.total); setNext(page.nextOffset);
+      setItems(previous => { const merged = [...previous, ...page.items]; cachedEvents = { key, items: merged, total: page.total, next: page.nextOffset }; return merged; }); setTotal(page.total); setNext(page.nextOffset);
     }).catch(() => { if (!active.signal.aborted && current === generation.current) setError(true); })
       .finally(() => { if (current === generation.current) { pending.current = false; setLoading(false); } });
   }
