@@ -17,7 +17,7 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, revie
   const date = row.event_date ? formatDate(row.event_date) : 'Date unknown';
   const past = !!row.event_date && (row.event_end_date || row.event_date) < today;
   const prepared = row.review_status === 'music' && !past;
-  const time = row.event_time?.slice(0, 5);
+  const time = row.event_time?.trim().slice(0, 5);
   const price = priceInfo(row);
   return (
     <article className={`event-item ${open ? 'event-open' : ''} ${selected ? 'event-selected' : ''}`}>
@@ -33,9 +33,10 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, revie
             <span>
               {row.event_date && row.event_date.slice(0, 4) !== today.slice(0, 4) && <span>{row.event_date.slice(0, 4)}</span>}
               {time && <span title="Event time"><Icon name="clock" size={13} /> {time}</span>}
+              {!time && <span className="missing-detail"><Icon name="clock" size={13} /> Time unknown</span>}
               {row.venue && <span title="Venue"><Icon name="pin" size={13} /> {row.venue}</span>}
               {(price.text || price.type === 'free' || price.type === 'paid') && <span title="Price"><Icon name="ticket" size={13} /> {price.text || (price.type === 'free' ? 'Free' : 'Paid')}</span>}
-              {!time && !row.venue && !price.text && price.type === 'unknown' && <span>Details incomplete</span>}
+              {price.type === 'unknown' && <span className="missing-detail"><Icon name="ticket" size={13} /> Price unknown</span>}
               {showSource && <span>{sourceNames[row.source_key] ?? row.source_key}</span>}
             </span>
           </button>

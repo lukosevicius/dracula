@@ -56,6 +56,7 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
   const [data, setData] = useState<EventPage | null>(null);
   const [query, setQuery] = useState('');
   const [price, setPrice] = useState('all');
+  const [time, setTime] = useState('all');
   const [sort, setSort] = useState<'date' | 'score-asc' | 'score-desc'>('date');
   const [when, setWhen] = useState<DateFilter>('upcoming');
   const [review, setReview] = useState('all');
@@ -84,7 +85,7 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
   const today = dateFormatter.format(new Date());
   const invalid = when === 'custom' && (!from || (!!to && to < from));
   const extraCount = Number(readiness !== 'all') + Number(assistantReview !== 'all') + Number(sourceFilter !== defaultSource);
-  const isFiltered = Boolean(query || when !== 'upcoming' || price !== 'all' || review !== 'all' || extraCount || savedOnly || sort !== 'date');
+  const isFiltered = Boolean(query || when !== 'upcoming' || price !== 'all' || time !== 'all' || review !== 'all' || extraCount || savedOnly || sort !== 'date');
   const sourceSavedEvents = savedEvents.filter(event => all || event.source_key === source);
 
   const load = useCallback(async (silent = false) => {
@@ -95,7 +96,7 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
       return;
     }
     if (!silent) setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: String(pageSize), review, readiness, assistantReview, search: query, price, source: sourceFilter, when, today, sort });
+    const params = new URLSearchParams({ page: String(page), limit: String(pageSize), review, readiness, assistantReview, search: query, price, time, source: sourceFilter, when, today, sort });
     const range = dateRange(when, from, to, today);
     if (range) {
       params.set('from', range.from);
@@ -112,7 +113,7 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
     } finally {
       if (id === requestId.current && !silent) setLoading(false);
     }
-  }, [page, review, readiness, assistantReview, query, price, sourceFilter, when, from, to, today, invalid, sort]);
+  }, [page, review, readiness, assistantReview, query, price, time, sourceFilter, when, from, to, today, invalid, sort]);
   const loadCurrent = useRef(load);
 
   useEffect(() => {
@@ -140,6 +141,7 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
     setQuery('');
     setWhen('upcoming');
     setPrice('all');
+    setTime('all');
     setSort('date');
     setReview('all');
     setReadiness('all');
@@ -252,6 +254,7 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
     return matchesWhen
       && (!query || plainText(row.title).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
       && (price === 'all' || savedPrice.type === price)
+      && (time === 'all' || (time === 'known' ? Boolean(row.event_time?.trim()) : !row.event_time?.trim()))
       && (review === 'all' || row.review_status === review)
       && (readiness === 'all' || (readiness === 'ready' ? ready : !ready))
       && (assistantReview !== 'pending' || (!!row.assistant_reviewed_at && !row.assistant_confirmed_at))
@@ -287,7 +290,10 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
                   {dateOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 </select></label>
                 <label className="field">Price <select value={price} onChange={event => updateFilters(setPrice, event.target.value)}>
-                  <option value="all">All prices</option><option value="free">Free</option><option value="paid">Paid</option><option value="unknown">Unknown</option>
+                  <option value="all">All prices</option><option value="free">Free</option><option value="paid">Paid</option><option value="unknown">Price unknown</option>
+                </select></label>
+                <label className="field">Time <select value={time} onChange={event => updateFilters(setTime, event.target.value)}>
+                  <option value="all">All times</option><option value="known">Time known</option><option value="unknown">Time unknown</option>
                 </select></label>
                 <label className="field">Review <select value={review} onChange={event => updateFilters(setReview, event.target.value)}>
                   <option value="all">All statuses</option>{reviews.map(status => <option key={status} value={status}>{labels[status]}</option>)}

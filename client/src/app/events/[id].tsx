@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Image } from 'expo-image';
 import { Link, Stack, useLocalSearchParams } from 'expo-router';
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SaveButton } from '../../components/save-button';
 import { CalendarButton } from '../../components/calendar-button';
 import { displayDate, displayText, eventSource } from '../../utils/event-format';
 import { fetchEvent, type DisplayEvent } from '../../utils/events-api';
+import { hasCalendarTime } from '../../utils/calendar';
 
 export default function EventPage() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -56,7 +57,8 @@ export default function EventPage() {
       <View style={[styles.summary, desktop && styles.summaryDesktop]}>
         <Text style={styles.date}>{date}</Text>
         <Text style={[styles.title, desktop && styles.titleDesktop]}>{title}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}><CalendarButton event={event} /><SaveButton event={event} /></View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}><CalendarButton event={event} /><SaveButton event={event} /></View>
+        {Platform.OS === 'web' && event.event_date && hasCalendarTime(event.event_time) ? <Text style={styles.calendarNote}>Pabaigos laikas nežinomas — patikrinkite jį kalendoriuje.</Text> : null}
         {event.venue ? <View style={styles.section}><Text style={styles.label}>VIETA</Text><Text style={styles.value}>{displayText(event.venue)}</Text></View> : null}
         {event.artists.length ? <View style={styles.section}><Text style={styles.label}>ATLIKĖJAI</Text>{event.artists.map(artist => <Link key={artist.mbid} href={{pathname:'/artists/[id]',params:{id:artist.mbid}}} style={styles.link}>{displayText(artist.name)} →</Link>)}</View> : null}
         {desktop ? links : null}
@@ -81,6 +83,7 @@ const styles = StyleSheet.create({
   placeholder: { alignItems: 'center', justifyContent: 'center' },
   placeholderText: { color: '#80616a', fontWeight: '900', letterSpacing: 4, fontSize: 20 },
   date: { color: '#ee969b', fontSize: 14, fontWeight: '700' },
+  calendarNote: { color: '#b9b0bd', fontSize: 13, lineHeight: 19 },
   title: { color: '#fff', fontSize: 30, lineHeight: 37, fontWeight: '800' },
   section: { gap: 7, paddingTop: 8 },
   label: { color: '#ed7d83', fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { calendarFile } from '../src/utils/calendar';
+import { calendarFile, hasCalendarTime } from '../src/utils/calendar';
 import type { DisplayEvent } from '../src/utils/events-api';
 
 const event: DisplayEvent = {
@@ -23,6 +23,10 @@ test('calendar export includes useful event details and escapes calendar text', 
 });
 
 test('unknown time remains all-day and unsafe URLs are excluded', () => {
+  assert.equal(hasCalendarTime(null),false);
+  assert.equal(hasCalendarTime(''),false);
+  assert.equal(hasCalendarTime('25:00'),false);
+  assert.equal(hasCalendarTime('19:30'),true);
   const file = calendarFile({...event, event_time:null, event_end_date:'2026-11-23', source_url:'javascript:alert(1)', ticket_url:'javascript:alert(2)', description:'', artists:[], price_text:null, price_type:'free'})!;
   assert.match(file, /DTSTART;VALUE=DATE:20261121/);
   assert.match(file, /DTEND;VALUE=DATE:20261124/);

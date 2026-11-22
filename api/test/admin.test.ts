@@ -38,6 +38,29 @@ function setup() {
   return {db,admin:createAdmin(pool,token),catalogue:createCatalogue(pool,'https://api.example.com')};
 }
 
+test('event filters find missing times and unclassified prices before pagination', async () => {
+  const {db,admin}=setup();
+  try {
+    db.exec(`INSERT INTO events(id,review_status,title,event_date,event_time,manual_fields) VALUES
+      (2,'music','No time','2026-11-20','   ','[]'),
+      (3,'music','Timed','2026-11-20','19:00','[]'),
+      (4,'music','Legacy paid','2026-11-20',NULL,'[]');
+      INSERT INTO event_sources(id,event_id,source_key,source_id,source_url) VALUES
+      (2,2,'vilnius-events','2','https://example.com'),
+      (3,3,'avilys','3','https://example.com'),
+      (4,4,'avilys','4','https://example.com');
+      INSERT INTO event_prices(event_id,price_type,price_text) VALUES(2,'free','Nemokama'),(3,'paid','10 €'),(4,'unknown','Avilys: paid (verify)');`);
+    const list=(params: Record<string,string>)=>admin.listEvents(new URLSearchParams({when:'all',...params}));
+    const first=await list({time:'unknown',limit:'1',page:'1'});
+    assert.equal(first.total,3); assert.equal(first.events.length,1);
+    assert.equal((await list({time:'known'})).events[0].id,3);
+    assert.deepEqual((await list({time:'unknown',price:'unknown'})).events.map(row=>row.id),[1]);
+    assert.deepEqual((await list({price:'paid'})).events.map(row=>row.id).sort(),[3,4]);
+    assert.equal((await list({price:'unknown'})).total,1);
+    await assert.rejects(list({time:'invalid'}),{status:400});
+  } finally { db.close(); }
+});
+
 test('admin edits update both representations and roll back on error', async () => {
   const {db,admin,catalogue}=setup();
   try {

@@ -51,6 +51,13 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
       assert.equal((await nestPost('details',{review_status:'music',event_date:'2099-11-20',event_end_date:'2099-11-21',venue:'Venue'})).status,200);
       assert.equal((await nestPost('artist',{mbid,decision:'accepted'})).status,200);
       assert.equal((await nestPost('price',{price_type:'free',price_text:'Nemokama'})).status,200);
+      const adminList=async (query: string) => (await fetch(`${nestRoot}/v1/admin/events?when=all&${query}`,{headers})).json();
+      assert.equal((await adminList('time=unknown&price=free')).total,1);
+      assert.equal((await adminList('time=known')).total,0);
+      assert.equal((await adminList('price=unknown')).total,0);
+      await pool.execute("UPDATE events SET event_time='19:00' WHERE id=1");
+      assert.equal((await adminList('time=known')).total,1);
+      await pool.execute('UPDATE events SET event_time=NULL WHERE id=1');
       const filtered=await fetch(`${nestRoot}/v1/events?filter=custom&from=2099-11-20&to=2099-11-21&offset=0&limit=1`);
       assert.equal(filtered.status,200);const page=await filtered.json();
       assert.equal(page.total,1);assert.equal(page.items[0].venue,'Venue');assert.equal(page.items[0].price_type,'free');assert.equal(page.items[0].artists[0].mbid,mbid);

@@ -21,6 +21,7 @@ function foldLine(line: string) {
 }
 
 function compactDate(value: string) { return value.replace(/-/g, ''); }
+export function hasCalendarTime(time: string | null | undefined) { return typeof time === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(time); }
 
 function nextDate(value: string) {
   const date = new Date(`${value}T00:00:00Z`);
@@ -45,7 +46,7 @@ function vilniusUtc(date: string, time: string) {
 
 export function calendarFile(event: DisplayEvent, now = new Date()) {
   if (!event.event_date) return null;
-  const time = event.event_time && /^([01]\d|2[0-3]):[0-5]\d$/.test(event.event_time) ? event.event_time : null;
+  const time = hasCalendarTime(event.event_time) ? event.event_time : null;
   const source = eventSource(event.about_url, event.source_url);
   const tickets = eventSource(null, event.ticket_url || '');
   const eventUrl = `https://app.dracula.lt/events/${event.id}`;
