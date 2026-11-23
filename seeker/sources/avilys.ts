@@ -1,4 +1,4 @@
-/** Read-only Avilys search adapter. Timestamps are kept verbatim until their timezone is verified. */
+/** Read-only Avilys search adapter. Preserve source timestamps for local-time import. */
 export type AvilysEvent = { id:number; title:string; startTime:string|null; endTime:string|null; venueName:string|null; city:string|null; description:string|null; sourceUrl:string|null; imageUrl:string|null; ticketUrl:string|null; free:boolean|null; priceFrom:string|number|null; priceTo:string|number|null; categories:{id:number;name:string}[] };
 export type AvilysPage = {data:AvilysEvent[];page:number;pageSize:number;total:number};
 

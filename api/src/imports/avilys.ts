@@ -8,6 +8,8 @@ const fail=(status: number,message: string)=>Object.assign(new Error(message),{s
 const esc=(value: string | undefined)=>String(value||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
 const url=(value: string | undefined)=>{try{const u=new URL(value ?? '');return ['http:','https:'].includes(u.protocol)&&!u.username&&!u.password?u.href:null;}catch{return null;}};
 const date=(value: string | undefined)=>{if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}T/.test(value))return null;const day=value.slice(0,10),parsed=new Date(`${day}T00:00:00Z`);return !Number.isNaN(parsed.valueOf())&&parsed.toISOString().slice(0,10)===day?day:null;};
+// Avilys supplies Vilnius wall time, even when the timestamp ends in Z.
+const time=(value: string | undefined)=>{if(!date(value))return null;const match=/^\d{4}-\d{2}-\d{2}T((?:[01]\d|2[0-3]):[0-5]\d)(?::[0-5]\d(?:\.\d{1,9})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)?$/.exec(value!);return match?.[1]??null;};
 
 /** Store unreviewed candidates; preserve editorial changes on subsequent imports. */
 export async function importAvilysPage(pool: Pool, data: unknown){
@@ -33,8 +35,7 @@ export async function importAvilysPage(pool: Pool, data: unknown){
       const [links]=await conn.execute<RowDataPacket[]>("SELECT event_id FROM event_sources WHERE source_key='avilys' AND source_id=? FOR UPDATE",[String(e.id)]);
       const sourceUrl=`https://avilys.app/event/${e.id}`, description=esc(e.description), metadata=JSON.stringify(e), original=url(e.sourceUrl);
       if(!links.length){
-        // The source timestamps have appeared to contain local wall times labelled UTC. Keep time unknown until reviewed.
-        const [insert]=await conn.execute<ResultSetHeader>('INSERT INTO events(title,event_date,event_end_date,event_time,venue,ticket_url,city,review_status,manual_fields,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[e.title.trim(),date(e.startTime),null,null,typeof e.venueName==='string'?e.venueName.slice(0,300):null,url(e.ticketUrl),city,'unsure','[]',now,now]);
+        const [insert]=await conn.execute<ResultSetHeader>('INSERT INTO events(title,event_date,event_end_date,event_time,venue,ticket_url,city,review_status,manual_fields,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[e.title.trim(),date(e.startTime),null,time(e.startTime),typeof e.venueName==='string'?e.venueName.slice(0,300):null,url(e.ticketUrl),city,'unsure','[]',now,now]);
         await conn.execute('INSERT INTO event_sources(event_id,source_key,source_id,source_url,content_html,source_data_json,last_checked_at,about_url) VALUES(?,?,?,?,?,?,?,?)',[insert.insertId,'avilys',String(e.id),sourceUrl,description,metadata,now,original]);
         const from=typeof e.priceFrom==='number'||typeof e.priceFrom==='string'?Number(e.priceFrom):NaN;
         const to=typeof e.priceTo==='number'||typeof e.priceTo==='string'?Number(e.priceTo):NaN;
@@ -46,6 +47,13 @@ export async function importAvilysPage(pool: Pool, data: unknown){
       }else{
         // Do not overwrite reviewed event fields or source association on refresh.
         await conn.execute('UPDATE events SET city=? WHERE id=? AND city IS NULL',[city,links[0].event_id]);
+        const sourceTime=time(e.startTime),sourceDate=date(e.startTime);
+        if(sourceTime && sourceDate){
+          const [rows]=await conn.execute<RowDataPacket[]>('SELECT event_time,manual_fields FROM events WHERE id=? FOR UPDATE',[links[0].event_id]);
+          let manual:unknown;
+          try{manual=JSON.parse(rows[0]?.manual_fields);}catch{/* Invalid metadata must not unlock a field. */}
+          if(rows[0]?.event_time==null && Array.isArray(manual) && !manual.includes('event_time'))await conn.execute('UPDATE events SET event_time=?,updated_at=? WHERE id=? AND event_time IS NULL AND event_date=?',[sourceTime,now,links[0].event_id,sourceDate]);
+        }
         await conn.execute("UPDATE event_sources SET content_html=?,source_data_json=?,last_checked_at=?,about_url=? WHERE source_key='avilys' AND source_id=?",[description,metadata,now,original,String(e.id)]);
         updated++;
       }
