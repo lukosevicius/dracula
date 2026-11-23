@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client';
 import { useEffect } from 'react';
 import AiEvaluation from './ai-evaluation';
 import ArtistPage from './artist';
+import EventPage from './event';
 import ArtistsPage from './artists';
 import EventsPage from './events';
 import DuplicatesPage from './duplicates';
@@ -31,6 +32,7 @@ function StartupPage() {
 const page = path === '/' ? <StartupPage />
   : path === '/artists.html' ? <ArtistsPage />
   : path === '/artist.html' ? <ArtistPage mbid={new URLSearchParams(window.location.search).get('id') || ''} />
+  : path === '/event.html' ? <EventPage id={new URLSearchParams(window.location.search).get('id') || ''} />
   : path === '/settings.html' ? <SettingsPage />
   : path === '/ai-evaluation.html' ? <AiEvaluation />
   : path === '/all-events.html' ? <EventsPage all />

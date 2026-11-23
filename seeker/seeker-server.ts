@@ -8,7 +8,7 @@ import type { createGoogleSignIn } from './google-sign-in.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const clientDir = join(root, 'client', 'dist');
-const dashboardPages = new Set(['/', '/artists.html', '/artist.html', '/vilnius-events.html', '/avilys.html', '/all-events.html', '/possible-duplicates.html', '/ai-evaluation.html', '/saved-events.html', '/settings.html']);
+const dashboardPages = new Set(['/', '/artists.html', '/artist.html', '/event.html', '/vilnius-events.html', '/avilys.html', '/all-events.html', '/possible-duplicates.html', '/ai-evaluation.html', '/saved-events.html', '/settings.html']);
 const installAssets = new Set(['/manifest.webmanifest', '/icons/icon-180.png', '/icons/icon-192.png', '/icons/icon-512.png']);
 const types: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -18,7 +18,7 @@ const types: Record<string, string> = {
 
 type HostedAccess = { origin: string; signIn: ReturnType<typeof createGoogleSignIn>; releaseSha?: string };
 
-const signInPage = (denied: boolean) => `<!doctype html>
+const signInPage = (denied: boolean, eventId: string | null) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#100f15"><link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/icon-180.png"><link rel="icon" type="image/png" href="/icons/icon-192.png">
@@ -26,7 +26,7 @@ const signInPage = (denied: boolean) => `<!doctype html>
 body{margin:0;min-height:100vh;display:grid;place-items:center;background:#100f15;color:#faf8ff;font:16px system-ui}
 main{max-width:28rem;padding:2rem} a{display:inline-block;padding:.75rem 1rem;border-radius:.5rem;background:#faf8ff;color:#100f15;font-weight:600}
 </style></head><body><main><h1>Seeker</h1>${denied ? '<p>Sign-in failed. Try again with the approved Google account.</p>' : ''}
-<a href="/auth/google">Sign in with Google</a></main></body></html>`;
+<a href="/auth/google${eventId ? `?event=${eventId}` : ''}">Sign in with Google</a></main></body></html>`;
 
 export function createSeekerServer(handle: ReturnType<typeof createCentralDashboard>, port: number, hosted?: HostedAccess) {
   const hosts = hosted ? [new URL(hosted.origin).host] : [`127.0.0.1:${port}`, `localhost:${port}`];
@@ -60,7 +60,8 @@ export function createSeekerServer(handle: ReturnType<typeof createCentralDashbo
       if (!hosted.signIn.isSignedIn(req)) {
         if (req.method === 'GET' && dashboardPages.has(url.pathname)) {
           res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-          return res.end(signInPage(url.searchParams.get('sign-in') === 'denied'));
+          const eventId = url.pathname === '/event.html' && /^[1-9]\d{0,11}$/.test(url.searchParams.get('id') || '') ? url.searchParams.get('id') : null;
+          return res.end(signInPage(url.searchParams.get('sign-in') === 'denied', eventId));
         }
         res.writeHead(401, { 'content-type': 'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ error: 'Sign in to Seeker. Reload this page to continue.' }));

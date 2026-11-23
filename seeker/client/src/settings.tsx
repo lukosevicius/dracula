@@ -15,6 +15,8 @@ export const startPages = [
 export type StartPage = typeof startPages[number]['path'];
 export const defaultStartPage: StartPage = '/avilys.html';
 
+const bookmarklet = "javascript:(()=>{const m=location.hostname==='app.dracula.lt'&&location.pathname.match(/^\\/events\\/([1-9]\\d{0,11})\\/?$/);if(m)window.open('https://seeker.dracula.lt/event.html?id='+m[1],'_blank','noopener');else alert('Open an event on app.dracula.lt first.');})()";
+
 export function validStartPage(value: unknown): value is StartPage {
   return startPages.some(page => page.path === value);
 }
@@ -67,6 +69,16 @@ export default function SettingsPage() {
         <p className="muted">The default startup page is Avilys.</p>
         <button className="primary-button" type="button" disabled={loading || saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save settings'}</button>
         <Feedback message={message} error={error} />
+      </div>
+    </section>
+    <section className="panel settings-panel">
+      <div className="panel-heading"><h2>Open Dracula events in Seeker</h2></div>
+      <div className="panel-body settings-body">
+        <p>Create a bookmark named “Open in Seeker” and paste this code into its URL field. Then open a Dracula event and select the bookmark.</p>
+        <label className="field">Bookmark URL
+          <textarea readOnly rows={4} value={bookmarklet} onFocus={event => event.currentTarget.select()} />
+        </label>
+        <p className="muted">The event opens in a new tab. Sign in to Seeker if prompted.</p>
       </div>
     </section>
   </>;

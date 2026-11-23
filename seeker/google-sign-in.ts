@@ -84,7 +84,9 @@ export function createGoogleSignIn(origin: string, env: NodeJS.ProcessEnv, reque
       if (req.method === 'GET' && url.pathname === '/auth/google') {
         const state = randomToken(), nonce = randomToken(), verifier = randomToken();
         const proof = createHash('sha256').update(verifier).digest('base64url');
-        const ticket = jwt.sign({ state, nonce, verifier }, secret, { issuer: origin, audience: 'seeker-challenge', expiresIn: challengeSeconds });
+        const eventId = url.searchParams.get('event');
+        const returnTo = eventId && /^[1-9]\d{0,11}$/.test(eventId) ? `/event.html?id=${eventId}` : '/';
+        const ticket = jwt.sign({ state, nonce, verifier, returnTo }, secret, { issuer: origin, audience: 'seeker-challenge', expiresIn: challengeSeconds });
         const google = new URL('/o/oauth2/v2/auth', googleIssuer);
         google.search = new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri, response_type: 'code', scope: 'openid email', state, nonce, code_challenge: proof, code_challenge_method: 'S256', prompt: 'select_account' }).toString();
         res.writeHead(303, { location: google.href, 'set-cookie': cookie(challengeCookie, ticket, challengeSeconds) }).end();
@@ -107,7 +109,8 @@ export function createGoogleSignIn(origin: string, env: NodeJS.ProcessEnv, reque
         });
         if (!response.ok || !await verifyIdentity((await response.json()).id_token, challenge.nonce)) throw new Error('Sign-in denied.');
         const session = jwt.sign({}, secret, { issuer: origin, subject: email, audience: 'seeker-session', expiresIn: sessionSeconds });
-        res.writeHead(303, { location: '/', 'set-cookie': [cookie(challengeCookie, '', 0), cookie(sessionCookie, session, sessionSeconds)] }).end();
+        const destination = typeof challenge.returnTo === 'string' && /^\/event\.html\?id=[1-9]\d{0,11}$/.test(challenge.returnTo) ? challenge.returnTo : '/';
+        res.writeHead(303, { location: destination, 'set-cookie': [cookie(challengeCookie, '', 0), cookie(sessionCookie, session, sessionSeconds)] }).end();
       } catch {
         res.writeHead(303, { location: '/?sign-in=denied' }).end();
       }

@@ -77,14 +77,16 @@ test('hosted sign-in requires the approved Google identity and protects dashboar
   assert.equal((await send('/api/events')).status, 401);
   const artistPath = '/artist.html?id=12345678-1234-1234-1234-123456789abc';
   assert.match((await send(artistPath)).body, /Sign in with Google/);
+  assert.match((await send('/event.html?id=172')).body, /href="\/auth\/google\?event=172"/);
+  assert.doesNotMatch((await send('/event.html?id=1%22bad')).body, /event=/);
   assert.equal((await send('/api/artists/12345678-1234-1234-1234-123456789abc')).status, 401);
   assert.equal((await send('/assets/index.js')).status, 401);
   assert.equal((await send('//')).status, 400);
   assert.equal((await send('/', 'GET', { host: 'temporary.hostingersite.com' })).status, 403);
   assert.equal(dashboardRequests, 0);
 
-  async function attempt(overrides: Record<string, unknown> = {}, invalidState = false) {
-    const start = await send('/auth/google');
+  async function attempt(overrides: Record<string, unknown> = {}, invalidState = false, path = '/auth/google') {
+    const start = await send(path);
     const redirect = new URL(String(start.headers.get('location')));
     assert.equal(redirect.host, 'accounts.google.com');
     expectedProof = redirect.searchParams.get('code_challenge')!;
@@ -100,6 +102,8 @@ test('hosted sign-in requires the approved Google identity and protects dashboar
   }
   const callback = await attempt();
   assert.equal(callback.headers.get('location'), '/');
+  assert.equal((await attempt({}, false, '/auth/google?event=172')).headers.get('location'), '/event.html?id=172');
+  assert.equal((await attempt({}, false, '/auth/google?event=1%2f%2fevil')).headers.get('location'), '/');
   assert.equal(callback.headers.get('referrer-policy'), 'no-referrer');
   const session = callback.headers.get('set-cookie')![1];
   assert.match(session, /HttpOnly; Secure; SameSite=Lax/);

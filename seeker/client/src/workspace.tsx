@@ -51,7 +51,7 @@ const navigation = [
 ] as const;
 
 export function Workspace({ children }: { children: ReactNode }) {
-  const path = window.location.pathname === '/artist.html' ? '/artists.html' : window.location.pathname;
+  const path = window.location.pathname === '/artist.html' ? '/artists.html' : window.location.pathname === '/event.html' ? '/all-events.html' : window.location.pathname;
   const current = navigation.flatMap(group => [...group.items]).find(item => item.path === path);
   const hosted = document.body.hasAttribute('data-hosted');
   const [menuOpen, setMenuOpen] = useState(false);
