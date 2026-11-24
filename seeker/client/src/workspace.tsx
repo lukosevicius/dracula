@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
+import { api } from './data';
+
 const logo = new URL('./assets/favicon.png', import.meta.url).href;
 
 const paths = {
@@ -38,6 +40,8 @@ const navigation = [
   ] },
   { label: 'Event sources', items: [
     { path: '/all-events.html', name: 'All', icon: 'calendar' },
+    { path: '/needs-attention.html', name: 'Needs attention', icon: 'filter' },
+    { path: '/not-music.html', name: 'Not music', icon: 'calendar' },
     { path: '/avilys.html', name: 'Avilys', icon: 'avilys' },
     { path: '/vilnius-events.html', name: 'Vilnius Events', icon: 'calendar' },
     { path: '/possible-duplicates.html', name: 'Possible duplicates', icon: 'search' },
@@ -51,6 +55,17 @@ const navigation = [
 ] as const;
 
 export function Workspace({ children }: { children: ReactNode }) {
+  const [attentionCount, setAttentionCount] = useState(0);
+  useEffect(() => {
+    let disposed = false;
+    const load = () => { void api<{ count: number }>('/api/workflow/attention-count').then(result => {
+      if (!disposed) setAttentionCount(result.count);
+    }).catch(() => undefined); };
+    load();
+    window.addEventListener('seeker:attention-changed', load);
+    const timer = window.setInterval(() => { if (!document.hidden) load(); }, 15000);
+    return () => { disposed = true; window.clearInterval(timer); window.removeEventListener('seeker:attention-changed', load); };
+  }, []);
   const path = window.location.pathname === '/artist.html' ? '/artists.html' : window.location.pathname === '/event.html' ? '/all-events.html' : window.location.pathname;
   const current = navigation.flatMap(group => [...group.items]).find(item => item.path === path);
   const hosted = document.body.hasAttribute('data-hosted');
@@ -101,7 +116,7 @@ export function Workspace({ children }: { children: ReactNode }) {
                 <p>{group.label}</p>
                 {group.items.map(item => (
                   <a className="nav-link" key={item.path} href={item.path} aria-current={item === current ? 'page' : undefined} onClick={() => setMenuOpen(false)}>
-                    <Icon name={item.icon} /> <span>{item.name}</span>
+                    <Icon name={item.icon} /> <span>{item.name}</span>{item.path === '/needs-attention.html' && attentionCount > 0 && <span className="nav-attention-count">{attentionCount}</span>}
                   </a>
                 ))}
               </div>

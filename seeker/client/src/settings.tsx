@@ -1,3 +1,4 @@
+import { AgentSettings, ProviderSettings } from './workflow-settings';
 import { useEffect, useState } from 'react';
 import { api, errorMessage } from './data';
 import { Feedback, PageHeading } from './workspace';
@@ -5,6 +6,8 @@ import { Feedback, PageHeading } from './workspace';
 export const startPages = [
   { path: '/avilys.html', label: 'Avilys' },
   { path: '/all-events.html', label: 'All events' },
+  { path: '/needs-attention.html', label: 'Needs attention' },
+  { path: '/not-music.html', label: 'Not music' },
   { path: '/possible-duplicates.html', label: 'Possible duplicates' },
   { path: '/artists.html', label: 'Artists' },
   { path: '/saved-events.html', label: 'Saved events' },
@@ -71,6 +74,8 @@ export default function SettingsPage() {
         <Feedback message={message} error={error} />
       </div>
     </section>
+    <ProviderSettings />
+    <AgentSettings />
     <section className="panel settings-panel">
       <div className="panel-heading"><h2>Open Dracula events in Seeker</h2></div>
       <div className="panel-body settings-body">

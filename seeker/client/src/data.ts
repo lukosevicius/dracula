@@ -3,6 +3,12 @@ import type { EventRecord, ImportRun, ReviewStatus } from '../../types';
 
 export type EventRow = Omit<EventRecord, 'source_id' | 'artist_links' | 'artist_suggestions' | 'content_html'> & {
   id: number;
+  publication_status?: 'draft' | 'live';
+  verification_status?: 'not_verified' | 'queued' | 'verifying' | 'verified' | 'stale' | 'failed';
+  revision?: number;
+  needs_attention?: number;
+  attention_reason?: string | null;
+  description_override?: string | null;
   interest_score: 1 | 2 | 3 | 4 | 5;
   source_id: string;
   source_key: string;
@@ -25,7 +31,7 @@ export type EventPage = {
   total: number;
   page: number;
   limit: number;
-  counts: Record<ReviewStatus | 'total' | 'unknown', number>;
+  counts: Record<ReviewStatus | 'total' | 'unknown' | 'attention', number>;
   readyCount: number;
   nextPage: number;
   runs: ImportRun[];

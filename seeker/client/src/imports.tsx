@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import type { ProfilesResponse } from './verification';
+import { useEffect, useState } from 'react';
 import type { ImportRun, MusicBrainzRun } from '../../types';
 import { api, errorMessage, formatDate, isActive, jobLabels, safeUrl, type Job } from './data';
 import { Disclosure, Feedback, Icon, Pagination, PanelHeading } from './workspace';
@@ -77,8 +78,24 @@ export function VilniusNotes() {
   );
 }
 
-export function VilniusImport({ pages, setPages, includeImages, setIncludeImages, nextPage, jobs, busy, run, runs }: {
+function ImportVerificationOption({ checked, onChange }: { checked: boolean; onChange: (value: boolean) => void }) {
+  const [unconfigured, setUnconfigured] = useState(false);
+  useEffect(() => {
+    let disposed = false;
+    void api<ProfilesResponse>('/api/workflow/providers').then(state => {
+      if (!disposed) setUnconfigured(!state.configured || !state.default_id);
+    }).catch(() => undefined);
+    return () => { disposed = true; };
+  }, []);
+  return <>
+    <label className="checkbox-label"><input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} /> Verify with AI after import</label>
+    {checked && unconfigured && <p className="muted">Set a default provider in <a href="/settings.html">Settings</a> to verify this import.</p>}
+  </>;
+}
+
+export function VilniusImport({ pages, setPages, includeImages, setIncludeImages, verifyAfterImport, setVerifyAfterImport, nextPage, jobs, busy, run, runs }: {
   pages: number; setPages: (value: number) => void; includeImages: boolean; setIncludeImages: (value: boolean) => void;
+  verifyAfterImport: boolean; setVerifyAfterImport: (value: boolean) => void;
   nextPage?: number; jobs: Job[]; busy: boolean; run: (action: string) => void; runs: ImportRun[];
 }) {
   const disabled = busy || !Number.isInteger(pages) || pages < 1 || pages > 10;
@@ -88,6 +105,7 @@ export function VilniusImport({ pages, setPages, includeImages, setIncludeImages
       <div className="panel-body stack">
         <label className="field">Pages per import <input type="number" min="1" max="10" value={pages || ''} onChange={event => setPages(Number(event.target.value))} /></label>
         <label className="checkbox-label"><input type="checkbox" checked={includeImages} onChange={event => setIncludeImages(event.target.checked)} /> Download event images</label>
+        <ImportVerificationOption checked={verifyAfterImport} onChange={setVerifyAfterImport} />
         <button className="primary-button" disabled={disabled} onClick={() => run('next')}><Icon name="download" />{busy ? 'Source job running…' : 'Get next pages'}</button>
       </div>
       <Disclosure title="More import actions">
@@ -121,6 +139,7 @@ export function AvilysImport({ jobs, busy, start }: {
   start: (source: string, action: string, params: Record<string, unknown>) => Promise<void>;
 }) {
   const [limit, setLimit] = useState(20);
+  const [verifyAfterImport, setVerifyAfterImport] = useState(true);
   const [startPage, setStartPage] = useState(1);
   const [page, setPage] = useState(1);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -144,7 +163,7 @@ export function AvilysImport({ jobs, busy, start }: {
   async function run() {
     setError('');
     try {
-      await start('avilys', 'import', { limit, start_page: startPage });
+      await start('avilys', 'import', { limit, start_page: startPage, verify_after_import: verifyAfterImport });
     } catch (error) {
       setError(errorMessage(error));
     }
@@ -158,6 +177,7 @@ export function AvilysImport({ jobs, busy, start }: {
           <label className="field">Events <input type="number" min="1" max="200" value={limit || ''} onChange={event => setLimit(Number(event.target.value))} /></label>
           <label className="field">Start page <input type="number" min="1" max="10000" value={startPage || ''} onChange={event => setStartPage(Number(event.target.value))} /></label>
         </div>
+        <ImportVerificationOption checked={verifyAfterImport} onChange={setVerifyAfterImport} />
         <button className="primary-button" disabled={busy || !valid} onClick={() => void run()}><Icon name="download" />{busy ? 'Source job running…' : 'Import events'}</button>
         <button className="secondary-button" disabled={loading} onClick={() => void load(1)}>{loading ? 'Loading preview…' : 'Preview source events'}</button>
         <Feedback message={error} error />

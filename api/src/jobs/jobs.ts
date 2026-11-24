@@ -1,3 +1,4 @@
+import { validateImportClaim } from '../verification/agents.js';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 
@@ -39,7 +40,7 @@ export function createJobs(pool: Pool) {
   }
   return {
     async list() { const [rows]=await pool.execute<RowDataPacket[]>('SELECT * FROM jobs ORDER BY id DESC LIMIT 20',[]);return rows; },
-    async start(action: unknown, kind: unknown='vilnius-events', limit: unknown=0) {
+    async start(action: unknown, kind: unknown='vilnius-events', limit: unknown=0, request?: unknown) {
       if(typeof kind!=='string'||!['vilnius-events','avilys','musicbrainz','ai-evaluation'].includes(kind))throw fail(400,'Invalid job source.');
       const source=kind==='musicbrainz'?artistSource:eventSource;
       if(typeof action!=='string'||(kind==='musicbrainz'?(!['next','start','all'].includes(action)||(action!=='all'&&(typeof limit!=='number'||!Number.isInteger(limit)||limit<1||limit>1000))):kind==='ai-evaluation'?action!=='analyze':kind==='avilys'?(action!=='import'||typeof limit!=='number'||!Number.isInteger(limit)||limit<1||limit>200):!['next','start','sample','refresh','download-images','details','refresh-details','details-event','refresh-all-details'].includes(action)))throw fail(400,'Invalid job action.');
@@ -48,11 +49,13 @@ export function createJobs(pool: Pool) {
         const now=Date.now(),date=new Date(now).toISOString();
         if(existing.length && Number(existing[0].expires_at)>now)throw fail(409,'An event import is already running.');
         if(existing.length){const old=existing[0];await conn.execute("UPDATE jobs SET status='interrupted',finished_at=?,error_message=? WHERE id=? AND status IN ('queued','running')",[date,'Seeker stopped before the import finished. Completed pages are saved.',old.job_id]);await conn.execute("UPDATE vilnius_event_runs SET status='failed',finished_at=?,error_message=? WHERE id=? AND status='running'",[date,'Seeker stopped before the import finished. Completed pages are saved.',old.run_id]);await conn.execute("UPDATE import_runs SET status='failed',finished_at=?,error_message=? WHERE id=? AND status='running'",[date,'Seeker stopped before the import finished. Completed pages are saved.',old.import_run_id]);await conn.execute('DELETE FROM job_leases WHERE source_key=?',[source]);}
+        const requestId=await validateImportClaim(conn,request,kind,action);
         const [job]=await conn.execute<ResultSetHeader>("INSERT INTO jobs(source,action,status,started_at,progress_json) VALUES(?,?,'running',?,'{}')",[kind,action,date]);
         let runId: number | null=null,importRunId: number | null=null;
         if(kind==='vilnius-events'&&['next','start','sample','refresh'].includes(action)){const [run]=await conn.execute<ResultSetHeader>("INSERT INTO vilnius_event_runs(started_at,status,fetched_count,added_count,updated_count) VALUES(?,'running',0,0,0)",[date]);runId=run.insertId;}
         else if(kind==='musicbrainz'){const [run]=await conn.execute<ResultSetHeader>("INSERT INTO import_runs(started_at,requested_limit,fetched_count,added_count,updated_count,status,mode) VALUES(?,?,0,0,0,'running',?)",[date,action==='all'?-1:limit as number,action]);importRunId=run.insertId;}
         const owner=randomBytes(32).toString('hex');await conn.execute('INSERT INTO job_leases(source_key,job_id,run_id,import_run_id,owner_hash,expires_at) VALUES(?,?,?,?,?,?)',[source,job.insertId,runId,importRunId,hash(owner),now+leaseMs]);
+        if(requestId)await conn.execute('UPDATE seeker_import_requests SET job_id=?,claim=NULL,lease_until=NULL WHERE id=?',[job.insertId,requestId]);
         return {id:job.insertId,owner};
       });
     },

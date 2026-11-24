@@ -3,6 +3,7 @@ type Field = 'event_date' | 'event_end_date' | 'event_time' | 'venue' | 'ticket_
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { normalizeEventSearch } from './event-search.js';
 import { vilniusToday } from '../catalogue/catalogue.service.js';
+import { history, recordChange, snapshot } from '../verification/history.js';
 
 const statuses = new Set(['music', 'not_music', 'unsure']);
 const decisions = new Set(['accepted', 'dismissed', 'remove']);
@@ -15,7 +16,7 @@ function validDate(value: string) { if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) retu
 export function createAdmin(pool: Pool, token: string) {
   if (typeof token !== 'string' || !/^[A-Za-z0-9._~-]{32,}$/.test(token)) throw new Error('ADMIN_TOKEN must be at least 32 URL-safe ASCII characters.');
   const tokenHash = digest(token);
-  async function withEvent(id: number, fn: (conn: PoolConnection, sourceId: number | null, existing: RowDataPacket) => Promise<void>) {
+  async function withEvent(id: number, fn: (conn: PoolConnection, sourceId: number | null, existing: RowDataPacket) => Promise<void>, actor = 'Seeker editor', action = 'manual_edit') {
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
@@ -27,14 +28,16 @@ export function createAdmin(pool: Pool, token: string) {
         if(vn.length && (!Number.isSafeInteger(sourceId)||Number(sourceId)<1)) throw error(409,'Event source is inconsistent.');
         const [source] = sourceId ? await conn.execute<RowDataPacket[]>('SELECT source_id,event_date,event_end_date,event_time,venue,ticket_url,manual_fields FROM vilnius_events WHERE source_id=? FOR UPDATE',[sourceId]) : [events];
         if(source.length!==1)throw error(409,'Event source is inconsistent.');
+        const before = await snapshot(conn,id,events[0]);
         await fn(conn,sourceId,source[0]);
+        await recordChange(conn,id,action,actor,before,await snapshot(conn,id));
         await conn.commit();
       } catch (cause) { await conn.rollback(); throw cause; }
     } finally { conn.release(); }
   }
   return {
     async savedEvents() {
-      const [rows]=await pool.execute<RowDataPacket[]>(`SELECT e.*,s.source_id,s.source_key,s.source_url,s.about_url,s.last_checked_at AS details_checked_at,ar.reviewed_at AS assistant_reviewed_at,ar.confirmed_at AS assistant_confirmed_at,ar.notes AS assistant_notes,ep.price_text,COALESCE(ep.price_type,'unknown') AS price_type FROM seeker_saved_events saved JOIN events e ON e.id=saved.event_id LEFT JOIN event_prices ep ON ep.event_id=e.id LEFT JOIN assistant_event_reviews ar ON ar.event_id=e.id JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY id LIMIT 1) ORDER BY e.event_date IS NULL,e.event_date,e.event_time IS NULL,e.event_time,saved.saved_at DESC,e.id DESC`);
+      const [rows]=await pool.execute<RowDataPacket[]>(`SELECT e.*,(SELECT JSON_UNQUOTE(JSON_EXTRACT(f.finding,'$.reason')) FROM verification_findings f WHERE f.event_id=e.id AND f.status='open' ORDER BY f.id LIMIT 1) AS attention_reason,s.source_id,s.source_key,s.source_url,COALESCE(e.about_url_override,s.about_url) AS about_url,s.last_checked_at AS details_checked_at,ar.reviewed_at AS assistant_reviewed_at,ar.confirmed_at AS assistant_confirmed_at,ar.notes AS assistant_notes,ep.price_text,COALESCE(ep.price_type,'unknown') AS price_type FROM seeker_saved_events saved JOIN events e ON e.id=saved.event_id LEFT JOIN event_prices ep ON ep.event_id=e.id LEFT JOIN assistant_event_reviews ar ON ar.event_id=e.id JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY id LIMIT 1) ORDER BY e.event_date IS NULL,e.event_date,e.event_time IS NULL,e.event_time,saved.saved_at DESC,e.id DESC`);
       return rows.map(row=>({...row,id:Number(row.id)}));
     },
     async saveEvents(ids: number[]) {
@@ -55,7 +58,7 @@ export function createAdmin(pool: Pool, token: string) {
       return settings;
     },
     async saveSeekerSetting(key: string, value: unknown) {
-      if(typeof key!=='string'||!/^[a-z][a-z0-9._-]{0,190}$/.test(key))throw error(400,'Invalid setting key.');
+      if(key==='verification_default_provider'||typeof key!=='string'||!/^[a-z][a-z0-9._-]{0,190}$/.test(key))throw error(400,'Invalid setting key.');
       let serialized:string;
       try{serialized=JSON.stringify(value);}catch{throw error(400,'Invalid setting value.');}
       if(serialized===undefined||Buffer.byteLength(serialized)>65536)throw error(400,'Setting value is too large or invalid.');
@@ -132,11 +135,16 @@ export function createAdmin(pool: Pool, token: string) {
       const page=Number(query.get('page') || 1), limit=Number(query.get('limit') || 25), sort=query.get('sort') || 'date';
       const review=query.get('review') || 'all', when=query.get('when') || 'upcoming', source=query.get('source') || 'all';
       const readiness=query.get('readiness') || 'all', assistantReview=query.get('assistantReview') || 'all', price=query.get('price') || 'all', time=query.get('time') || 'all';
+      const publication=query.get('publication') || 'all', verification=query.get('verification') || 'all', needsAttention=query.get('needs_attention') || 'all';
+      if(!['all','draft','live'].includes(publication) || !['all','not_verified','queued','verifying','verified','stale','failed'].includes(verification) || !['all','yes','no'].includes(needsAttention)) throw error(400,'Invalid verification or publication filter.');
       const from=query.get('from'),to=query.get('to'),today=vilniusToday(),search=normalizeEventSearch((query.get('search') || '').slice(0,200));
       if(!Number.isSafeInteger(page)||page<1||page>1000000||!Number.isSafeInteger(limit)||limit<1||limit>100 || !['all','music','not_music','unsure'].includes(review) || !['all','upcoming','past','unknown','today','tomorrow','weekend','custom'].includes(when) || !['all','ready','attention'].includes(readiness) || !['all','pending'].includes(assistantReview) || !['all','free','paid','unknown'].includes(price) || !['all','known','unknown'].includes(time) || !['date','score-asc','score-desc'].includes(sort) || source.length>191) throw error(400,'Invalid filters.');
       if(['today','tomorrow','weekend','custom'].includes(when) && (!from || !to || !validDate(from) || !validDate(to) || to<from)) throw error(400,'Choose a valid date range.');
       const clauses: string[]=[],params: (string | number)[]=[];
-      const ready="e.review_status='music' AND (NULLIF(e.event_date,'') IS NULL OR COALESCE(NULLIF(e.event_end_date,''),e.event_date)>=?)";
+      const ready="e.publication_status='live' AND (NULLIF(e.event_date,'') IS NULL OR COALESCE(NULLIF(e.event_end_date,''),e.event_date)>=?)";
+      if(publication!=='all'){clauses.push('e.publication_status=?');params.push(publication);}
+      if(verification!=='all'){clauses.push('e.verification_status=?');params.push(verification);}
+      if(needsAttention!=='all'){clauses.push('e.needs_attention=?');params.push(needsAttention==='yes'?1:0);}
       if(price!=='all'){clauses.push("COALESCE((SELECT CASE WHEN p.price_type='unknown' AND (SELECT ps.source_key FROM event_sources ps WHERE ps.event_id=e.id ORDER BY CASE WHEN ps.source_key='vilnius-events' THEN 0 ELSE 1 END,ps.id LIMIT 1)='avilys' AND p.price_text='Avilys: free (verify)' THEN 'free' WHEN p.price_type='unknown' AND (SELECT ps.source_key FROM event_sources ps WHERE ps.event_id=e.id ORDER BY CASE WHEN ps.source_key='vilnius-events' THEN 0 ELSE 1 END,ps.id LIMIT 1)='avilys' AND p.price_text='Avilys: paid (verify)' THEN 'paid' ELSE p.price_type END FROM event_prices p WHERE p.event_id=e.id),'unknown')=?");params.push(price);}
       if(time!=='all') clauses.push(`NULLIF(TRIM(e.event_time),'') IS ${time==='known'?'NOT ':''}NULL`);
       if(assistantReview==='pending') clauses.push('EXISTS (SELECT 1 FROM assistant_event_reviews ar WHERE ar.event_id=e.id AND ar.confirmed_at IS NULL)');
@@ -163,8 +171,8 @@ export function createAdmin(pool: Pool, token: string) {
             if(ids.length){where+=`${where?' AND':'WHERE'} e.id IN (${ids.map(()=>'?').join(',')})`;params.push(...ids);} else where+=`${where?' AND':'WHERE'} 1=0`;
           }
           const [totals]=await conn.execute<RowDataPacket[]>(`SELECT COUNT(*) AS count FROM events e ${where}`,params);
-          const [events]=await conn.execute<RowDataPacket[]>(`SELECT e.*,s.source_id,s.source_key,s.source_url,s.about_url,s.last_checked_at AS details_checked_at,ar.reviewed_at AS assistant_reviewed_at,ar.confirmed_at AS assistant_confirmed_at,ar.notes AS assistant_notes,ep.price_text,COALESCE(ep.price_type,'unknown') AS price_type FROM events e LEFT JOIN event_prices ep ON ep.event_id=e.id LEFT JOIN assistant_event_reviews ar ON ar.event_id=e.id JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY id LIMIT 1) ${where} ORDER BY ${scoreOrder}e.event_date IS NULL,e.event_date ${order},e.event_time IS NULL,e.event_time ${order},e.id LIMIT ? OFFSET ?`,[...params,limit,search?0:(page-1)*limit]);
-          const [counts]=await conn.execute<RowDataPacket[]>("SELECT COUNT(*) AS total, COALESCE(SUM(review_status='music'),0) AS music, COALESCE(SUM(review_status='not_music'),0) AS not_music, COALESCE(SUM(review_status='unsure'),0) AS unsure, COALESCE(SUM(event_date IS NULL),0) AS unknown FROM events",[]);
+          const [events]=await conn.execute<RowDataPacket[]>(`SELECT e.*,(SELECT JSON_UNQUOTE(JSON_EXTRACT(f.finding,'$.reason')) FROM verification_findings f WHERE f.event_id=e.id AND f.status='open' ORDER BY f.id LIMIT 1) AS attention_reason,s.source_id,s.source_key,s.source_url,COALESCE(e.about_url_override,s.about_url) AS about_url,s.last_checked_at AS details_checked_at,ar.reviewed_at AS assistant_reviewed_at,ar.confirmed_at AS assistant_confirmed_at,ar.notes AS assistant_notes,ep.price_text,COALESCE(ep.price_type,'unknown') AS price_type FROM events e LEFT JOIN event_prices ep ON ep.event_id=e.id LEFT JOIN assistant_event_reviews ar ON ar.event_id=e.id JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY id LIMIT 1) ${where} ORDER BY ${scoreOrder}e.event_date IS NULL,e.event_date ${order},e.event_time IS NULL,e.event_time ${order},e.id LIMIT ? OFFSET ?`,[...params,limit,search?0:(page-1)*limit]);
+          const [counts]=await conn.execute<RowDataPacket[]>("SELECT COUNT(*) AS total, COALESCE(SUM(review_status='music'),0) AS music, COALESCE(SUM(review_status='not_music'),0) AS not_music, COALESCE(SUM(review_status='unsure'),0) AS unsure, COALESCE(SUM(event_date IS NULL),0) AS unknown, COALESCE(SUM(needs_attention=1),0) AS attention FROM events",[]);
           const [readyRows]=await conn.execute<RowDataPacket[]>(`SELECT COUNT(*) AS count FROM events e WHERE ${ready}`,[today]);
           const [states]=await conn.execute<RowDataPacket[]>('SELECT next_offset FROM source_state WHERE source_key=?',['vilnius-events']);
           const [sources]=await conn.execute<RowDataPacket[]>('SELECT DISTINCT source_key FROM event_sources ORDER BY source_key',[]);
@@ -195,15 +203,15 @@ export function createAdmin(pool: Pool, token: string) {
         } catch(cause) {await conn.rollback(); throw cause;}
       } finally {conn.release();}
     },
-    async review(id: number, data: unknown) {
+    async review(id: number, data: unknown, actor = 'Seeker editor') {
       const body = data as Record<string, string>;
       if (!statuses.has(body?.review_status)) throw error(400, 'Invalid review status.');
       await withEvent(id, async (conn, sourceId) => {
         if(sourceId) await conn.execute('UPDATE vilnius_events SET review_status=? WHERE source_id=?', [body.review_status, sourceId]);
-        await conn.execute('UPDATE events SET review_status=? WHERE id=?', [body.review_status, id]);
-      });
+        await conn.execute('UPDATE events SET classification_manual=1,review_status=? WHERE id=?', [body.review_status, id]);
+      }, actor, 'classification_changed');
     },
-    async details(id: number, data: unknown) {
+    async details(id: number, data: unknown, actor = 'Seeker editor') {
       const body = data as Record<string, string>;
       if (!body || typeof body !== 'object' || !statuses.has(body.review_status) || detailFields.some(field => body[field] != null && typeof body[field] !== 'string')) throw error(400, 'Invalid event details.');
       const [date,end,time,venue,ticket] = detailFields.map(field => body[field]?.trim() || null);
@@ -219,10 +227,10 @@ export function createAdmin(pool: Pool, token: string) {
         detailFields.forEach((field,index)=>{ if (values[index] !== existing[field]) locked.add(field); });
         const fields=JSON.stringify([...locked]);
         if(sourceId) await conn.execute('UPDATE vilnius_events SET event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=?,review_status=?,manual_fields=?,details_manual=? WHERE source_id=?', [...values,body.review_status,fields,locked.size?1:0,sourceId]);
-        await conn.execute('UPDATE events SET event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=?,review_status=?,manual_fields=? WHERE id=?', [...values,body.review_status,fields,id]);
-      });
+        await conn.execute('UPDATE events SET event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=?,classification_manual=IF(review_status<>?,1,classification_manual),review_status=?,manual_fields=? WHERE id=?', [...values,body.review_status,body.review_status,fields,id]);
+      }, actor);
     },
-    async artist(id: number, data: unknown) {
+    async artist(id: number, data: unknown, actor = 'Seeker editor') {
       const body = data as Record<string, string>;
       if (typeof body?.mbid !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(body.mbid) || !decisions.has(body.decision)) throw error(400, 'Invalid artist decision.');
       await withEvent(id, async (conn, sourceId) => {
@@ -232,9 +240,9 @@ export function createAdmin(pool: Pool, token: string) {
           await conn.execute(`DELETE FROM ${table} WHERE event_id=? AND artist_mbid=?`, [key, body.mbid]);
           if (body.decision !== 'remove') await conn.execute(`INSERT INTO ${table}(event_id,artist_mbid,decision) VALUES(?,?,?)`, [key, body.mbid, body.decision]);
         }
-      });
+      }, actor, 'artist_changed');
     },
-    async price(id: number, data: unknown) {
+    async price(id: number, data: unknown, actor = 'Seeker editor') {
       const body = data as Record<string, string>;
       if (!priceTypes.has(body?.price_type) || (body.price_text != null && typeof body.price_text !== 'string')) throw error(400, 'Invalid price.');
       const text = body.price_text?.trim() || null;
@@ -243,17 +251,21 @@ export function createAdmin(pool: Pool, token: string) {
         const [rows] = await conn.execute<RowDataPacket[]>('SELECT event_id FROM event_prices WHERE event_id=?', [id]);
         if (rows.length) await conn.execute('UPDATE event_prices SET price_text=?,price_type=?,manual=1,checked_at=? WHERE event_id=?', [text,body.price_type,new Date().toISOString(),id]);
         else await conn.execute('INSERT INTO event_prices(event_id,price_text,price_type,manual,checked_at) VALUES(?,?,?,1,?)', [id,text,body.price_type,new Date().toISOString()]);
-      });
+      }, actor, 'price_changed');
     },
     async interestScore(id: number, data: unknown) {
       const score=(data as Record<string,unknown>)?.interest_score;
       if(!Number.isInteger(score)||Number(score)<1||Number(score)>5)throw error(400,'Interest score must be from 1 to 5.');
-      const [result]=await pool.execute<ResultSetHeader>('UPDATE events SET interest_score=? WHERE id=?',[Number(score),id]);
-      if(!result.affectedRows){const [rows]=await pool.execute<RowDataPacket[]>('SELECT id FROM events WHERE id=?',[id]);if(!rows.length)throw error(404,'Event not found.');}
+      await withEvent(id, async conn => {
+        await conn.execute('UPDATE events SET interest_score=? WHERE id=?',[Number(score),id]);
+      });
     },
     async confirmAssistantReview(id: number) {
-      const [result]=await pool.execute<ResultSetHeader>('UPDATE assistant_event_reviews SET confirmed_at=? WHERE event_id=? AND confirmed_at IS NULL',[new Date().toISOString(),id]);
-      if(!result.affectedRows)throw error(404,'No pending assistant review.');
+      await withEvent(id, async conn => {
+        const [result]=await conn.execute<ResultSetHeader>('UPDATE assistant_event_reviews SET confirmed_at=? WHERE event_id=? AND confirmed_at IS NULL',[new Date().toISOString(),id]);
+        if(!result.affectedRows)throw error(404,'No pending assistant review.');
+        await history(conn,id,'assistant_review_confirmed','Seeker editor');
+      });
     }
   };
 }

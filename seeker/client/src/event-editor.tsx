@@ -1,3 +1,4 @@
+import { EventVerification } from './verification';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { ArtistsDashboard, DashboardArtist, EventRecord, ReviewStatus } from '../../types';
 import { api, artistHref, errorMessage, formatDate, labels, priceInfo, reviews, safeUrl, sourceNames, type EventRow } from './data';
@@ -32,8 +33,8 @@ function manualFields(value: string | undefined): string[] {
 
 const normalizeArtistName = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('lt');
 
-export default function EventEditor({ row, today, onSaved, onRefresh, refreshing }: {
-  row: EventRow; today: string; onSaved: () => Promise<void>; onRefresh: () => void; refreshing: boolean;
+export default function EventEditor({ row, onSaved, onRefresh, refreshing }: {
+  row: EventRow; onSaved: () => Promise<void>; onRefresh: () => void; refreshing: boolean;
 }) {
   const [info, setInfo] = useState<EventDetailsResponse | null>(null);
   const [draft, setDraft] = useState<DetailsDraft>({});
@@ -57,7 +58,7 @@ export default function EventEditor({ row, today, onSaved, onRefresh, refreshing
       setLoadError(errorMessage(error));
     }
   }, [id]);
-  useEffect(() => { void load(); }, [load, lastChecked]);
+  useEffect(() => { void load(); }, [load, lastChecked, row.revision]);
   useEffect(() => { setDraft(current => ({ ...current, review_status: undefined })); }, [row.review_status]);
 
   const storedPrice = priceInfo(row);
@@ -70,7 +71,7 @@ export default function EventEditor({ row, today, onSaved, onRefresh, refreshing
   const about = safeUrl(row.about_url);
   const original = safeUrl(row.source_url);
   const image = info?.image;
-  const publicEvent = row.review_status === 'music' && (!row.event_date || (row.event_end_date || row.event_date) >= today);
+  const publicEvent = row.publication_status === 'live';
   const matchedArtists = useMemo(() => {
     const query = normalizeArtistName(artistQuery.trim());
     if (!query || !artists) return [];
@@ -149,6 +150,7 @@ export default function EventEditor({ row, today, onSaved, onRefresh, refreshing
           })}
         </div>
       </div>
+      <EventVerification row={row} onSaved={onSaved} />
       {row.source_key === 'avilys' && <p className="editor-note">Avilys source start time: {info?.event.source_timestamp || 'unavailable'}</p>}
       <form className="editor-form" onSubmit={saveDetails}>
         {detailsFields.map(([name, label, type]) => (
@@ -221,6 +223,10 @@ export default function EventEditor({ row, today, onSaved, onRefresh, refreshing
           {info.matches.length > 0 && <section className="editor-section">
             <h3>Possible duplicate events</h3>
             <ul>{info.matches.map(match => <li key={match.id}>{match.title} · {formatDate(match.event_date)} · {match.venue || 'Venue unknown'}{match.venue_matches ? ' · Same venue' : ''}</li>)}</ul>
+          </section>}
+          {row.description_override && <section className="editor-section">
+            <h3>Published description override</h3>
+            <p>{row.description_override}</p>
           </section>}
           <section className="editor-section">
             <h3>Source description</h3>

@@ -13,6 +13,10 @@ test('artist events only include accepted upcoming public matches and are pagina
   INSERT INTO events VALUES(1,'Public','2026-12-01',NULL,NULL,NULL,NULL,1,'music'),(2,'Past','2026-10-01',NULL,NULL,NULL,NULL,1,'music'),(3,'Private','2026-12-01',NULL,NULL,NULL,NULL,1,'unsure'),(4,'Dismissed','2026-12-02',NULL,NULL,NULL,NULL,1,'music'),(5,'Another','2026-12-03',NULL,NULL,NULL,NULL,1,'music');
   INSERT INTO event_sources SELECT id,id,'avilys',id,'https://example.com',NULL,'' FROM events;
   INSERT INTO event_artist_decisions VALUES(1,'${id}','accepted'),(2,'${id}','accepted'),(3,'${id}','accepted'),(4,'${id}','dismissed'),(5,'${id}','accepted'),(1,'${other}','accepted');`);
+  db.exec(`ALTER TABLE events ADD COLUMN publication_status TEXT NOT NULL DEFAULT 'draft';
+    ALTER TABLE events ADD COLUMN about_url_override TEXT;
+    ALTER TABLE events ADD COLUMN description_override TEXT;
+    UPDATE events SET publication_status='live' WHERE id IN (1,2,4,5)`);
   const pool={execute:async(sql:string,params:import('node:sqlite').SQLInputValue[])=>[db.prepare(sql).all(...params)]};
   const service=new CatalogueService({pool} as never,{publicBaseUrl:'https://api.example.com'} as never);
   try {

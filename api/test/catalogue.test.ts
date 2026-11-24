@@ -22,7 +22,11 @@ function fixture() {
     INSERT INTO vilnius_events VALUES(1,5); INSERT INTO vilnius_images VALUES(5,'5.jpg');
     INSERT INTO event_prices VALUES(1,'Nemokama','free'); INSERT INTO artists VALUES('artist-1','Artist');
     INSERT INTO event_artist_decisions VALUES(1,'artist-1','accepted');`);
-  db.exec('ALTER TABLE events ADD COLUMN interest_score INTEGER NOT NULL DEFAULT 1');
+  db.exec(`ALTER TABLE events ADD COLUMN interest_score INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE events ADD COLUMN publication_status TEXT NOT NULL DEFAULT 'draft';
+    ALTER TABLE events ADD COLUMN about_url_override TEXT;
+    ALTER TABLE events ADD COLUMN description_override TEXT;
+    UPDATE events SET publication_status='live' WHERE id IN (1,2,3)`);
   return { db, catalogue:createCatalogue({execute:async (sql: string,params: import('node:sqlite').SQLInputValue[]) => [db.prepare(sql).all(...params)]},'https://api.example.com') };
 }
 
@@ -63,8 +67,8 @@ test('filtered pages apply date ranges before pagination', async () => {
 test('higher interest scores appear first within the same date before pagination', async () => {
   const {db,catalogue}=fixture();
   try {
-    db.exec(`INSERT INTO events(id,title,event_date,review_status,interest_score) VALUES
-      (5,'Higher score','2026-11-20','music',3), (6,'Next day','2026-11-21','music',3);
+    db.exec(`INSERT INTO events(id,title,event_date,review_status,interest_score,publication_status) VALUES
+      (5,'Higher score','2026-11-20','music',3,'live'), (6,'Next day','2026-11-21','music',3,'live');
       INSERT INTO event_sources(id,event_id,source_key,source_id,source_url) VALUES
       (5,5,'avilys','5','https://example.com'), (6,6,'avilys','6','https://example.com');`);
     const page=(offset: number)=>catalogue.page({filter:'upcoming',from:'',to:'',offset,limit:1},'2026-11-15');

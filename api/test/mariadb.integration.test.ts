@@ -4,6 +4,7 @@ import { readFile, mkdtemp, writeFile, rm, copyFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import mysql, { type RowDataPacket } from 'mysql2/promise';
+import { createVerificationWorker } from '../dist/verification/verification.js';
 import { importVilniusPage } from '../dist/imports/vilnius.js';
 import { loadMigrations, migrate } from '../dist/migrate.js';
 
@@ -30,6 +31,7 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     await pool.execute('UPDATE vilnius_events SET featured_media=42 WHERE source_id=11');
     imageDir=await mkdtemp(join(tmpdir(),'dracula-api-test-')); await writeFile(join(imageDir,'42.jpg'),Buffer.from([1,2,3]));
     const token='0123456789abcdef0123456789abcdef';
+    const aiEncryptionKey='a'.repeat(64);
     let root: string;
     const headers={authorization:`Bearer ${token}`,'content-type':'application/json'};
     const post=(action: string,body: unknown)=>fetch(`${root}/v1/admin/events/1/${action}`,{method:'POST',headers,body:JSON.stringify(body)});
@@ -38,7 +40,7 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     const {AppModule}=await import('../dist/app.module.js');
     const {APP_CONFIG}=await import('../dist/config/config.js');
     const nestModule=await Test.createTestingModule({imports:[AppModule]})
-      .overrideProvider(APP_CONFIG).useValue({dbHost:host,dbPort:Number(port),dbUser:user,dbPassword:password,dbName:database,publicBaseUrl:'https://api.example.com',imageDir,port:3000,adminToken:token}).compile();
+      .overrideProvider(APP_CONFIG).useValue({dbHost:host,dbPort:Number(port),dbUser:user,dbPassword:password,dbName:database,publicBaseUrl:'https://api.example.com',imageDir,port:3000,adminToken:token,aiEncryptionKey,disableVerificationWorker:true}).compile();
     nest=nestModule.createNestApplication({logger:false,bodyParser:false});
     {
       await nest.listen(0,'127.0.0.1');
@@ -58,6 +60,10 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
       await pool.execute("UPDATE events SET event_time='19:00' WHERE id=1");
       assert.equal((await adminList('time=known')).total,1);
       await pool.execute('UPDATE events SET event_time=NULL WHERE id=1');
+      assert.equal((await fetch(`${nestRoot}/v1/events/1`)).status,404);
+      const eventVersion=await (await fetch(`${nestRoot}/v1/seeker/events/1/verification`,{headers})).json();
+      const publish=await fetch(`${nestRoot}/v1/seeker/events/1/publication`,{method:'POST',headers,body:JSON.stringify({status:'live',revision:eventVersion.revision})});
+      assert.equal(publish.status,200);
       const filtered=await fetch(`${nestRoot}/v1/events?filter=custom&from=2099-11-20&to=2099-11-21&offset=0&limit=1`);
       assert.equal(filtered.status,200);const page=await filtered.json();
       assert.equal(page.total,1);assert.equal(page.items[0].venue,'Venue');assert.equal(page.items[0].price_type,'free');assert.equal(page.items[0].artists[0].mbid,mbid);
@@ -92,9 +98,10 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     assert.equal(slots.filter(slot=>slot.waitMs===0).length,1);assert.equal(slots.filter(slot=>slot.waitMs>0).length,1);
     const importUrl=`${root}/v1/admin/imports/vilnius-events/page`;
     const item={source_id:12,title:'New event',source_url:'https://www.vilnius-events.lt/test',content_html:'source',categories:[4],featured_media:null,published_at:null,modified_at:'one',details:{event_date:'2099-11-20',venue:'Original'}};
-    const payload={items:[item],advance_cursor:true,expected_offset:0,next_offset:1,total_available:null};
+    const payload={items:[item],verify_after_import:false,advance_cursor:true,expected_offset:0,next_offset:1,total_available:null};
     const importPage= (body: unknown)=>fetch(importUrl,{method:'POST',headers,body:JSON.stringify(body)});
-    assert.deepEqual(await (await importPage(payload)).json(),{ok:true,added:1,updated:0});
+    const imported=await (await importPage(payload)).json();
+    assert.equal(imported.added,1); assert.equal(imported.changedEventIds.length,1);
     assert.equal((await importPage(payload)).status,409);
     const [[linked]]=await pool.execute<RowDataPacket[]>("SELECT s.event_id,e.city FROM event_sources s JOIN events e ON e.id=s.event_id WHERE s.source_key='vilnius-events' AND s.source_id='12'");
     assert.equal(linked.city,'Vilnius');
@@ -117,7 +124,7 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     const starts=await Promise.all([startJob(),startJob()]);assert.deepEqual(starts.map(r=>r.status).sort(),[200,409]);
     const job=await starts.find(r=>r.status===200)!.json();
     const avilysItem={id:987654,title:'Avilys music',city:'vilnius',categories:[{id:1}],description:'Concert',startTime:'2099-11-20T19:00:00Z',venueName:'Club'};
-    const avilys= (body: unknown)=>fetch(`${root}/v1/admin/imports/avilys/page`,{method:'POST',headers,body:JSON.stringify(body)});
+    const avilys= (body: Record<string,unknown>)=>fetch(`${root}/v1/admin/imports/avilys/page`,{method:'POST',headers,body:JSON.stringify({verify_after_import:false,...body})});
     assert.deepEqual(await (await avilys({job:{id:job.id,owner:job.owner},items:[avilysItem]})).json(),{ok:true,added:1,updated:0});
     assert.deepEqual(await (await avilys({job:{id:job.id,owner:job.owner},items:[avilysItem]})).json(),{ok:true,added:0,updated:1});
     const [[avilysEvent]]=await pool.execute<RowDataPacket[]>("SELECT e.id,e.review_status,e.city,e.event_time FROM events e JOIN event_sources s ON s.event_id=e.id WHERE s.source_key='avilys' AND s.source_id='987654'");
@@ -173,8 +180,72 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     assert.equal((await fetch(`${root}/v1/admin/jobs/${aiJob.id}`,{method:'POST',headers,body:JSON.stringify({source:'ai-evaluation',status:'completed',owner:aiJob.owner,progress:{fetched:1,added:1,updated:0,completed:1,total:1,failed:0,cost_usd:0.0001}})})).status,200);
     const [[aiProgress]]=await pool.execute<RowDataPacket[]>('SELECT progress_json FROM jobs WHERE id=?',[aiJob.id]);assert.equal(JSON.parse(aiProgress.progress_json).cost_usd,0.0001);
 
+    const workflow = (path: string, value?: unknown, auth = headers) => fetch(`${root}/v1/seeker${path}`, {headers:auth,...(value===undefined?{}:{method:'POST',body:JSON.stringify(value)})});
+    assert.equal((await workflow('/providers',{action:'save',name:'Test Gemini',provider:'gemini',model:'test-model',key:'test-provider-key'})).status,200);
+    const provider = (await (await workflow('/providers')).json()).profiles[0];
+    assert.equal('encrypted_key' in provider,false);
+    const started = await (await startJob()).json();
+    const imports = [
+      {source_id:30,title:'Test concert 30',event_time:null,description:'Gyvos muzikos koncertas 19:30'},
+      {source_id:31,title:'Test concert 31',event_time:null,description:'Gyvos muzikos koncertas 18:30 arba 20:30'},
+      {source_id:32,title:'Test workshop',event_time:'20:00',description:'Keramikos dirbtuvės 20:00'},
+    ];
+    const saved=await (await importPage({...payload,verify_after_import:true,advance_cursor:false,job:{id:started.id,owner:started.owner},
+      items:imports.map(e=>({...item,source_id:e.source_id,title:e.title,content_html:e.description,details:{event_date:'2099-11-20',event_time:e.event_time,venue:'Club'}}))})).json();
+    const [clean, flagged, workshop]=saved.changedEventIds as number[];
+    const worker=createVerificationWorker(pool,aiEncryptionKey,async (_url,request) => {
+      const body=String(request?.body);
+      const uncertain=body.includes('Test concert 31');
+      const nonMusic=body.includes('Test workshop');
+      const confirmed=(field:string,proposed:string,evidence=proposed)=>({field,disposition:'confirmed',proposed,evidence,reason:'Source agrees.'});
+      const findings=[
+        confirmed('event_date','2099-11-20'),
+        uncertain?{field:'event_time',disposition:'attention',proposed:'',evidence:'18:30 arba 20:30',reason:'The source gives two times.'}
+          :nonMusic?confirmed('event_time','20:00'):{field:'event_time',disposition:'suggestion',proposed:'19:30',evidence:'19:30',reason:'The description states the time.'},
+        confirmed('venue','Club'),
+        {field:'review_status',disposition:'suggestion',proposed:nonMusic?'not_music':'music',evidence:nonMusic?'Keramikos dirbtuvės':'Gyvos muzikos koncertas',reason:'Source describes the activity.'},
+      ];
+      return Response.json({candidates:[{content:{parts:[{text:JSON.stringify({findings})}]}}]});
+    });
+    assert.equal(await worker(),false,'verification waits for the import lease');
+    assert.equal((await (await workflow(`/events/${clean}/verification`)).json()).publication_status,'draft');
+    assert.equal((await fetch(`${root}/v1/admin/jobs/${started.id}`,{method:'POST',headers,body:JSON.stringify({status:'completed',owner:started.owner,progress:{fetched:3,added:3,updated:0}})})).status,200);
+    for(let i=0;i<3;i++) assert.equal(await worker(),true);
+    const cleanResult=await (await workflow(`/events/${clean}/verification`)).json();
+    assert.equal(cleanResult.publication_status,'live');
+    const [[filled]]=await pool.execute<RowDataPacket[]>('SELECT event_time FROM events WHERE id=?',[clean]);
+    assert.equal(filled.event_time,'19:30');
+    assert.deepEqual(cleanResult.log.map((entry:{action:string})=>entry.action),['published','verified','imported']);
+    const flaggedResult=await (await workflow(`/events/${flagged}/verification`)).json();
+    assert.equal(flaggedResult.publication_status,'draft');
+    assert.equal(flaggedResult.findings.length,1);
+    assert.equal((await workflow(`/events/${flagged}/findings/${flaggedResult.findings[0].id}`,{decision:'approve',revision:flaggedResult.revision,value:'20:30'})).status,200);
+    const approved=await (await workflow(`/events/${flagged}/verification`)).json();
+    assert.equal(approved.findings.length,0);
+    assert.equal(approved.publication_status,'draft');
+    assert.equal((await workflow(`/events/${flagged}/publication`,{status:'live',revision:approved.revision})).status,200);
+    const nowLive=await (await workflow(`/events/${flagged}/verification`)).json();
+    assert.equal((await workflow(`/events/${flagged}/publication`,{status:'draft',revision:nowLive.revision})).status,200);
+    assert.equal((await fetch(`${root}/v1/events/${flagged}`)).status,404);
+    assert.equal((await (await workflow(`/events/${flagged}/verification`)).json()).log[0].action,'unpublished');
+    const notMusic=await (await workflow(`/events/${workshop}`)).json();
+    assert.equal(notMusic.event.review_status,'not_music');
+    assert.equal(notMusic.event.publication_status,'draft');
+    const agent=(await (await workflow('/agents',{action:'create',name:'Read-only',scopes:['events:read']})).json());
+    const agentHeaders={...headers,authorization:`Bearer ${agent.token}`};
+    assert.equal((await workflow('/events?when=all&review=not_music',undefined,agentHeaders)).status,200);
+    assert.equal((await workflow(`/events/${clean}/publication`,{status:'draft',revision:cleanResult.revision},agentHeaders)).status,403);
+    assert.equal((await workflow('/agents',{action:'revoke',id:agent.id})).status,200);
+    assert.equal((await workflow('/events',undefined,agentHeaders)).status,401);
+
     // Recreate the pre-city, pre-preferences and pre-score schema to exercise migrations.
-    await pool.query('ALTER TABLE events DROP COLUMN city, DROP COLUMN interest_score');
+    await pool.query('DROP TABLE verification_findings,event_verifications,verification_jobs,verification_providers,event_history,seeker_agent_keys,seeker_import_requests');
+    await pool.query('ALTER TABLE event_sources DROP COLUMN detail_evidence_json');
+    await pool.query(`ALTER TABLE events DROP COLUMN city, DROP COLUMN interest_score,
+      DROP INDEX idx_events_public_date, DROP INDEX idx_events_verification, DROP INDEX idx_events_attention,
+      DROP COLUMN publication_status, DROP COLUMN publication_manual, DROP COLUMN publication_review_required,
+      DROP COLUMN classification_manual, DROP COLUMN description_override, DROP COLUMN about_url_override,
+      DROP COLUMN revision, DROP COLUMN verification_status, DROP COLUMN needs_attention`);
     await pool.query('DROP TABLE event_images, seeker_saved_events, seeker_settings');
     await pool.query(`INSERT INTO events(id,title,review_status,manual_fields,created_at,updated_at)
       VALUES(10001,'Kaunas fixture','unsure','[]','now','now'),(10002,'Unknown city fixture','unsure','[]','now','now');
@@ -194,6 +265,8 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
       await migrate(migrationDb,'up');
       const [[scoreColumn]]=await migrationDb.query<RowDataPacket[]>('SELECT interest_score FROM events WHERE id=1');
       assert.equal(scoreColumn.interest_score,1);
+      const [migrated]=await migrationDb.query<RowDataPacket[]>('SELECT publication_status FROM events WHERE id IN (1,10001) ORDER BY id');
+      assert.deepEqual(migrated.map(row=>row.publication_status),['live','draft']);
       const [cities]=await migrationDb.query<RowDataPacket[]>('SELECT city FROM events WHERE id IN (?) ORDER BY id',[[1,avilysEvent.id,10001,10002]]);
       assert.deepEqual(cities.map(row=>row.city),['Vilnius','Vilnius','Kaunas',null]);
 

@@ -21,6 +21,15 @@ export function createCentralDashboard(api:CentralApi, userAgent='Seeker/0.1.0',
       try{const value=JSON.parse(Buffer.concat(chunks).toString('utf8'));if(!value||typeof value!=='object'||Array.isArray(value)){send(400,{error:'Invalid JSON.'});return null;}return value;}catch{send(400,{error:'Invalid JSON.'});return null;}
     };
     try {
+      const workflowPath = url.pathname.replace(/^\/api\/workflow(?=\/)/, '');
+      const workflowRead = request.method === 'GET' && /^(?:\/providers|\/agents|\/attention-count|\/verification\/jobs(?:\/\d{1,12})?|\/events\/\d{1,12}\/verification)$/.test(workflowPath);
+      const workflowWrite = request.method === 'POST' && /^(?:\/providers|\/agents|\/verification\/jobs|\/events\/\d{1,12}\/(?:publication|findings\/\d{1,12}))$/.test(workflowPath);
+      if (workflowRead) { send(200, await api.seekerRead(workflowPath + url.search)); return true; }
+      if (workflowWrite) {
+        const input = await readBody(32_768);
+        if (!input) return true;
+        send(200, await api.seekerWrite(workflowPath, input)); return true;
+      }
       if(request.method==='GET'&&url.pathname==='/api/saved-events'){send(200,{events:await api.savedEvents()});return true;}
       if(request.method==='POST'&&url.pathname==='/api/saved-events'){
         const body=await readBody(8192);if(!body)return true;
@@ -92,7 +101,7 @@ export function createCentralDashboard(api:CentralApi, userAgent='Seeker/0.1.0',
           const title=normalize(String(result.event.title || '')),venue=normalize(String(result.event.venue || ''));
           const matches=result.match_candidates.filter(candidate=>{const other=normalize(candidate.title);if(!title||!other)return false;const a=new Set(title.split(' ').filter(v=>v.length>2)),b=new Set(other.split(' ').filter(v=>v.length>2));const shared=[...a].filter(v=>b.has(v)).length;return other===title || (shared>=2 && shared/Math.max(a.size,b.size)>=0.6);}).map(candidate=>({...candidate,venue_matches:Boolean(venue && candidate.venue && normalize(candidate.venue)===venue)})).sort((a,b)=>Number(b.venue_matches)-Number(a.venue_matches));
           if(action==='matches')send(200,{matches});
-          else send(200,{event:{...event,artist_links:accepted,artist_suggestions:suggestions},row:{...source,...result.event,details_checked_at:source.last_checked_at,price_text:result.price?.price_text,price_type:result.price?.price_type},image:result.image || null,sources:result.sources,matches});
+          else send(200,{event:{...event,artist_links:accepted,artist_suggestions:suggestions},row:{...source,...result.event,details_checked_at:source.last_checked_at,about_url:result.event.about_url_override??source.about_url,price_text:result.price?.price_text,price_type:result.price?.price_type},image:result.image || null,sources:result.sources,matches});
           return true;
         }
         if(request.method==='POST' && action && ['review','details','artist','price','interest-score','confirm-assistant-review'].includes(action)) {

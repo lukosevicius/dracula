@@ -93,7 +93,7 @@ export default function DuplicatesPage() {
             confirm={() => void change(row, 'confirm-assistant-review', {})}
             changeInterestScore={score => void change(row, 'interest-score', { interest_score: score })}
             showSource saved={isSaved(row.id)} toggleSaved={() => void toggle(row)}
-            editor={<EventEditor row={row} today={today} onSaved={load} onRefresh={() => void refreshSource(row)} refreshing={refreshing} />} />;
+            editor={<EventEditor row={row} onSaved={load} onRefresh={() => void refreshSource(row)} refreshing={refreshing} />} />;
         })}</div>
       </section>)}
     </section>

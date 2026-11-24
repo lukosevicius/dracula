@@ -119,8 +119,15 @@ test('Nest admin edits persist both event records and reject invalid input', asy
     INSERT INTO events VALUES(1,'unsure','Concert','2026-11-20',NULL,NULL,NULL,NULL,'[]');
     INSERT INTO event_sources VALUES(1,1,'vilnius-events','99');
     INSERT INTO vilnius_events VALUES(99,'unsure','2026-11-20',NULL,NULL,NULL,NULL,'[]',0);`);
-  db.exec('ALTER TABLE events ADD COLUMN interest_score INTEGER NOT NULL DEFAULT 1');
-  const connection={async beginTransaction(){db.exec('BEGIN')},async commit(){db.exec('COMMIT')},async rollback(){db.exec('ROLLBACK')},release(){},async execute(sql: string,params: import('node:sqlite').SQLInputValue[]){const query=sql.replace(/ FOR UPDATE$/,'');const stmt=db.prepare(query);return [/^SELECT/i.test(query)?stmt.all(...params):stmt.run(...params)]}};
+  db.exec(`ALTER TABLE events ADD COLUMN interest_score INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE events ADD COLUMN publication_status TEXT NOT NULL DEFAULT 'draft';
+    ALTER TABLE events ADD COLUMN classification_manual INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE events ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE events ADD COLUMN verification_status TEXT NOT NULL DEFAULT 'not_verified';
+    CREATE TABLE event_artist_decisions(event_id INTEGER,artist_mbid TEXT,decision TEXT);
+    CREATE TABLE event_history(event_id INTEGER,action TEXT,actor TEXT,occurred_at TEXT,changes TEXT,context TEXT)`);
+  db.function('IF',(condition, yes, no) => condition ? yes : no);
+  const connection={async beginTransaction(){db.exec('BEGIN')},async commit(){db.exec('COMMIT')},async rollback(){db.exec('ROLLBACK')},release(){},async execute(sql: string,params: import('node:sqlite').SQLInputValue[]){const query=sql.replace(/ FOR UPDATE$/,'').replaceAll('UTC_TIMESTAMP(3)','CURRENT_TIMESTAMP');const stmt=db.prepare(query);return [/^SELECT/i.test(query)?stmt.all(...params):stmt.run(...params)]}};
   const pool={getConnection:async()=>connection,execute:(sql: string,params: import('node:sqlite').SQLInputValue[])=>connection.execute(sql,params)};
   const config=loadConfig(env);
   const module=await Test.createTestingModule({imports:[AppModule]}).overrideProvider(APP_CONFIG).useValue(config).overrideProvider(DatabaseService).useValue({pool}).compile();
@@ -133,6 +140,7 @@ test('Nest admin edits persist both event records and reject invalid input', asy
     assert.equal((await post('/v1/admin/events/1/review',{review_status:'music'})).status,200);
     assert.equal(db.prepare('SELECT review_status FROM events').get()!.review_status,'music');
     assert.equal(db.prepare('SELECT review_status FROM vilnius_events').get()!.review_status,'music');
+    assert.equal(db.prepare('SELECT publication_status FROM events').get()!.publication_status,'draft');
     assert.equal((await post('/v1/admin/events/1/details',{review_status:'music',event_date:'2026-02-30'})).status,400);
     assert.equal((await post('/v1/admin/events/1/details',{review_status:'music',event_date:'2026-11-20',venue:' Club '})).status,200);
     assert.equal(db.prepare('SELECT venue FROM events').get()!.venue,'Club');

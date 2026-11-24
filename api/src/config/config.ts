@@ -10,6 +10,8 @@ export interface AppConfig {
   adminToken?: string;
   googleClientId?: string;
   authOrigins?: string[];
+  aiEncryptionKey?: string;
+  disableVerificationWorker?: boolean;
 }
 
 function port(value: string | undefined, fallback: number, name: string): number {
@@ -47,6 +49,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): AppConfig {
     publicBaseUrl: base.origin, imageDir: env.IMAGE_DIR!, port: port(env.PORT, 3000, 'PORT'),
     adminToken: env.ADMIN_TOKEN || undefined,
     googleClientId: env.GOOGLE_CLIENT_ID || undefined, authOrigins,
+    aiEncryptionKey: env.SEEKER_AI_ENCRYPTION_KEY, disableVerificationWorker: env.SEEKER_DISABLE_VERIFICATION_WORKER === '1',
   };
 }
 

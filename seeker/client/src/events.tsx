@@ -1,3 +1,4 @@
+import { VerificationJobs, VerificationRequest, useVerificationJobs, verificationLabels } from './verification';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DateFilter, ReviewStatus } from '../../types';
 import { api, errorMessage, formatDate, isActive, labels, plainText, priceInfo, reviews, sourceNames, useJobs, type EventPage } from './data';
@@ -49,8 +50,8 @@ function dateRange(filter: DateFilter, from: string, to: string, today: string) 
   return null;
 }
 
-export default function EventsPage({ avilys = false, all = false }: { avilys?: boolean; all?: boolean }) {
-  const name = all ? 'All events' : avilys ? 'Avilys' : 'Vilnius Events';
+export default function EventsPage({ avilys = false, all = false, queue }: { avilys?: boolean; all?: boolean; queue?: 'attention' | 'not-music' }) {
+  const name = queue === 'attention' ? 'Needs attention' : queue === 'not-music' ? 'Not music' : all ? 'All events' : avilys ? 'Avilys' : 'Vilnius Events';
   const source = all ? 'all' : avilys ? 'avilys' : 'vilnius-events';
   const defaultSource = source;
   const [data, setData] = useState<EventPage | null>(null);
@@ -58,8 +59,12 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
   const [price, setPrice] = useState('all');
   const [time, setTime] = useState('all');
   const [sort, setSort] = useState<'date' | 'score-asc' | 'score-desc'>('date');
-  const [when, setWhen] = useState<DateFilter>('upcoming');
-  const [review, setReview] = useState('all');
+  const defaultWhen = queue ? 'all' : 'upcoming';
+  const [when, setWhen] = useState<DateFilter>(defaultWhen);
+  const [review, setReview] = useState(queue === 'not-music' ? 'not_music' : 'all');
+  const [publication, setPublication] = useState('all');
+  const [verification, setVerification] = useState('all');
+  const [verifyAfterImport, setVerifyAfterImport] = useState(true);
   const [readiness, setReadiness] = useState('all');
   const [assistantReview, setAssistantReview] = useState('all');
   const [sourceFilter, setSourceFilter] = useState(defaultSource);
@@ -84,8 +89,8 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
   const { events: savedEvents, isSaved, toggle: toggleSaved, update: updateSavedEvent, loading: savedEventsLoading, error: savedEventsError, pendingIds: savedPendingIds } = useSavedEvents();
   const today = dateFormatter.format(new Date());
   const invalid = when === 'custom' && (!from || (!!to && to < from));
-  const extraCount = Number(readiness !== 'all') + Number(assistantReview !== 'all') + Number(sourceFilter !== defaultSource);
-  const isFiltered = Boolean(query || when !== 'upcoming' || price !== 'all' || time !== 'all' || review !== 'all' || extraCount || savedOnly || sort !== 'date');
+  const extraCount = Number(readiness !== 'all') + Number(assistantReview !== 'all') + Number(sourceFilter !== defaultSource) + Number(publication !== 'all') + Number(verification !== 'all');
+  const isFiltered = Boolean(query || when !== defaultWhen || price !== 'all' || time !== 'all' || (review !== 'all' && queue !== 'not-music') || extraCount || savedOnly || sort !== 'date');
   const sourceSavedEvents = savedEvents.filter(event => all || event.source_key === source);
 
   const load = useCallback(async (silent = false) => {
@@ -96,7 +101,7 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
       return;
     }
     if (!silent) setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: String(pageSize), review, readiness, assistantReview, search: query, price, time, source: sourceFilter, when, today, sort });
+    const params = new URLSearchParams({ page: String(page), limit: String(pageSize), review, readiness, assistantReview, search: query, price, time, source: sourceFilter, when, today, sort, publication, verification, needs_attention: queue === 'attention' ? 'yes' : 'all' });
     const range = dateRange(when, from, to, today);
     if (range) {
       params.set('from', range.from);
@@ -113,7 +118,7 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
     } finally {
       if (id === requestId.current && !silent) setLoading(false);
     }
-  }, [page, review, readiness, assistantReview, query, price, time, sourceFilter, when, from, to, today, invalid, sort]);
+  }, [page, review, readiness, assistantReview, query, price, time, sourceFilter, when, from, to, today, invalid, sort, publication, verification, queue]);
   const loadCurrent = useRef(load);
 
   useEffect(() => {
@@ -125,6 +130,7 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
     };
   }, [load, query]);
 
+  const verificationJobs = useVerificationJobs(() => { void loadCurrent.current(true); });
   const { jobs, start, startingSource } = useJobs(finished => {
     if (finished.some(job => ['avilys', 'vilnius-events'].includes(job.source))) void load();
   });
@@ -139,11 +145,13 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
   function resetFilters() {
     setLoading(true);
     setQuery('');
-    setWhen('upcoming');
+    setWhen(defaultWhen);
     setPrice('all');
     setTime('all');
     setSort('date');
-    setReview('all');
+    setReview(queue === 'not-music' ? 'not_music' : 'all');
+    setPublication('all');
+    setVerification('all');
     setReadiness('all');
     setAssistantReview('all');
     setSourceFilter(defaultSource);
@@ -158,7 +166,7 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
     setJobError('');
     try {
       const jobPages = eventId ? 1 : pages;
-      await start('vilnius-events', action, { pages: jobPages, event_id: eventId, include_images: includeImages });
+      await start('vilnius-events', action, { pages: jobPages, event_id: eventId, include_images: includeImages, verify_after_import: verifyAfterImport });
     } catch (error) {
       setJobError(errorMessage(error));
     }
@@ -250,11 +258,14 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
       || (when === 'unknown' && !eventDate)
       || (!!dateWindow && !!eventDate && !!eventEnd && eventDate <= dateWindow.to && eventEnd >= dateWindow.from);
     const savedPrice = priceInfo(row);
-    const ready = row.review_status === 'music' && (!eventDate || !eventEnd || eventEnd >= today);
+    const ready = row.publication_status === 'live' && (!eventDate || !eventEnd || eventEnd >= today);
     return matchesWhen
       && (!query || plainText(row.title).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
       && (price === 'all' || savedPrice.type === price)
       && (time === 'all' || (time === 'known' ? Boolean(row.event_time?.trim()) : !row.event_time?.trim()))
+      && (queue !== 'attention' || Boolean(row.needs_attention))
+      && (publication === 'all' || row.publication_status === publication)
+      && (verification === 'all' || (row.verification_status ?? 'not_verified') === verification)
       && (review === 'all' || row.review_status === review)
       && (readiness === 'all' || (readiness === 'ready' ? ready : !ready))
       && (assistantReview !== 'pending' || (!!row.assistant_reviewed_at && !row.assistant_confirmed_at))
@@ -273,16 +284,16 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
 
   return (
     <>
-      <PageHeading title={name} description={all ? 'Review events from all sources.' : avilys ? 'Import and review Vilnius music events from Avilys.' : 'Review imported events and manage the Go Vilnius feed.'} icon={avilys ? 'avilys' : 'calendar'} href={all ? undefined : avilys ? 'https://avilys.app/paieska' : 'https://www.vilnius-events.lt/'} linkLabel={`Open ${name}`} tools={!all} />
-      {all && <Metrics items={[
+      <PageHeading title={name} description={queue === 'attention' ? 'Review findings before publishing drafts.' : queue === 'not-music' ? 'Browse events classified as Not music.' : all ? 'Review events from all sources.' : avilys ? 'Import and review Vilnius music events from Avilys.' : 'Review imported events and manage the Go Vilnius feed.'} icon={avilys ? 'avilys' : 'calendar'} href={all ? undefined : avilys ? 'https://avilys.app/paieska' : 'https://www.vilnius-events.lt/'} linkLabel={`Open ${name}`} tools={!all} />
+      {all && !queue && <Metrics items={[
         { label: 'Events across all sources', value: data?.counts.total.toLocaleString() ?? '—', icon: 'calendar' },
-        { label: 'Ready for Dracula', value: data?.readyCount.toLocaleString() ?? '—', icon: 'check' },
+        { label: 'Live and eligible for the feed', value: data?.readyCount.toLocaleString() ?? '—', icon: 'check' },
         { label: 'Unsure across all sources', value: data?.counts.unsure.toLocaleString() ?? '—', icon: 'filter' },
       ]} />}
       <div className={all ? 'main-stack' : 'workspace-grid'}>
         <div className="main-stack">
           <section className="panel catalogue" ref={catalogue}>
-            <PanelHeading title="Imported events" end={savedOnly ? <span className="count-label">{rows.length} saved matching</span> : data && !invalid && <span className="count-label">{data.total.toLocaleString()} matching</span>} />
+            <PanelHeading title={queue === 'attention' ? 'Open findings' : 'Imported events'} end={savedOnly ? <span className="count-label">{rows.length} saved matching</span> : data && !invalid && <span className="count-label">{data.total.toLocaleString()} matching</span>} />
             <div className="catalogue-tools event-tools">
               <SearchField label="Search by event title" value={query} onChange={value => updateFilters(setQuery, value)} />
               <div className="filter-grid">
@@ -295,9 +306,9 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
                 <label className="field">Time <select value={time} onChange={event => updateFilters(setTime, event.target.value)}>
                   <option value="all">All times</option><option value="known">Time known</option><option value="unknown">Time unknown</option>
                 </select></label>
-                <label className="field">Review <select value={review} onChange={event => updateFilters(setReview, event.target.value)}>
+                {queue !== 'not-music' && <label className="field">Music classification <select value={review} onChange={event => updateFilters(setReview, event.target.value)}>
                   <option value="all">All statuses</option>{reviews.map(status => <option key={status} value={status}>{labels[status]}</option>)}
-                </select></label>
+                </select></label>}
                 <label className="field">Sort by <select value={sort} onChange={event => updateFilters(setSort, event.target.value as typeof sort)}>
                   <option value="date">Event date</option><option value="score-asc">Score: low to high</option><option value="score-desc">Score: high to low</option>
                 </select></label>
@@ -338,8 +349,14 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
               <div className="filter-footer">
                 <Disclosure className="filter-disclosure" title={<><Icon name="filter" size={15} /> More filters{extraCount ? ` (${extraCount})` : ''}</>}>
                   <div className="filter-grid">
-                    <label className="field">Dracula export <select value={readiness} onChange={event => updateFilters(setReadiness, event.target.value)}>
-                      <option value="all">All events</option><option value="ready">Ready for Dracula</option><option value="attention">Not ready</option>
+                    <label className="field">Publication <select value={publication} onChange={event => updateFilters(setPublication, event.target.value)}>
+                      <option value="all">All events</option><option value="live">In Dracula · Live</option><option value="draft">Not in Dracula · Draft</option>
+                    </select></label>
+                    <label className="field">AI verification <select value={verification} onChange={event => updateFilters(setVerification, event.target.value)}>
+                      <option value="all">All verification statuses</option>{Object.entries(verificationLabels).map(([key, label]) => <option value={key} key={key}>{label}</option>)}
+                    </select></label>
+                    <label className="field">Dracula feed <select value={readiness} onChange={event => updateFilters(setReadiness, event.target.value)}>
+                      <option value="all">All events</option><option value="ready">Eligible for feed</option><option value="attention">Outside the feed</option>
                     </select></label>
                     <label className="field">Assistant review <select value={assistantReview} onChange={event => updateFilters(setAssistantReview, event.target.value)}>
                       <option value="all">All events</option><option value="pending">Needs my check</option>
@@ -348,7 +365,7 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
                       <option value="all">All sources</option>{data?.sources.map(item => <option key={item.source_key} value={item.source_key}>{sourceNames[item.source_key] ?? item.source_key}</option>)}
                     </select></label>}
                   </div>
-                  <p>Events marked Music are ready if they have no date or have yet to end. Choose All dates to include undated events.</p>
+
                 </Disclosure>
                 <button type="button" className={`secondary-button saved-only-toggle ${savedOnly ? 'active' : ''}`} aria-pressed={savedOnly} onClick={() => {
                   setSavedOnly(current => !current);
@@ -369,6 +386,8 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
                 <button className="text-button" type="button" disabled={bulkPending} onClick={() => setSelected([])}>Clear selection</button>
               </div>}
             </div>
+            {!!selected.length && <div className="batch-verification"><VerificationRequest eventIds={selected} onQueued={async () => { await verificationJobs.load(); await loadCurrent.current(true); }} /></div>}
+            {all && <div className="batch-verification"><VerificationJobs jobs={verificationJobs.jobs} /></div>}
             <div className="catalogue-feedback"><Feedback message={message} error={actionError} /></div>
             {loadError && <div className="catalogue-error"><Feedback message={loadError} error /><button className="secondary-button" type="button" onClick={() => void load()}>Retry</button></div>}
             <div className="event-list" aria-busy={loading}>
@@ -378,7 +397,7 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
                   review={status => void changeRow(row.id, 'review', { review_status: status }, 'Review saved.')}
                   confirm={() => void changeRow(row.id, 'confirm-assistant-review', {}, 'Assistant review checked.')}
                   changeInterestScore={score => void changeRow(row.id, 'interest-score', { interest_score: score }, 'Interest score saved.')}
-                  editor={<EventEditor row={row} today={today} onSaved={() => loadCurrent.current()} onRefresh={() => void startVilnius('details-event', row.id)} refreshing={busy} />}
+                  editor={<EventEditor row={row} onSaved={() => loadCurrent.current()} onRefresh={() => void startVilnius('details-event', row.id)} refreshing={busy} />}
                   saved={isSaved(row.id)} toggleSaved={() => toggleSaved(row)} />
               ))}
               {!rows.length && !loadError && !invalid && <p className="empty-state" role="status">{loading ? 'Loading events…' : 'No events match these filters.'}</p>}
@@ -393,7 +412,8 @@ export default function EventsPage({ avilys = false, all = false }: { avilys?: b
         {!all && <aside className="context-column" id="import-tools" tabIndex={-1} aria-label="Event source tools">
           {avilys
             ? <AvilysImport jobs={jobs} busy={busy} start={start} />
-            : <VilniusImport pages={pages} setPages={setPages} includeImages={includeImages} setIncludeImages={setIncludeImages} nextPage={data?.nextPage} jobs={jobs} busy={busy} run={action => void startVilnius(action)} runs={data?.runs ?? []} />}
+            : <VilniusImport pages={pages} setPages={setPages} includeImages={includeImages} setIncludeImages={setIncludeImages} verifyAfterImport={verifyAfterImport} setVerifyAfterImport={setVerifyAfterImport} nextPage={data?.nextPage} jobs={jobs} busy={busy} run={action => void startVilnius(action)} runs={data?.runs ?? []} />}
+          <VerificationJobs jobs={verificationJobs.jobs} />
           <Feedback message={jobError} error />
           <Disclosure className="standalone" title="Bulk review by source">
             <div className="stack">

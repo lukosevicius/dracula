@@ -3,12 +3,13 @@ import { readFile } from 'node:fs/promises';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCentralApi } from './central-api.js';
+import { createCentralJobs } from './central-jobs.js';
 import { createCentralDashboard } from './central-dashboard.js';
 import type { createGoogleSignIn } from './google-sign-in.js';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const clientDir = join(root, 'client', 'dist');
-const dashboardPages = new Set(['/', '/artists.html', '/artist.html', '/event.html', '/vilnius-events.html', '/avilys.html', '/all-events.html', '/possible-duplicates.html', '/ai-evaluation.html', '/saved-events.html', '/settings.html']);
+const dashboardPages = new Set(['/', '/artists.html', '/artist.html', '/event.html', '/vilnius-events.html', '/avilys.html', '/all-events.html', '/needs-attention.html', '/not-music.html', '/possible-duplicates.html', '/ai-evaluation.html', '/saved-events.html', '/settings.html']);
 const installAssets = new Set(['/manifest.webmanifest', '/icons/icon-180.png', '/icons/icon-192.png', '/icons/icon-512.png']);
 const types: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -93,9 +94,34 @@ export function startSeeker(hosted?: HostedAccess) {
   const port = Number(PORT || 4177);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid PORT.');
   const api = createCentralApi(CENTRAL_API_URL, CENTRAL_API_TOKEN);
-  const handle = createCentralDashboard(api, undefined, { allowJobs: !hosted });
-  const server = createSeekerServer(handle, port, hosted);
-  server.listen(port, hosted ? '0.0.0.0' : '127.0.0.1', () => {
-    console.log(`Seeker at ${hosted?.origin ?? `http://127.0.0.1:${port}`}`);
-  });
+  const allowJobs = !hosted || process.env.SEEKER_HOSTED_IMPORT_WORKER === '1';
+  const handle = createCentralDashboard(api, undefined, { allowJobs });
+  if (allowJobs) {
+    const jobs = createCentralJobs(api, process.env.SEEKER_USER_AGENT || 'Seeker/0.1.0');
+    let active = false;
+    const timer = setInterval(async () => {
+      if (active) return;
+      active = true;
+      try {
+        const request = await api.claimImport();
+        if (request) await jobs.start({ ...request.options, import_request: { id: request.id, claim: request.claim } });
+      } catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404 && status !== 409) console.warn('Seeker could not claim a queued import.');
+      } finally {
+        active = false;
+      }
+    }, 5000).unref();
+    const server = createSeekerServer(handle, port, hosted);
+    server.once('close', () => clearInterval(timer));
+    listen(server);
+    return;
+  }
+  listen(createSeekerServer(handle, port, hosted));
+
+  function listen(server: ReturnType<typeof createSeekerServer>) {
+    server.listen(port, hosted ? '0.0.0.0' : '127.0.0.1', () => {
+      console.log(`Seeker at ${hosted?.origin ?? 'http://127.0.0.1:' + port}`);
+    });
+  }
 }

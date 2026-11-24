@@ -1,0 +1,1164 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Dracula Seeker agent API",
+    "version": "1.0.0",
+    "description": "Private event curation, imports, AI verification and publication."
+  },
+  "servers": [
+    {
+      "url": "https://api.dracula.lt/v1/seeker"
+    }
+  ],
+  "security": [
+    {
+      "agentToken": []
+    }
+  ],
+  "paths": {
+    "/events": {
+      "get": {
+        "operationId": "list_events",
+        "description": "List Seeker events across sources. Use when=all to include undated and past events.",
+        "x-seeker-scope": "events:read",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Examples are avilys and vilnius-events."
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "publication",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "live"
+              ]
+            }
+          },
+          {
+            "name": "verification",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "not_verified",
+                "queued",
+                "verifying",
+                "verified",
+                "stale",
+                "failed"
+              ]
+            }
+          },
+          {
+            "name": "needs_attention",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "yes",
+                "no"
+              ]
+            }
+          },
+          {
+            "name": "review",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "music",
+                "not_music",
+                "unsure"
+              ]
+            }
+          },
+          {
+            "name": "when",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "upcoming",
+                "past",
+                "unknown",
+                "today",
+                "tomorrow",
+                "weekend",
+                "custom"
+              ]
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Event"
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "page": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": []
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error, including invalid input, unauthorized credentials and stale revisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events/{event_id}": {
+      "get": {
+        "operationId": "get_event",
+        "description": "Read an event, structured source data, and its verification findings and event history.",
+        "x-seeker-scope": "events:read",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "event": {
+                      "$ref": "#/components/schemas/Event"
+                    },
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "price": {
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    },
+                    "verification": {
+                      "$ref": "#/components/schemas/Verification"
+                    }
+                  },
+                  "required": []
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error, including invalid input, unauthorized credentials and stale revisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events/{event_id}/verification": {
+      "get": {
+        "operationId": "get_event_verification",
+        "description": "Read the latest verification, open findings, and a page of the event log. Use the returned next_before to fetch older entries.",
+        "x-seeker-scope": "events:read",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": true
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Verification"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error, including invalid input, unauthorized credentials and stale revisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/verification/jobs": {
+      "post": {
+        "operationId": "verify_events",
+        "description": "Queue AI verification for up to 200 events. Setting allow_publish=false runs without automatic publication. Publishing requires its own permission.",
+        "x-seeker-scope": "verification:run",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "request_key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "description": "Stable unique identifier for this request. Reuse it to safely retry the same options."
+                  },
+                  "event_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "minItems": 1,
+                    "maxItems": 200
+                  },
+                  "profile_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "allow_publish": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "request_key",
+                  "event_ids"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Operation accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Accepted"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error, including invalid input, unauthorized credentials and stale revisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "list_verification_jobs",
+        "description": "List the most recent verification jobs and their state counts.",
+        "x-seeker-scope": "verification:run",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "jobs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  },
+                  "required": []
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error, including invalid input, unauthorized credentials and stale revisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/verification/jobs/{job_id}": {
+      "get": {
+        "operationId": "get_verification_job",
+        "description": "Check verification job progress or retrieve its per-event status.",
+        "x-seeker-scope": "verification:run",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationJob"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error, including invalid input, unauthorized credentials and stale revisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/imports": {
+      "post": {
+        "operationId": "start_import",
+        "description": "Queue an event source import. Use action=import for Avilys. Vilnius Events supports next, start, sample, and refresh. Optional post-import verification defaults to on and requires verification:run. Credentials with imports:run alone must set verify_after_import=false.",
+        "x-seeker-scope": "imports:run",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "request_key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "description": "Stable unique identifier for this request. Reuse it to safely retry the same options."
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "avilys",
+                      "vilnius-events"
+                    ]
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "import",
+                      "next",
+                      "start",
+                      "sample",
+                      "refresh"
+                    ]
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 200
+                  },
+                  "start_page": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000
+                  },
+                  "pages": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10
+                  },
+                  "include_images": {
+                    "type": "boolean"
+                  },
+                  "verify_after_import": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "request_key",
+                  "source",
+                  "action"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Operation accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Accepted"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error, including invalid input, unauthorized credentials and stale revisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/imports/{import_id}": {
+      "get": {
+        "operationId": "get_import",
+        "description": "Check the source import status and its linked verification job.",
+        "x-seeker-scope": "imports:run",
+        "parameters": [
+          {
+            "name": "import_id",
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJob"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error, including invalid input, unauthorized credentials and stale revisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events/{event_id}/findings": {
+      "post": {
+        "operationId": "propose_event_edit",
+        "description": "Propose a field correction for review. Read the current event revision first.",
+        "x-seeker-scope": "findings:propose",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "field": {
+                    "type": "string",
+                    "enum": [
+                      "title",
+                      "description",
+                      "event_date",
+                      "event_end_date",
+                      "event_time",
+                      "venue",
+                      "city",
+                      "ticket_url",
+                      "about_url",
+                      "price_type",
+                      "price_text",
+                      "artists",
+                      "review_status"
+                    ]
+                  },
+                  "value": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "revision",
+                  "field",
+                  "value",
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Accepted"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error, including invalid input, unauthorized credentials and stale revisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events/{event_id}/findings/{finding_id}": {
+      "post": {
+        "operationId": "resolve_finding",
+        "description": "Approve or dismiss a finding. Provide an edited value when approving a correction. Read the current event revision first.",
+        "x-seeker-scope": "findings:resolve",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": true
+          },
+          {
+            "name": "finding_id",
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "approve",
+                      "dismiss"
+                    ]
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "revision",
+                  "decision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error, including invalid input, unauthorized credentials and stale revisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events/{event_id}/publication": {
+      "post": {
+        "operationId": "set_event_publication",
+        "description": "Set a current event Live or Draft. This explicitly changes Dracula visibility without changing music classification.",
+        "x-seeker-scope": "publication:write",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "draft",
+                      "live"
+                    ]
+                  }
+                },
+                "required": [
+                  "revision",
+                  "status"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ok"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error, including invalid input, unauthorized credentials and stale revisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "agentToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Seeker agent credential"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "Accepted": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "queued": {
+            "type": "integer"
+          },
+          "already_queued": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ok",
+          "id"
+        ]
+      },
+      "Event": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string"
+          },
+          "publication_status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "live"
+            ]
+          },
+          "verification_status": {
+            "type": "string",
+            "enum": [
+              "not_verified",
+              "queued",
+              "verifying",
+              "verified",
+              "stale",
+              "failed"
+            ]
+          },
+          "review_status": {
+            "type": "string",
+            "enum": [
+              "music",
+              "not_music",
+              "unsure"
+            ]
+          },
+          "needs_attention": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "publication_status",
+          "verification_status",
+          "review_status",
+          "revision"
+        ]
+      },
+      "Finding": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "field": {
+            "type": "string"
+          },
+          "current": {},
+          "proposed": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "field",
+          "reason"
+        ]
+      },
+      "HistoryEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "action": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "changes": {
+            "type": "object"
+          },
+          "context": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "actor",
+          "occurred_at",
+          "changes"
+        ]
+      },
+      "Verification": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "publication_status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "live"
+            ]
+          },
+          "verification_status": {
+            "type": "string",
+            "enum": [
+              "not_verified",
+              "queued",
+              "verifying",
+              "verified",
+              "stale",
+              "failed"
+            ]
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            }
+          },
+          "log": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoryEntry"
+            }
+          },
+          "next_before": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "last_run": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "revision",
+          "publication_status",
+          "verification_status",
+          "findings",
+          "log",
+          "next_before"
+        ]
+      },
+      "VerificationJob": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "counts": {
+            "type": "object",
+            "properties": {
+              "queued": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "running": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "completed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "failed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "skipped": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "flagged": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": []
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "event_id": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "queued",
+                    "running",
+                    "completed",
+                    "failed",
+                    "skipped"
+                  ]
+                },
+                "error_message": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": []
+            }
+          }
+        },
+        "required": [
+          "id",
+          "counts",
+          "events"
+        ]
+      },
+      "ImportJob": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "job_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "verification_job_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed",
+              "interrupted"
+            ]
+          },
+          "options": {
+            "type": "object"
+          },
+          "progress": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "error_message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ]
+      },
+      "Ok": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      }
+    }
+  }
+}

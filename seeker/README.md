@@ -38,7 +38,7 @@ The package excludes the legacy root `public/` directory, which Hostinger can se
 | `CENTRAL_API_URL` | `https://api.dracula.lt` |
 | `CENTRAL_API_TOKEN` | The existing Dracula API admin token, entered as a runtime secret |
 
-Hosted Seeker verifies Google's ID token, then starts an eight-hour session with a Secure, HttpOnly cookie. The hosted server checks the hostname, protects private pages and API routes, and requires a same-origin `Origin` header on writes. Use valid HTTPS and keep Hostinger CDN caching disabled for Seeker. `npm run dev` and `npm start` keep the local server on loopback. Hosted Seeker can read and edit events and see shared job history. Start imports, background refreshes, and AI jobs in local Seeker until long-running jobs have been verified on the hosted platform.
+Hosted Seeker verifies Google's ID token, then starts an eight-hour session with a Secure, HttpOnly cookie. The hosted server checks the hostname, protects private pages and API routes, and requires a same-origin `Origin` header on writes. Use valid HTTPS and keep Hostinger CDN caching disabled for Seeker. `npm run dev` and `npm start` keep the local server on loopback. Hosted Seeker can read and edit events, queue AI verification, and see shared job history. Start source imports and background source refreshes from local Seeker. Set `SEEKER_HOSTED_IMPORT_WORKER=1` on the hosted Seeker process only after checking that the host keeps source jobs running through normal requests and restarts.
 
 Seeker can be installed from the sign-in page or dashboard. Only the install metadata and icons are public assets. The installed app requires a connection and uses the same Google sign-in as the website.
 
@@ -56,9 +56,9 @@ The detail lookup checks up to 10 event pages at a time using the same pacing. R
 
 Event details also include the source's optional “Apie renginį” link, which can point to a Facebook event or another website. Existing events need one details lookup to collect this link; use “Get details for 10 events” or open an event and refresh its details individually.
 
-The catalogue stores canonical `events` and linked `event_sources`. Original Vilnius Events records are also retained and central writes update both representations. The current importer and editor operate on Vilnius Events; additional source adapters and a merge workflow are future work. Potential matching events can be queried, but are never merged automatically.
+The catalogue stores canonical `events` and linked `event_sources`. It retains the original Vilnius Events records and API writes keep the editable fields in sync. Avilys and Vilnius Events share the same review and publication workflow. Possible duplicates are suggestions.
 
-The events page can preview and import Avilys Vilnius music candidates. Select a starting page and a limit of 1–200 events; each page contains up to 20. Imports run locally as centrally leased jobs and save candidates with review status Unsure. Run the same page again to refresh source data without overwriting reviewed event fields. The start page is manual, and a partial page should be rechecked on the next run. Events with changed details require manual review. Avilys dates and raw timestamps need verification: the imported time is left blank. Free/paid flags without a numeric price remain unknown. Images are not downloaded. Possible duplicates are suggestions only; there is no merge workflow. Only events marked Music appear in Dracula. Deploy the corresponding API changes before using this importer against a hosted API.
+The Avilys page previews and imports Vilnius music candidates through a centrally leased job. Select a starting page and 1–200 events. Each page contains up to 20. Reimport a partial page to pick up the rest. Avilys start times are Vilnius wall time, including timestamps ending in `Z`. The importer preserves reviewed fields on refresh and downloads available source images.
 
 Import and detail jobs are recorded centrally and run while the dashboard is closed as long as the local Node server remains running. An expired job lease is marked interrupted when another job starts; completed pages remain saved. Each source retains its own pacing and retry behavior.
 
@@ -69,6 +69,26 @@ For a recovery drill, download the intended database backup from Hostinger and v
 `npm start` runs Seeker locally against the central API using `CENTRAL_API_URL` and `CENTRAL_API_TOKEN`. These settings are stored in the ignored `.env.central` file, which central mode loads before `.env`; shell environment variables take precedence. Keep that file and its token private. The server connects event and artist dashboards, event imports, detail refresh, image jobs, MusicBrainz imports and AI evaluations to the API; unsupported routes fail closed and it never opens SQLite. Seeker keeps the token out of browser code, requires HTTPS except on localhost, and never automatically retries an uncertain write. Hosted event and artist reads, review writes, and a bounded live import of 20 new Vilnius Events records have been verified. That import left the normal page cursor unchanged; the standard next-page workflow and live AI runs have not yet been verified end to end.
 
 The experimental `sources/central-vilnius-run.ts` combines source-page fetching with transactional API imports and optional image uploads. It coordinates the minimum interval between requests through MariaDB and honors retry delays. Dashboard jobs use a lease and save progress centrally; an expired lease is marked interrupted when another job starts. If an image fails, the job fails visibly while already imported pages remain saved. The normal dashboard job path has been tested with a simulated source and disposable MariaDB; a bounded live import used the shared importer and central job lease.
+
+## AI verification and publication
+
+New events enter Seeker as **Draft** and **Unsure**. Both event import forms enable **Verify with AI after import** by default. Verification runs in the central API when the source job releases its lease. It covers new events and meaningful source changes. The import itself still succeeds if verification is unavailable. The Vilnius Events worker attempts the usual detail lookup for each changed event before releasing the import lease.
+
+Under **Settings → AI providers**, add one or more Gemini or OpenAI connections with a model ID and API key. Use **Test** to check each connection and select a default for imports. Set `SEEKER_AI_ENCRYPTION_KEY` on the API server before adding connections. The API encrypts saved keys using this server secret. Keep the environment secret available across releases and backups so existing provider profiles can still be decrypted.
+
+Use **Verify with AI** on an event or select up to 200 events for a batch. A manual run can select a different connection and disable automatic publication. Verification sends the listing text and structured event data to the selected provider.
+
+Verification can fill an unpublished event’s missing fields when the source evidence supports the value. It can classify clear cases as **Music** or **Not music**. A clear upcoming music event with a date can go **Live** automatically. Drafts that have landed in **Needs attention** require an explicit publication decision. Use **Approve**, **Edit and approve**, or **Dismiss** on the findings, then **Publish in Dracula** when ready. Live events stay public until explicitly unpublished. The dashboard’s **Not music** page filters by classification, and all event lists display publication and verification independently.
+
+The **Event log** records imports, meaningful refreshes, AI verification outcomes, manual edits and publication changes. Migration 013 carries forward previously public music events as Live. They begin as **Not verified** and the migration records a carry-forward entry because historical publication times were unavailable.
+
+## Agent access
+
+Create a named credential in **Settings → Agent access** and choose the permissions for the agent. Save the secret when it is revealed. Connect over HTTPS using bearer authentication and the [Seeker OpenAPI contract](../api/openapi/seeker.openapi.json). After deployment the same contract is served at `GET /v1/seeker/openapi.json`.
+
+For an MCP client, register `node` with the absolute path to `seeker/scripts/mcp.mjs` as its argument. Provide `SEEKER_AGENT_TOKEN` through the client's secret environment settings and set `SEEKER_API_URL` to an API origin if using a server other than `https://api.dracula.lt`. The adapter uses the same API as Seeker and exposes event search, event history, verification, import requests, findings, and publication as tools.
+
+Agent source imports remain queued until a local Seeker process or enabled hosted source worker claims them. Verification runs on the central API. For import or verification retries, reuse the request key. For event changes, fetch the revision and pass it with the requested action. The credential needs both verification and publication permissions for verification to publish automatically.
 
 ## AI event evaluation
 
@@ -94,8 +114,6 @@ Before each generation, Seeker asks Gemini to count input tokens and reserves th
 
 Vilnius Events imports can optionally download featured images. Enable “Download images with imports”, or use “Download missing event images” to process existing events. Images are stored on Hostinger outside the deployment directory; their metadata is stored in MariaDB. Source alt text is not imported. Requests use the same minimum 3-second spacing, retries and timeouts as the event importer. Failed images can be retried with the download button.
 
-The **Dracula export** filter shows which events are ready for the public app and why others are excluded. Ready events are marked Music and either have an unknown date or have not ended in Vilnius. Artist matches, images and an original event link are optional. The public API reads the central data without requiring a snapshot export.
-
-Assistant-reviewed events can be found with **Assistant review → Needs my check**. Their review notes are shown on each event; use **Mark as checked** after reviewing. Music events remain eligible for export before your check if they meet the existing date rules.
+The **Dracula feed** filter uses Live status and the current Vilnius date. A Live event with a date that has passed remains accessible at its public event URL. Older assistant review notes can still be found with **Assistant review → Needs my check**.
 
 Event prices are read from VN event pages during detail lookups. The displayed source text is saved with a free, paid or unknown classification; ambiguous, mixed or missing prices remain unknown. Use the Price filter to find free or paid events. To populate existing records, use **Refresh all event details** after restarting Seeker. Requests are paced, and unavailable pages cannot be refreshed.

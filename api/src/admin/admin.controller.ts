@@ -88,7 +88,7 @@ export class AdminController {
       if(isArtistImport)return json(res,200,{ok:true,...await this.imports.musicbrainz(body)});
       if(isReservation)return json(res,200,{ok:true,...await admin.reserveVilniusRequest()});
       if(isArtistReservation)return json(res,200,{ok:true,...await this.imports.reserveMusicBrainz()});
-      if(isJobStart)return json(res,200,{ok:true,...await this.imports.jobs.start(body.action,body.source,body.limit)});
+      if(isJobStart)return json(res,200,{ok:true,...await this.imports.jobs.start(body.action,body.source,body.limit,body.import_request)});
       if(isImageUpload)return json(res,200,{ok:true,...await this.imports.saveImage(body)});
       if(isAvilysImageUpload)return json(res,200,{ok:true,...await this.imports.saveAvilysImage(body)});
       if(isSeekerSave){await admin.saveEvents(body.ids as number[]);return json(res,200,{ok:true});}

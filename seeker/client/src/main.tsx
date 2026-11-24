@@ -36,6 +36,8 @@ const page = path === '/' ? <StartupPage />
   : path === '/settings.html' ? <SettingsPage />
   : path === '/ai-evaluation.html' ? <AiEvaluation />
   : path === '/all-events.html' ? <EventsPage all />
+  : path === '/needs-attention.html' ? <EventsPage all queue="attention" />
+  : path === '/not-music.html' ? <EventsPage all queue="not-music" />
   : path === '/possible-duplicates.html' ? <DuplicatesPage />
   : path === '/avilys.html' ? <EventsPage avilys />
   : path === '/vilnius-events.html' ? <EventsPage />

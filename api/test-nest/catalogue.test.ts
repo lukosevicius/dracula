@@ -29,7 +29,11 @@ function fixture() {
     INSERT INTO event_prices VALUES(1,'Nemokama','free'); INSERT INTO artists VALUES('artist-1','Artist');
     INSERT INTO event_artist_decisions VALUES(1,'artist-1','accepted');`);
   const pool={ execute: async (sql: string,params: import('node:sqlite').SQLInputValue[]) => [db.prepare(sql).all(...params)] };
-  db.exec('ALTER TABLE events ADD COLUMN interest_score INTEGER NOT NULL DEFAULT 1');
+  db.exec(`ALTER TABLE events ADD COLUMN interest_score INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE events ADD COLUMN publication_status TEXT NOT NULL DEFAULT 'draft';
+    ALTER TABLE events ADD COLUMN about_url_override TEXT;
+    ALTER TABLE events ADD COLUMN description_override TEXT;
+    UPDATE events SET publication_status='live' WHERE id IN (1,2,3)`);
   return { db, pool };
 }
 
@@ -42,6 +46,7 @@ test('ongoing events appear in the relevant day and are ranked by score across p
       (12,'Today middle','2026-11-21',NULL,'19:00','music',3),
       (13,'Tomorrow high','2026-11-22',NULL,NULL,'music',5),
       (14,'Undated',NULL,NULL,NULL,'music',5);
+    UPDATE events SET publication_status='live';
     INSERT INTO event_sources SELECT id,id,'avilys',CAST(id AS TEXT),'https://example.com',NULL,'' FROM events;`);
   const catalogue=new CatalogueService({pool} as unknown as DatabaseService,loadConfig(env));
   try {
@@ -64,6 +69,7 @@ test('past public event details and images remain accessible while private event
   db.exec("INSERT INTO event_images VALUES(3,'past.jpg'),(4,'private.jpg')");
   const catalogue=new CatalogueService({pool} as unknown as DatabaseService,loadConfig(env));
   try {
+    db.exec("UPDATE events SET review_status='not_music' WHERE id=3; UPDATE events SET review_status='music' WHERE id=4");
     const past=await catalogue.get(3,'2026-11-15');
     assert.equal(past?.id,3);
     assert.equal(past?.image_url,'https://api.example.com/v1/images/past.jpg');

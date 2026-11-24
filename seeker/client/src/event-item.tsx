@@ -1,3 +1,4 @@
+import { EventBadges } from './verification';
 import { isValidElement, memo, type ReactNode } from 'react';
 import type { ReviewStatus } from '../../types';
 import { formatDate, labels, plainText, priceInfo, reviews, sourceNames, type EventRow } from './data';
@@ -16,7 +17,6 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, revie
   const assistantPending = !!row.assistant_reviewed_at && !row.assistant_confirmed_at;
   const date = row.event_date ? formatDate(row.event_date) : 'Date unknown';
   const past = !!row.event_date && (row.event_end_date || row.event_date) < today;
-  const prepared = row.review_status === 'music' && !past;
   const time = row.event_time?.trim().slice(0, 5);
   const price = priceInfo(row);
   return (
@@ -40,6 +40,8 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, revie
               {showSource && <span>{sourceNames[row.source_key] ?? row.source_key}</span>}
             </span>
           </button>
+          <EventBadges row={row} />
+          {row.attention_reason && <p className="event-attention-reason">{row.attention_reason}</p>}
           <div className="interest-score-buttons" role="group" aria-label={`Interest score for ${title}`} title={`Interest score: ${row.interest_score || 1} of 5`}>
             {[1, 2, 3, 4, 5].map(score => <button
               key={score}
@@ -60,7 +62,7 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, revie
               </select>
               <Icon name="down" size={13} />
             </label>
-            <small>{assistantPending ? 'Needs your check' : past ? 'Past event' : prepared ? 'Ready for Dracula' : ''}</small>
+            <small>{assistantPending ? 'Needs your check' : past ? 'Past event' : ''}</small>
           </div>
           <button type="button" className="icon-button save-event-button" aria-label={saved ? `Remove ${title} from saved events` : `Save ${title}`} aria-pressed={saved} aria-busy={disabled} disabled={disabled} title={saved ? 'Remove from saved events' : 'Save event'} onClick={toggleSaved}><Icon name="save" /></button>
           <button type="button" className="icon-button event-expand" aria-label={`${open ? 'Hide' : 'Show'} details for ${title}`} aria-expanded={open} aria-controls={open ? `event-details-${row.id}` : undefined} onClick={toggle}><Icon name="down" /></button>

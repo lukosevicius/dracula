@@ -151,7 +151,7 @@ export function SavedEventsPage() {
           selected={false} select={() => {}} disabled={loading || pendingIds.includes(event.id) || pendingId === event.id || refreshing} review={status => void saveReview(event, status)}
           changeInterestScore={score => void changeInterestScore(event, score)}
           confirm={() => void confirmAssistantReview(event)} showSource saved={isSaved(event.id)} toggleSaved={() => toggle(event)} selectionEnabled={false}
-          editor={<EventEditor row={event} today={today} onSaved={() => refreshSavedRow(event)} onRefresh={() => void refreshSourceDetails(event)} refreshing={refreshing} />} />)}
+          editor={<EventEditor row={event} onSaved={() => refreshSavedRow(event)} onRefresh={() => void refreshSourceDetails(event)} refreshing={refreshing} />} />)}
         {!loading && !error && !events.length && <p className="empty-state">No saved events yet. Use the save button on an event to add it here.</p>}
       </div>
     </section>

@@ -1,12 +1,15 @@
 import type {AvilysEvent} from './sources/avilys.js';
 import type { ArtistDecision, ArtistsDashboard, EventDetails, ReviewStatus, SeekerArtistDetail } from './types.js';
 
+export type ImportClaim = { id: number; claim: string };
+export type ImportVerification = { verify_after_import: boolean; publish_after_verification: boolean };
+
 type Price = { price_text: string | null; price_type: 'free' | 'paid' | 'unknown' };
 type Details = EventDetails & { review_status: ReviewStatus };
 export type CentralEvent = { event: Record<string, unknown>; sources: Record<string, unknown>[]; price: Record<string, unknown> | null; artist_decisions: {artist_mbid:string;decision:string;name:string}[]; vilnius_event?:Record<string,unknown> | null; available_artists?:{mbid:string;name:string}[]; image?:Record<string,unknown> | null; match_candidates?:{id:number;title:string;event_date:string;venue:string|null}[] };
 export type CentralEventList = {events:Record<string,unknown>[];total:number;page:number;limit:number;counts:Record<string,number>;readyCount:number;nextPage:number;sources:Record<string,unknown>[];runs:Record<string,unknown>[]};
 export type VilniusImportItem = {source_id:number;title:string;source_url:string;content_html:string;categories:number[];featured_media:number | null;published_at:string | null;modified_at:string | null;details:Partial<EventDetails>};
-export type VilniusImportPage = {items:VilniusImportItem[];advance_cursor:boolean;expected_offset:number;next_offset:number;total_available:number | null;job?:{id:number;owner:string}};
+export type VilniusImportPage = Partial<ImportVerification> & {items:VilniusImportItem[];advance_cursor:boolean;expected_offset:number;next_offset:number;total_available:number | null;job?:{id:number;owner:string}};
 export type CentralJob = {id:number;source:string;action:string;status:string;started_at:string;finished_at:string|null;progress_json:string;error_message:string|null};
 export type CentralArtist = {id:string;name:string;country:'LT';sort_name:string|null;artist_type:string|null;area:string|null;begin_area:string|null;begin_date:string|null;end_date:string|null;disambiguation:string|null;aliases:string[]};
 
@@ -31,7 +34,8 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
     } catch { throw new Error('Central API request failed; the update outcome is unknown. Check the event before retrying.'); }
     if (!response.ok) {
       const uncertain = response.status >= 500 || response.status === 408;
-      const message = uncertain ? `Central API returned HTTP ${response.status}; the update outcome is unknown. Check the event before retrying.` : `Central API rejected the update (HTTP ${response.status}).`;
+      const detail = path.startsWith('/v1/seeker/') ? await response.json().catch(() => null) as {error?:unknown} | null : null;
+      const message = typeof detail?.error === 'string' ? detail.error : uncertain ? `Central API returned HTTP ${response.status}; the update outcome is unknown. Check the event before retrying.` : `Central API rejected the update (HTTP ${response.status}).`;
       throw Object.assign(new Error(message), { status:response.status });
     }
     const body = await response.json().catch(() => null) as Record<string,unknown> | null;
@@ -44,6 +48,12 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
   }
   async function get(path:string):Promise<any>{let response:Response;try{response=await fetch(new URL(path,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch{throw new Error('Central API request failed.');}if(!response.ok)throw Object.assign(new Error(`Central API read failed (HTTP ${response.status}).`),{status:response.status});return response.json();}
   return {
+    seekerRead: (path: string) => get(`/v1/seeker${path}`),
+    seekerWrite: (path: string, value: Record<string, unknown>) => post(`/v1/seeker${path}`, value),
+    async claimImport(): Promise<(ImportClaim & { options: Record<string, unknown> }) | null> {
+      const result = await post('/v1/seeker/imports/claim', {});
+      return (result.request ?? null) as (ImportClaim & { options: Record<string, unknown> }) | null;
+    },
     async savedEvents():Promise<Record<string,unknown>[]>{const value=await get('/v1/admin/seeker/saved-events');if(!Array.isArray(value.events))throw new Error('Central API returned an invalid saved event list.');return value.events;},
     async saveEvents(ids:number[]):Promise<void>{if(!Array.isArray(ids)||ids.length>500||!ids.every(id=>Number.isSafeInteger(id)&&id>0))throw new Error('Invalid saved event IDs.');await post('/v1/admin/seeker/saved-events',{ids});},
     async removeSavedEvent(id:number):Promise<void>{validateId(id);let response:Response;try{response=await fetch(new URL(`/v1/admin/seeker/saved-events/${id}`,base),{method:'DELETE',headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch{throw new Error('Central API request failed; the update outcome is unknown.');}if(!response.ok)throw Object.assign(new Error(`Central API rejected the update (HTTP ${response.status}).`),{status:response.status});const value=await response.json().catch(()=>null);if(!value||value.ok!==true)throw new Error('Central API returned an invalid response.');},
@@ -112,8 +122,8 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
       if(!response.ok)throw new Error(`Central API read failed (HTTP ${response.status}).`);
       const body=await response.json() as {jobs?:CentralJob[]};if(!Array.isArray(body.jobs))throw new Error('Central API returned invalid jobs.');return body.jobs;
     },
-    async startJob(action:string,source:'vilnius-events'|'avilys'|'musicbrainz'|'ai-evaluation'='vilnius-events',limit=0):Promise<{id:number;owner:string}> {
-      const body=await post('/v1/admin/jobs/start',{action,source,limit});
+    async startJob(action:string,source:'vilnius-events'|'avilys'|'musicbrainz'|'ai-evaluation'='vilnius-events',limit=0,import_request?:ImportClaim):Promise<{id:number;owner:string}> {
+      const body=await post('/v1/admin/jobs/start',{action,source,limit,import_request});
       if(!Number.isSafeInteger(body.id)||typeof body.owner!=='string'||!/^[a-f0-9]{64}$/.test(body.owner))throw new Error('Central API returned an invalid job; check before retrying.');
       return {id:body.id as number,owner:body.owner};
     },
@@ -125,11 +135,11 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
       if(!Number.isSafeInteger(body.waitMs) || Number(body.waitMs)<0 || Number(body.waitMs)>3000)throw new Error('Central API returned an invalid request reservation.');
       return Number(body.waitMs);
     },
-    async importAvilysPage(items:AvilysEvent[],job:{id:number;owner:string}):Promise<{added:number;updated:number}>{const body=await post('/v1/admin/imports/avilys/page',{items,job});if(!Number.isSafeInteger(body.added)||!Number.isSafeInteger(body.updated))throw new Error('Invalid import response; check before retrying.');return {added:Number(body.added),updated:Number(body.updated)};},
-    async importVilniusPage(page:VilniusImportPage):Promise<{added:number;updated:number}> {
+    async importAvilysPage(items:AvilysEvent[],job:{id:number;owner:string},verification?:ImportVerification):Promise<{added:number;updated:number}>{const body=await post('/v1/admin/imports/avilys/page',{items,job,...verification});if(!Number.isSafeInteger(body.added)||!Number.isSafeInteger(body.updated))throw new Error('Invalid import response; check before retrying.');return {added:Number(body.added),updated:Number(body.updated)};},
+    async importVilniusPage(page:VilniusImportPage):Promise<{added:number;updated:number;changedEventIds?:number[]}> {
       const body=await post('/v1/admin/imports/vilnius-events/page',page);
       if(!Number.isSafeInteger(body.added) || !Number.isSafeInteger(body.updated)) throw new Error('Central API returned an invalid response; check the import before retrying.');
-      return {added:body.added as number,updated:body.updated as number};
+      return {added:body.added as number,updated:body.updated as number,...(Array.isArray(body.changedEventIds) && body.changedEventIds.every(id=>Number.isSafeInteger(id) && id>0) ? {changedEventIds:body.changedEventIds as number[]} : {})};
     },
     async listEvents(filters:URLSearchParams):Promise<CentralEventList> {
       let response:Response;

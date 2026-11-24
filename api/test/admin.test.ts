@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
+import { editPublication } from '../dist/verification/verification.js';
 import { createAdmin } from '../dist/admin/admin.js';
 import { createApp } from '../test-support/nest.ts';
 import { createCatalogue } from '../test-support/nest.ts';
@@ -24,18 +25,30 @@ function setup() {
     CREATE TABLE vilnius_event_runs(id INTEGER);
     INSERT INTO events VALUES(1,'unsure','Tést &amp; show','2026-11-20',NULL,NULL,NULL,NULL,'[]'); INSERT INTO event_sources VALUES(1,1,'vilnius-events','99','https://example.com',NULL,'Description',NULL);
     INSERT INTO vilnius_events VALUES(99,'unsure',NULL,'2026-11-20',NULL,NULL,NULL,NULL,'[]',0); INSERT INTO artists VALUES('${artist}','Artist');`);
-  db.exec('ALTER TABLE events ADD COLUMN interest_score INTEGER NOT NULL DEFAULT 1');
+  db.exec(`ALTER TABLE events ADD COLUMN interest_score INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE events ADD COLUMN publication_status TEXT NOT NULL DEFAULT 'draft';
+    ALTER TABLE events ADD COLUMN publication_manual INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE events ADD COLUMN classification_manual INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE events ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE events ADD COLUMN verification_status TEXT NOT NULL DEFAULT 'not_verified';
+    ALTER TABLE events ADD COLUMN needs_attention INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE events ADD COLUMN about_url_override TEXT;
+    ALTER TABLE events ADD COLUMN description_override TEXT;
+    CREATE TABLE verification_findings(id INTEGER,event_id INTEGER,status TEXT,finding TEXT);
+    CREATE TABLE event_history(event_id INTEGER,action TEXT,actor TEXT,occurred_at TEXT,changes TEXT,context TEXT)`);
+  db.function('IF',(condition, yes, no) => condition ? yes : no);
+  db.function('JSON_UNQUOTE',value=>value);
   const connection = {
     async beginTransaction() { db.exec('BEGIN'); }, async commit() { db.exec('COMMIT'); },
     async rollback() { db.exec('ROLLBACK'); }, release() {},
     async execute(sql: string, params: import('node:sqlite').SQLInputValue[]) {
-      const query=sql.replace(/ FOR UPDATE$/, '');
+      const query=sql.replace(/ FOR UPDATE$/, '').replaceAll('UTC_TIMESTAMP(3)','CURRENT_TIMESTAMP');
       const statement=db.prepare(query);
       return [/^SELECT/i.test(query) ? statement.all(...params) : statement.run(...params)];
     }
   };
   const pool={getConnection:async()=>connection,execute:(sql: string,params: import('node:sqlite').SQLInputValue[])=>connection.execute(sql,params)} as unknown as import('mysql2/promise').Pool;
-  return {db,admin:createAdmin(pool,token),catalogue:createCatalogue(pool,'https://api.example.com')};
+  return {db,pool,admin:createAdmin(pool,token),catalogue:createCatalogue(pool,'https://api.example.com')};
 }
 
 test('event filters find missing times and unclassified prices before pagination', async () => {
@@ -62,10 +75,13 @@ test('event filters find missing times and unclassified prices before pagination
 });
 
 test('admin edits update both representations and roll back on error', async () => {
-  const {db,admin,catalogue}=setup();
+  const {db,pool,admin,catalogue}=setup();
   try {
     assert.equal(await catalogue.get(1,'2026-11-15'),null);
     await admin.review(1,{review_status:'music'});
+    assert.equal(await catalogue.get(1,'2026-11-15'),null);
+    const revision=Number(db.prepare('SELECT revision FROM events WHERE id=1').get()!.revision);
+    await editPublication(pool,1,{status:'live',revision},'Test editor');
     assert.equal((await catalogue.get(1,'2026-11-15')).title,'Tést &amp; show');
     const list=await admin.listEvents(new URLSearchParams({when:'all',search:'test &'}));
     assert.equal(list.total,1); assert.equal(list.events[0].id,1);

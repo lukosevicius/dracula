@@ -11,10 +11,12 @@ import { AdminGuard } from './admin/admin.guard.js';
 import { ImportsService } from './imports/imports.service.js';
 import { AuthController } from './auth/auth.controller.js';
 import { AuthService } from './auth/auth.service.js';
+import { SeekerController } from './verification/seeker.controller.js';
+import { VerificationWorker } from './verification/worker.service.js';
 
 @Module({
-  controllers: [HealthController, CatalogueController, AdminController, AuthController],
-  providers: [{ provide: APP_CONFIG, useFactory: () => loadConfig(process.env) }, DatabaseService, CatalogueService, AdminService, AdminGuard, ImportsService, AuthService],
+  controllers: [HealthController, CatalogueController, AdminController, AuthController, SeekerController],
+  providers: [{ provide: APP_CONFIG, useFactory: () => loadConfig(process.env) }, DatabaseService, CatalogueService, AdminService, AdminGuard, ImportsService, AuthService, VerificationWorker],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void { consumer.apply(CommonHeadersMiddleware).forRoutes('*path'); }

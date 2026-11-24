@@ -11,7 +11,7 @@ import { DatabaseService } from '../database/database.service.js';
 
 type Input = Record<string, unknown>;
 type Result = Record<string, unknown>;
-interface Jobs { list(): Promise<unknown>; start(action: unknown, source: unknown, limit: unknown): Promise<Result>; update(id: number, input: Input): Promise<void> }
+interface Jobs { list(): Promise<unknown>; start(action: unknown, source: unknown, limit: unknown, request?: unknown): Promise<Result>; update(id: number, input: Input): Promise<void> }
 
 /** Import, image, enrichment, AI and job operations used by the NestJS API. */
 @Injectable()
