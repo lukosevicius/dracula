@@ -36,11 +36,11 @@ export function Icon({ name, size = 17 }: { name: IconName; size?: number }) {
 const navigation = [
   { label: 'Catalogue', items: [
     { path: '/artists.html', name: 'Artists', icon: 'library' },
-    { path: '/saved-events.html', name: 'Saved events', icon: 'save' },
   ] },
   { label: 'Event sources', items: [
     { path: '/all-events.html', name: 'All', icon: 'calendar' },
     { path: '/needs-attention.html', name: 'Needs attention', icon: 'filter' },
+    { path: '/saved-events.html', name: 'Saved', icon: 'save' },
     { path: '/not-music.html', name: 'Not music', icon: 'calendar' },
     { path: '/avilys.html', name: 'Avilys', icon: 'avilys' },
     { path: '/vilnius-events.html', name: 'Vilnius Events', icon: 'calendar' },

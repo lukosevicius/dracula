@@ -140,7 +140,7 @@ export function SavedEventsPage() {
   }
 
   return <>
-    <PageHeading title="Saved events" description="Events you bookmarked in Seeker." icon="save" />
+    <PageHeading title="Saved" description="Events you bookmarked in Seeker." icon="save" />
     <section className="panel saved-events-panel">
       <PanelHeading title="Your saved events" end={<span className="count-label">{events.length} saved</span>} />
       {error && <div className="catalogue-feedback"><Feedback message={error} error /></div>}

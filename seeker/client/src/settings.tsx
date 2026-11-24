@@ -10,7 +10,7 @@ export const startPages = [
   { path: '/not-music.html', label: 'Not music' },
   { path: '/possible-duplicates.html', label: 'Possible duplicates' },
   { path: '/artists.html', label: 'Artists' },
-  { path: '/saved-events.html', label: 'Saved events' },
+  { path: '/saved-events.html', label: 'Saved' },
   { path: '/vilnius-events.html', label: 'Vilnius Events' },
   { path: '/ai-evaluation.html', label: 'AI evaluation' },
 ] as const;
