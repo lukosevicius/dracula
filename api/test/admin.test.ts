@@ -12,7 +12,7 @@ const artist = 'f5e813d7-0f2e-499a-9d07-9c38d955837d';
 function setup() {
   const db = new DatabaseSync(':memory:');
   db.exec(`CREATE TABLE events(id INTEGER PRIMARY KEY,review_status TEXT,title TEXT,event_date TEXT,event_end_date TEXT,event_time TEXT,venue TEXT,ticket_url TEXT,manual_fields TEXT);
-    CREATE TABLE event_sources(id INTEGER PRIMARY KEY,event_id INTEGER,source_key TEXT,source_id TEXT,source_url TEXT,about_url TEXT,content_html TEXT,last_checked_at TEXT);
+    CREATE TABLE event_sources(id INTEGER PRIMARY KEY,event_id INTEGER,source_key TEXT,source_id TEXT,source_url TEXT,about_url TEXT,content_html TEXT,last_checked_at TEXT,source_data_json TEXT);
     CREATE TABLE vilnius_events(source_id INTEGER PRIMARY KEY,review_status TEXT,featured_media INTEGER,event_date TEXT,event_end_date TEXT,event_time TEXT,venue TEXT,ticket_url TEXT,manual_fields TEXT,details_manual INTEGER);
     CREATE TABLE vilnius_images(media_id INTEGER,local_name TEXT);
     CREATE TABLE event_images(event_id INTEGER,source_key TEXT,source_id TEXT,source_url TEXT,local_name TEXT,mime_type TEXT,width INTEGER,height INTEGER);
@@ -23,7 +23,7 @@ function setup() {
     CREATE TABLE assistant_event_reviews(event_id INTEGER,reviewed_at TEXT,confirmed_at TEXT,notes TEXT);
     CREATE TABLE source_state(source_key TEXT,next_offset INTEGER);
     CREATE TABLE vilnius_event_runs(id INTEGER);
-    INSERT INTO events VALUES(1,'unsure','Tést &amp; show','2026-11-20',NULL,NULL,NULL,NULL,'[]'); INSERT INTO event_sources VALUES(1,1,'vilnius-events','99','https://example.com',NULL,'Description',NULL);
+    INSERT INTO events VALUES(1,'unsure','Tést &amp; show','2026-11-20',NULL,NULL,NULL,NULL,'[]'); INSERT INTO event_sources VALUES(1,1,'vilnius-events','99','https://example.com',NULL,'Description',NULL,NULL);
     INSERT INTO vilnius_events VALUES(99,'unsure',NULL,'2026-11-20',NULL,NULL,NULL,NULL,'[]',0); INSERT INTO artists VALUES('${artist}','Artist');`);
   db.exec(`ALTER TABLE events ADD COLUMN interest_score INTEGER NOT NULL DEFAULT 1;
     ALTER TABLE events ADD COLUMN publication_status TEXT NOT NULL DEFAULT 'draft';

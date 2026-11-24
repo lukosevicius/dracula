@@ -16,7 +16,7 @@ const env = { DB_HOST:'127.0.0.1', DB_USER:'test', DB_PASSWORD:'test', DB_NAME:'
 function fixture() {
   const db = new DatabaseSync(':memory:');
   db.exec(`CREATE TABLE events(id INTEGER,title TEXT,event_date TEXT,event_end_date TEXT,event_time TEXT,venue TEXT,ticket_url TEXT,review_status TEXT);
-    CREATE TABLE event_sources(id INTEGER PRIMARY KEY,event_id INTEGER,source_key TEXT,source_id TEXT,source_url TEXT,about_url TEXT,content_html TEXT);
+    CREATE TABLE event_sources(id INTEGER PRIMARY KEY,event_id INTEGER,source_key TEXT,source_id TEXT,source_url TEXT,about_url TEXT,content_html TEXT,source_data_json TEXT);
     CREATE TABLE vilnius_events(source_id INTEGER,featured_media INTEGER);
     CREATE TABLE vilnius_images(media_id INTEGER,local_name TEXT);
     CREATE TABLE event_images(event_id INTEGER,local_name TEXT);
@@ -24,7 +24,7 @@ function fixture() {
     CREATE TABLE event_artist_decisions(event_id INTEGER,artist_mbid TEXT,decision TEXT);
     CREATE TABLE artists(mbid TEXT,name TEXT);
     INSERT INTO events VALUES(1,'Upcoming','2026-11-20',NULL,'19:00','Club',NULL,'music'),(2,'Undated',NULL,NULL,NULL,NULL,NULL,'music'),(3,'Past','2026-11-01',NULL,NULL,NULL,NULL,'music'),(4,'Private','2026-11-20',NULL,NULL,NULL,NULL,'unsure');
-    INSERT INTO event_sources SELECT id,id,'vilnius-events',CAST(id AS TEXT),'https://vilnius-events.lt/event',NULL,'<p>Hello &amp; welcome</p>' FROM events;
+    INSERT INTO event_sources SELECT id,id,'vilnius-events',CAST(id AS TEXT),'https://vilnius-events.lt/event',NULL,'<p>Hello &amp; welcome</p>',NULL FROM events;
     INSERT INTO vilnius_events VALUES(1,5); INSERT INTO vilnius_images VALUES(5,'5.jpg');
     INSERT INTO event_prices VALUES(1,'Nemokama','free'); INSERT INTO artists VALUES('artist-1','Artist');
     INSERT INTO event_artist_decisions VALUES(1,'artist-1','accepted');`);
@@ -47,7 +47,7 @@ test('ongoing events appear in the relevant day and are ranked by score across p
       (13,'Tomorrow high','2026-11-22',NULL,NULL,'music',5),
       (14,'Undated',NULL,NULL,NULL,'music',5);
     UPDATE events SET publication_status='live';
-    INSERT INTO event_sources SELECT id,id,'avilys',CAST(id AS TEXT),'https://example.com',NULL,'' FROM events;`);
+    INSERT INTO event_sources SELECT id,id,'avilys',CAST(id AS TEXT),'https://example.com',NULL,'',NULL FROM events;`);
   const catalogue=new CatalogueService({pool} as unknown as DatabaseService,loadConfig(env));
   try {
     const options={offset:0,limit:2,filter:'upcoming' as const,from:'',to:''};
