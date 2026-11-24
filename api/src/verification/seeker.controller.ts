@@ -8,6 +8,7 @@ import { DatabaseService } from '../database/database.service.js';
 import { claimImport, identity, importRequest, listAgents, manageAgent, queueImport, type Scope } from './agents.js';
 import { fail, type Snapshot } from './history.js';
 import { listProviders, manageProvider } from './providers.js';
+import { verificationUsage } from './usage.js';
 import { editPublication, manualVerification, proposeFinding, recentVerificationJobs, resolveFinding, verificationDetails, verificationJob } from './verification.js';
 
 async function readJson(request: Request): Promise<Snapshot> {
@@ -83,6 +84,10 @@ export class SeekerController {
         if (path === '/agents') {
           require('admin');
           return send(200, { agents: await listAgents(pool) });
+        }
+        if (path === '/verification/usage') {
+          require('admin');
+          return send(200, await verificationUsage(pool, url.searchParams));
         }
         if (path === '/verification/jobs') {
           require('verification:run');

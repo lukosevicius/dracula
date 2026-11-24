@@ -65,8 +65,10 @@ CREATE TABLE verification_jobs (
   request_hash CHAR(64) NULL,
   allow_publish BOOLEAN NOT NULL DEFAULT TRUE,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  started_at DATETIME(3) NULL,
   UNIQUE KEY(import_job_id),
-  UNIQUE KEY(actor,request_key)
+  UNIQUE KEY(actor,request_key),
+  INDEX idx_verification_jobs_created(created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE event_verifications (
@@ -83,9 +85,25 @@ CREATE TABLE event_verifications (
   error_message VARCHAR(500) NULL,
   INDEX(status,id),
   INDEX(event_id,id),
+  INDEX idx_event_verifications_finished(finished_at),
   UNIQUE KEY(job_id,event_id),
   FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE CASCADE,
   FOREIGN KEY(job_id) REFERENCES verification_jobs(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE verification_provider_requests (
+  id CHAR(36) CHARACTER SET ascii PRIMARY KEY,
+  verification_id BIGINT NULL,
+  provider VARCHAR(30) NOT NULL,
+  model VARCHAR(150) NOT NULL,
+  requested_at DATETIME(3) NOT NULL,
+  finished_at DATETIME(3) NULL,
+  input_tokens INT UNSIGNED NULL,
+  cached_input_tokens INT UNSIGNED NULL,
+  output_tokens INT UNSIGNED NULL,
+  estimated_cost_usd DECIMAL(18,9) NULL,
+  INDEX idx_verification_provider_requests_time(requested_at),
+  FOREIGN KEY(verification_id) REFERENCES event_verifications(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE verification_findings (

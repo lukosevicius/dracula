@@ -205,7 +205,8 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
         confirmed('venue','Club'),
         {field:'review_status',disposition:'suggestion',proposed:nonMusic?'not_music':'music',evidence:nonMusic?'Keramikos dirbtuvės':'Gyvos muzikos koncertas',reason:'Source describes the activity.'},
       ];
-      return Response.json({candidates:[{content:{parts:[{text:JSON.stringify({findings})}]}}]});
+      return Response.json({candidates:[{content:{parts:[{text:JSON.stringify({findings})}]}}],
+        usageMetadata:{promptTokenCount:200,candidatesTokenCount:30}});
     });
     assert.equal(await worker(),false,'verification waits for the import lease');
     assert.equal((await (await workflow(`/events/${clean}/verification`)).json()).publication_status,'draft');
@@ -231,15 +232,29 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     const notMusic=await (await workflow(`/events/${workshop}`)).json();
     assert.equal(notMusic.event.review_status,'not_music');
     assert.equal(notMusic.event.publication_status,'draft');
+    const usageResponse = await workflow('/verification/usage?period=month');
+    assert.equal(usageResponse.status,200);
+    const usage = await usageResponse.json();
+    assert.deepEqual(usage.activity,{completed:3,failed:0,skipped:0,flagged:1});
+    assert.deepEqual(usage.by_model,[{provider:'gemini',model:'test-model',requests:3,missing_usage:0,unpriced:3,
+      input_tokens:600,cached_input_tokens:0,output_tokens:90,estimated_cost_usd:null}]);
+    const run = usage.runs.find((entry:{import_job_id:number})=>entry.import_job_id===started.id);
+    assert.equal(run.events,3);
+    assert.equal(run.flagged,1);
+    assert.match(run.started_at,/Z$/);
+    const runEvents = await (await workflow(`/verification/jobs/${run.id}`)).json();
+    assert.ok(runEvents.events.some((event:{event_id:number;title:string;flagged:number})=>event.event_id===flagged && event.title==='Test concert 31' && event.flagged===1));
+    assert.equal((await workflow('/verification/usage?period=invalid')).status,400);
     const agent=(await (await workflow('/agents',{action:'create',name:'Read-only',scopes:['events:read']})).json());
     const agentHeaders={...headers,authorization:`Bearer ${agent.token}`};
     assert.equal((await workflow('/events?when=all&review=not_music',undefined,agentHeaders)).status,200);
+    assert.equal((await workflow('/verification/usage',undefined,agentHeaders)).status,403);
     assert.equal((await workflow(`/events/${clean}/publication`,{status:'draft',revision:cleanResult.revision},agentHeaders)).status,403);
     assert.equal((await workflow('/agents',{action:'revoke',id:agent.id})).status,200);
     assert.equal((await workflow('/events',undefined,agentHeaders)).status,401);
 
     // Recreate the pre-city, pre-preferences and pre-score schema to exercise migrations.
-    await pool.query('DROP TABLE verification_findings,event_verifications,verification_jobs,verification_providers,event_history,seeker_agent_keys,seeker_import_requests');
+    await pool.query('DROP TABLE verification_provider_requests,verification_findings,event_verifications,verification_jobs,verification_providers,event_history,seeker_agent_keys,seeker_import_requests');
     await pool.query('ALTER TABLE event_sources DROP COLUMN detail_evidence_json');
     await pool.query(`ALTER TABLE events DROP COLUMN city, DROP COLUMN interest_score,
       DROP INDEX idx_events_public_date, DROP INDEX idx_events_verification, DROP INDEX idx_events_attention,

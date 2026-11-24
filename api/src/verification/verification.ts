@@ -5,6 +5,7 @@ import { normalizeEventSearch } from '../admin/event-search.js';
 import { descriptionText } from '../catalogue/description.js';
 import { diff, fail, history, jsonValue, lockEvent, setPublication, snapshot, transaction, type Snapshot } from './history.js';
 import { defaultProfileKey, generate, loadProfile } from './providers.js';
+import { beginProviderRequest, finishProviderRequest, historicalFinding, type TokenUsage } from './usage.js';
 import { canAutoFill, editable, evidenceText, parseFindings, resultSchema, sourceEvidence, validField, type Editable, type Finding } from './rules.js';
 
 type FindingDetails = Finding & { current: unknown; artistId?: string };
@@ -41,8 +42,8 @@ export async function queueAfterImport(conn: PoolConnection, id: number, importJ
   if (!verify) return;
   const event = await lockEvent(conn, id);
   const profile = await profileFor(conn);
-  const [job] = await conn.execute<ResultSetHeader>(`INSERT INTO verification_jobs(profile_id,provider,model,import_job_id,actor,allow_publish)
-    VALUES(?,?,?,?,'import',?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)`, [profile?.id ?? null, profile?.provider ?? null, profile?.model ?? null, importJob ?? null, publish]);
+  const [job] = await conn.execute<ResultSetHeader>(`INSERT INTO verification_jobs(profile_id,provider,model,import_job_id,actor,allow_publish,created_at)
+    VALUES(?,?,?,?,'import',?,UTC_TIMESTAMP(3)) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)`, [profile?.id ?? null, profile?.provider ?? null, profile?.model ?? null, importJob ?? null, publish]);
   await enqueue(conn, job.insertId, event);
 }
 
@@ -57,8 +58,8 @@ export async function manualVerification(pool: Pool, body: Snapshot, actor: stri
     const profile = await profileFor(conn, profile_id as number | undefined);
     let jobId: number;
     try {
-      const [job] = await conn.execute<ResultSetHeader>(`INSERT INTO verification_jobs(profile_id,provider,model,actor,request_key,request_hash,allow_publish)
-        VALUES(?,?,?,?,?,?,?)`, [profile?.id ?? null, profile?.provider ?? null, profile?.model ?? null, actor, request_key ?? null, hash, allow_publish !== false]);
+      const [job] = await conn.execute<ResultSetHeader>(`INSERT INTO verification_jobs(profile_id,provider,model,actor,request_key,request_hash,allow_publish,created_at)
+        VALUES(?,?,?,?,?,?,?,UTC_TIMESTAMP(3))`, [profile?.id ?? null, profile?.provider ?? null, profile?.model ?? null, actor, request_key ?? null, hash, allow_publish !== false]);
       jobId = job.insertId;
     } catch (error) {
       if (!request_key || (error as { code?: string }).code !== 'ER_DUP_ENTRY') throw error;
@@ -98,6 +99,7 @@ async function claimTask(pool: Pool): Promise<Task | null> {
     }
     const claim = randomUUID();
     await conn.execute(`UPDATE event_verifications SET status='running',attempts=attempts+1,claim=?,lease_until=DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 120 SECOND) WHERE id=?`, [claim, row.id]);
+    await conn.execute('UPDATE verification_jobs SET started_at=UTC_TIMESTAMP(3) WHERE id=? AND started_at IS NULL', [row.job_id]);
     await conn.execute("UPDATE events SET verification_status='verifying' WHERE id=?", [row.event_id]);
     return { ...row, event_revision: queued.event_revision, claim } as unknown as Task;
   });
@@ -310,7 +312,15 @@ export function createVerificationWorker(pool: Pool, secret?: string, request = 
         'For review_status return music, not_music, or unsure with evidence. For performers return one exact name per finding. Check cancellations, material inconsistencies, and duplicate signals. Missing optional fields by themselves are allowed.',
         JSON.stringify({ event: input.values, source_listings: input.sources }),
       ].join('\n');
-      findings = parseFindings(await generate(profile, prompt, resultSchema, request), evidenceText(input.sources));
+      await beginProviderRequest(pool, task.claim, task.id, profile.provider, profile.model);
+      let usage: TokenUsage | null = null;
+      let result: unknown;
+      try {
+        result = await generate(profile, prompt, resultSchema, request, undefined, captured => { usage = captured; });
+      } finally {
+        await finishProviderRequest(pool, task.claim, profile.provider, profile.model, usage);
+      }
+      findings = parseFindings(result, evidenceText(input.sources));
     } catch (error) {
       await finishTask(pool, task, undefined, undefined, trimmed(error instanceof Error && (error as {status?: number}).status ? error.message : 'Verification could not process this event.'));
       return true;
@@ -323,7 +333,8 @@ export function createVerificationWorker(pool: Pool, secret?: string, request = 
 export async function verificationJob(pool: Pool, id: number) {
   const [jobs] = await pool.execute<RowDataPacket[]>('SELECT id,provider,model,import_job_id,created_at FROM verification_jobs WHERE id=?', [id]);
   if (!jobs.length) throw fail(404, 'Verification job not found.');
-  const [events] = await pool.execute<RowDataPacket[]>(`SELECT v.event_id,v.status,v.error_message,e.needs_attention,e.publication_status FROM event_verifications v JOIN events e ON e.id=v.event_id WHERE v.job_id=? ORDER BY v.id`, [id]);
+  const [events] = await pool.execute<RowDataPacket[]>(`SELECT v.event_id,e.title,v.status,v.error_message,e.needs_attention,e.publication_status,
+    ${historicalFinding} AS flagged FROM event_verifications v JOIN events e ON e.id=v.event_id WHERE v.job_id=? ORDER BY v.id`, [id]);
   const counts = { queued: 0, running: 0, completed: 0, failed: 0, skipped: 0, flagged: 0 };
   for (const event of events) {
     counts[event.status as 'queued']++;

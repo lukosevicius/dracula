@@ -4,6 +4,8 @@ import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import type { Pool } from 'mysql2/promise';
 import { canAutoFill, evidenceText, parseFindings, sourceEvidence } from '../dist/verification/rules.js';
 import { generate, manageProvider } from '../dist/verification/providers.js';
+import { estimatedTokenCost, usageWindow, verificationUsage } from '../dist/verification/usage.js';
+import type { TokenUsage } from '../dist/verification/usage.js';
 import { createVerificationWorker, editPublication, resolveFinding } from '../dist/verification/verification.js';
 
 test('verification rejects invented evidence and preserves Avilys wall time', () => {
@@ -26,6 +28,7 @@ test('verification rejects invented evidence and preserves Avilys wall time', ()
 
 test('Gemini and OpenAI use structured provider responses with credentials in headers', async () => {
   for (const provider of ['gemini', 'openai'] as const) {
+    let tokens: TokenUsage | null = null;
     const result = await generate({ id: 1, provider, key: 'stub-key', model: 'test-model' }, 'test', {type:'object'}, async (url, init) => {
       assert.doesNotMatch(String(url), /stub-key/);
       const headers = new Headers(init?.headers);
@@ -33,19 +36,34 @@ test('Gemini and OpenAI use structured provider responses with credentials in he
       if (provider === 'gemini') {
         assert.equal(headers.get('x-goog-api-key'), 'stub-key');
         assert.equal(body.generationConfig.responseMimeType, 'application/json');
-        return Response.json({candidates:[{content:{parts:[{text:'{"ok":true}'}]}}]});
+        return Response.json({candidates:[{content:{parts:[{text:'{"ok":true}'}]}}],
+          usageMetadata:{promptTokenCount:200,cachedContentTokenCount:50,candidatesTokenCount:26,thoughtsTokenCount:4}});
       }
       assert.equal(headers.get('authorization'), 'Bearer stub-key');
       assert.equal(body.response_format.type, 'json_schema');
-      return Response.json({choices:[{message:{content:'{"ok":true}'}}]});
-    });
+      return Response.json({choices:[{message:{content:'{"ok":true}'}}],
+        usage:{prompt_tokens:200,prompt_tokens_details:{cached_tokens:50},completion_tokens:30}});
+    }, undefined, usage => { tokens = usage; });
     assert.deepEqual(result, {ok:true});
+    assert.deepEqual(tokens, {input:200,cached:50,output:30});
   }
+  const usage = {input:200,cached:50,output:30};
+  assert.equal(estimatedTokenCost('openai','gpt-6-luna',usage),0.0000305);
+  assert.equal(estimatedTokenCost('openai','unknown-model',usage),null);
+});
+
+test('verification usage uses Vilnius midnight with Monday as the start of the week', () => {
+  const springChange = new Date('2026-03-29T12:00:00Z');
+  assert.deepEqual(usageWindow('today', springChange), ['2026-03-28 22:00:00.000', '2026-03-29 21:00:00.000']);
+  const mondayInVilnius = new Date('2026-03-29T21:05:00Z');
+  assert.deepEqual(usageWindow('week', mondayInVilnius), ['2026-03-29 21:00:00.000', '2026-04-05 21:00:00.000']);
+  assert.deepEqual(usageWindow('month', springChange), ['2026-02-28 22:00:00.000', '2026-03-31 21:00:00.000']);
 });
 
 test('verification fills a missing time, publishes clean music, and records the human decisions on flagged drafts', async () => {
   const db = new DatabaseSync(':memory:');
   db.function('IF', (condition, yes, no) => condition ? yes : no);
+  db.function('DATE_FORMAT', (time, _format) => time === null ? null : String(time).slice(0,19).replace(' ','T') + 'Z');
   db.exec(`
     CREATE TABLE events(id INTEGER PRIMARY KEY,title TEXT,event_date TEXT,event_end_date TEXT,event_time TEXT,venue TEXT,city TEXT,ticket_url TEXT,
       review_status TEXT NOT NULL DEFAULT 'unsure', publication_status TEXT NOT NULL DEFAULT 'draft', interest_score INTEGER DEFAULT 1,
@@ -59,10 +77,13 @@ test('verification fills a missing time, publishes clean music, and records the 
     CREATE TABLE artists(mbid TEXT,name TEXT);
     CREATE TABLE event_prices(event_id INTEGER,price_type TEXT,price_text TEXT,manual INTEGER);
     CREATE TABLE event_history(id INTEGER PRIMARY KEY,event_id INTEGER,action TEXT,actor TEXT,occurred_at TEXT,changes TEXT,context TEXT);
-    CREATE TABLE verification_jobs(id INTEGER PRIMARY KEY,profile_id INTEGER,provider TEXT,model TEXT,import_job_id INTEGER,allow_publish INTEGER);
+    CREATE TABLE verification_jobs(id INTEGER PRIMARY KEY,profile_id INTEGER,provider TEXT,model TEXT,import_job_id INTEGER,allow_publish INTEGER,
+      actor TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,started_at TEXT);
     CREATE TABLE event_verifications(id INTEGER PRIMARY KEY,event_id INTEGER,job_id INTEGER,event_revision INTEGER,status TEXT,claim TEXT,lease_until TEXT,
       result TEXT,error_message TEXT,finished_at TEXT,attempts INTEGER DEFAULT 0);
     CREATE TABLE verification_findings(id INTEGER PRIMARY KEY,event_id INTEGER,verification_id INTEGER,field_name TEXT,finding TEXT,status TEXT DEFAULT 'open',resolved_by TEXT);
+    CREATE TABLE verification_provider_requests(id TEXT PRIMARY KEY,verification_id INTEGER,provider TEXT,model TEXT,requested_at TEXT,finished_at TEXT,
+      input_tokens INTEGER,cached_input_tokens INTEGER,output_tokens INTEGER,estimated_cost_usd REAL);
     CREATE TABLE job_leases(job_id INTEGER,expires_at INTEGER);
     CREATE TABLE verification_providers(id INTEGER PRIMARY KEY,name TEXT,provider TEXT,model TEXT,encrypted_key BLOB);
     CREATE TABLE seeker_settings(setting_key TEXT PRIMARY KEY,setting_value TEXT);
@@ -70,7 +91,7 @@ test('verification fills a missing time, publishes clean music, and records the 
     INSERT INTO event_sources SELECT id,id,'avilys',id,'https://avilys.app/',NULL,
       CASE id WHEN 2 THEN 'Koncertas 18:00 arba 20:00' WHEN 3 THEN 'Keramikos dirbtuvės 19:00' ELSE 'Koncertas 19:00' END,
       json_object('startTime',event_date||'T19:00:00Z','venueName',venue) FROM events;
-    INSERT INTO verification_jobs VALUES(1,1,'gemini','stub-model',42,1);
+    INSERT INTO verification_jobs(id,profile_id,provider,model,import_job_id,allow_publish,actor) VALUES(1,1,'gemini','gemini-3.5-flash-lite',42,1,'import');
     INSERT INTO job_leases VALUES(42,4102444800000);
     INSERT INTO event_verifications(id,event_id,job_id,event_revision,status) SELECT id,id,1,1,'queued' FROM events;
   `);
@@ -89,8 +110,9 @@ test('verification fills a missing time, publishes clean music, and records the 
   const pool = { getConnection: async () => conn, execute: conn.execute } as unknown as Pool;
   const secret = 'a'.repeat(64);
   try {
-    await manageProvider(pool, secret, { action:'save', name:'Stub', provider:'gemini', model:'stub-model', key:'test-provider-key' });
+    await manageProvider(pool, secret, { action:'save', name:'Stub', provider:'gemini', model:'gemini-3.5-flash-lite', key:'test-provider-key' });
     let corrected = false;
+    let invalidOutput = false;
     const worker = createVerificationWorker(pool, secret, async (_url, init) => {
       const choice = String(init?.body);
       const date = choice.includes('Conflicting concert') ? '2099-11-02' : choice.includes('Clay workshop') ? '2099-11-03' : '2099-11-01';
@@ -101,7 +123,8 @@ test('verification fills a missing time, publishes clean music, and records the 
           ? corrected ? result('event_time','20:00','20:00','confirmed') : result('event_time','','18:00 arba 20:00','attention')
           : result('event_time','19:00','19:00'),
         result('review_status',other?'not_music':'music',other?'Keramikos dirbtuvės':'Koncertas')];
-      return Response.json({candidates:[{content:{parts:[{text:JSON.stringify({findings})}]}}]});
+      return Response.json({candidates:[{content:{parts:[{text:invalidOutput ? '{' : JSON.stringify({findings})}]}}],
+        usageMetadata:{promptTokenCount:200,cachedContentTokenCount:50,candidatesTokenCount:26,thoughtsTokenCount:4}});
     });
     assert.equal(await worker(), false);
     db.exec('DELETE FROM job_leases');
@@ -115,7 +138,7 @@ test('verification fills a missing time, publishes clean music, and records the 
     await resolveFinding(pool,2,Number(finding.id),{decision:'approve',value:'20:00',revision:revision()},'Seeker editor');
     assert.equal(db.prepare('SELECT publication_status FROM events WHERE id=2').get()!.publication_status,'draft');
     corrected = true;
-    db.exec(`INSERT INTO verification_jobs VALUES(2,1,'gemini','stub-model',NULL,1);
+    db.exec(`INSERT INTO verification_jobs(id,profile_id,provider,model,import_job_id,allow_publish,actor) VALUES(2,1,'gemini','gemini-3.5-flash-lite',NULL,1,'editor');
       INSERT INTO event_verifications(id,event_id,job_id,event_revision,status) SELECT 4,id,2,revision,'queued' FROM events WHERE id=2;`);
     assert.equal(await worker(),true);
     assert.deepEqual(Object.values(db.prepare('SELECT publication_status,needs_attention FROM events WHERE id=2').get()!),['draft',0]);
@@ -123,5 +146,19 @@ test('verification fills a missing time, publishes clean music, and records the 
     await assert.rejects(editPublication(pool,2,{status:'draft',revision:1},'Seeker editor'),{ status:409 });
     await editPublication(pool,2,{status:'draft',revision:revision()},'Seeker editor');
     assert.deepEqual(db.prepare('SELECT action FROM event_history WHERE event_id=2 ORDER BY id').all().map(row=>row.action),['verified','finding_approved','verified','published','unpublished']);
+    invalidOutput = true;
+    db.exec(`INSERT INTO verification_jobs(id,profile_id,provider,model,import_job_id,allow_publish,actor) VALUES(3,1,'gemini','gemini-3.5-flash-lite',NULL,1,'editor');
+      INSERT INTO event_verifications(id,event_id,job_id,event_revision,status) SELECT 5,id,3,revision,'queued' FROM events WHERE id=2;`);
+    assert.equal(await worker(),true);
+    assert.equal(db.prepare('SELECT status FROM event_verifications WHERE id=5').get()!.status,'failed');
+    const report = await verificationUsage(pool, new URLSearchParams({period:'month'}));
+    assert.deepEqual(report.activity,{completed:4,failed:1,skipped:0,flagged:1});
+    assert.deepEqual(report.runs.map(run => [run.id,run.events,run.flagged,run.import_job_id]), [[3,1,0,null],[2,1,0,null],[1,3,1,42]]);
+    assert.ok(report.runs.every(run => run.started_at >= run.queued_at));
+    assert.equal(report.usage.requests,5);
+    assert.equal(report.usage.input_tokens,1000);
+    assert.equal(report.usage.output_tokens,150);
+    assert.equal(report.by_model[0].model,'gemini-3.5-flash-lite');
+    assert.equal(report.usage.estimated_cost_usd?.toFixed(7),'0.0006075');
   } finally { db.close(); }
 });
