@@ -42,7 +42,7 @@ export default function EventPage() {
   const time = event.event_time
     ? `${event.event_time}${event.event_end_time ? ` iki ${event.event_end_time}` : ''}`
     : null;
-  const price = event.price_text || (event.price_type === 'free' ? 'Nemokamai' : event.price_type === 'paid' ? 'Mokama' : 'Nenurodyta');
+  const price = event.price_text?.trim() || (event.price_type === 'free' ? 'Nemokamai' : null);
 
   async function openLink(url: string) {
     try { await Linking.openURL(url); }
@@ -65,7 +65,7 @@ export default function EventPage() {
         {date ? <View style={styles.section}><Text style={styles.label}>DATA</Text><Text style={styles.value}>{date}</Text></View> : null}
         {time ? <View style={styles.section}><Text style={styles.label}>LAIKAS</Text><Text style={styles.value}>{time}</Text></View> : null}
         {event.venue ? <View style={styles.section}><Text style={styles.label}>VIETA</Text><Text style={styles.value}>{displayText(event.venue)}</Text></View> : null}
-        <View style={styles.section}><Text style={styles.label}>KAINA</Text><Text style={styles.value}>{displayText(price)}</Text></View>
+        {price ? <View style={styles.section}><Text style={styles.label}>KAINA</Text><Text style={styles.value}>{displayText(price)}</Text></View> : null}
         {event.artists.length ? <View style={styles.section}><Text style={styles.label}>ATLIKĖJAI</Text>{event.artists.map(artist => <Link key={artist.mbid} href={{pathname:'/artists/[id]',params:{id:artist.mbid}}} style={styles.link}>{displayText(artist.name)} →</Link>)}</View> : null}
         {desktop ? links : null}
       </View>
