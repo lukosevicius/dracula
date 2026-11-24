@@ -1,5 +1,5 @@
 import { EventBadges } from './verification';
-import { isValidElement, memo, type ReactNode } from 'react';
+import { isValidElement, memo, useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import type { ReviewStatus } from '../../types';
 import { formatDate, labels, plainText, priceInfo, reviews, sourceNames, type EventRow } from './data';
 import { Icon } from './workspace';
@@ -19,6 +19,28 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, revie
   const past = !!row.event_date && (row.event_end_date || row.event_date) < today;
   const time = row.event_time?.trim().slice(0, 5);
   const price = priceInfo(row);
+  const [copyStatus, setCopyStatus] = useState('');
+  useEffect(() => {
+    if (!copyStatus) return;
+    const timer = window.setTimeout(() => setCopyStatus(''), 3000);
+    return () => window.clearTimeout(timer);
+  }, [copyStatus]);
+
+  function toggleTitle(event: MouseEvent<HTMLDivElement>) {
+    const selection = window.getSelection();
+    if (selection?.rangeCount && !selection.isCollapsed && selection.getRangeAt(0).intersectsNode(event.currentTarget)) return;
+    toggle();
+  }
+
+  async function copyReference() {
+    try {
+      await navigator.clipboard.writeText(`${title} (Seeker event #${row.id})`);
+      setCopyStatus('Event name and ID copied.');
+    } catch {
+      setCopyStatus(`Clipboard unavailable. Seeker event #${row.id}.`);
+    }
+  }
+
   return (
     <article className={`event-item ${open ? 'event-open' : ''} ${selected ? 'event-selected' : ''}`}>
       <div className={`event-row ${selectionEnabled ? '' : 'event-row-saved'}`}>
@@ -28,7 +50,7 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, revie
           <strong>{row.event_date?.slice(8, 10) || '—'}</strong>
         </div>
         <div className="event-main">
-          <button type="button" className="event-title" aria-expanded={open} aria-controls={open ? `event-details-${row.id}` : undefined} onClick={toggle}>
+          <div className="event-title" onClick={toggleTitle}>
             <strong>{title}</strong>
             <span>
               {row.event_date && row.event_date.slice(0, 4) !== today.slice(0, 4) && <span>{row.event_date.slice(0, 4)}</span>}
@@ -39,7 +61,7 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, revie
               {price.type === 'unknown' && <span className="missing-detail"><Icon name="ticket" size={13} /> Price unknown</span>}
               {showSource && <span>{sourceNames[row.source_key] ?? row.source_key}</span>}
             </span>
-          </button>
+          </div>
           <EventBadges row={row} />
           {row.attention_reason && <p className="event-attention-reason">{row.attention_reason}</p>}
           <div className="interest-score-buttons" role="group" aria-label={`Interest score for ${title}`} title={`Interest score: ${row.interest_score || 1} of 5`}>
@@ -65,6 +87,10 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, revie
             <small>{assistantPending ? 'Needs your check' : past ? 'Past event' : ''}</small>
           </div>
           <button type="button" className="icon-button save-event-button" aria-label={saved ? `Remove ${title} from saved events` : `Save ${title}`} aria-pressed={saved} aria-busy={disabled} disabled={disabled} title={saved ? 'Remove from saved events' : 'Save event'} onClick={toggleSaved}><Icon name="save" /></button>
+          <div className="event-copy-control">
+            <button type="button" className="icon-button" aria-label={`Copy event name and ID for ${title}`} title="Copy event name and ID" onClick={() => void copyReference()}><Icon name={copyStatus.startsWith('Event name') ? 'check' : 'copy'} /></button>
+            <span className="event-copy-status" role="status">{copyStatus}</span>
+          </div>
           <button type="button" className="icon-button event-expand" aria-label={`${open ? 'Hide' : 'Show'} details for ${title}`} aria-expanded={open} aria-controls={open ? `event-details-${row.id}` : undefined} onClick={toggle}><Icon name="down" /></button>
         </div>
       </div>

@@ -6,7 +6,7 @@ import { descriptionText } from '../catalogue/description.js';
 import { diff, fail, history, jsonValue, lockEvent, setPublication, snapshot, transaction, type Snapshot } from './history.js';
 import { defaultProfileKey, generate, loadProfile } from './providers.js';
 import { beginProviderRequest, finishProviderRequest, historicalFinding, type TokenUsage } from './usage.js';
-import { canAutoFill, editable, evidenceText, parseFindings, resultSchema, sourceEvidence, validField, type Editable, type Finding } from './rules.js';
+import { canAutoFill, editable, evidenceText, parseFindings, reconcileStructuredFields, resultSchema, sourceEvidence, validField, type Editable, type Finding } from './rules.js';
 
 type FindingDetails = Finding & { current: unknown; artistId?: string };
 type Task = { id: number; event_id: number; job_id: number; event_revision: number; claim: string; profile_id: number | null; provider: string; model: string; allow_publish: number };
@@ -128,7 +128,7 @@ async function getInput(pool: Pool, id: number) {
     } as Snapshot;
     delete values.interest_score;
     delete values.publication_status;
-    return { values, sources: sources.slice(0, 3).map(sourceEvidence), similar };
+    return { values, sources: sources.slice(0, 3).map(sourceEvidence), manualFields: jsonValue<string[]>(event.manual_fields), similar };
   });
 }
 
@@ -307,7 +307,9 @@ export function createVerificationWorker(pool: Pool, secret?: string, request = 
       input = await getInput(pool, Number(task.event_id));
       const prompt = [
         'Verify the saved event against the source listings. Check every schema field and return at least one result for event_date, event_time, venue, and review_status.',
-        'Use confirmed when evidence supports a saved value, suggestion for a missing or incorrect value, attention for ambiguity or conflicts, and unknown when evidence is absent. Quote verbatim source text or a complete structured source value as evidence.',
+        'Each listing has structured_fields extracted from its source data. A matching structured field is enough to confirm the saved value even if the description omits it. Quote the structured value directly.',
+        'If the description explicitly contradicts a structured field, return attention with the competing value in proposed and quote the exact description text in evidence. Distinguish doors, performance, and end times. Missing repetition in the description is not a conflict.',
+        'Use confirmed when evidence supports a saved value, suggestion for a missing or incorrect value, attention for ambiguity or conflicts, and unknown when both structured data and description lack evidence. Quote verbatim source text or a complete structured source value as evidence.',
         'Dates must be YYYY-MM-DD. Do not invent a year. Times are HH:MM in Europe/Vilnius. Avilys local_start is Vilnius wall time, even when source_start ends in Z. Distinguish doors from performance time and publication date from event date.',
         'For review_status return music, not_music, or unsure with evidence. For performers return one exact name per finding. Check cancellations, material inconsistencies, and duplicate signals. Missing optional fields by themselves are allowed.',
         JSON.stringify({ event: input.values, source_listings: input.sources }),
@@ -320,7 +322,7 @@ export function createVerificationWorker(pool: Pool, secret?: string, request = 
       } finally {
         await finishProviderRequest(pool, task.claim, profile.provider, profile.model, usage);
       }
-      findings = parseFindings(result, evidenceText(input.sources));
+      findings = reconcileStructuredFields(parseFindings(result, evidenceText(input.sources)), input.sources, input.values, input.manualFields);
     } catch (error) {
       await finishTask(pool, task, undefined, undefined, trimmed(error instanceof Error && (error as {status?: number}).status ? error.message : 'Verification could not process this event.'));
       return true;

@@ -24,15 +24,35 @@ export const resultSchema = {
 };
 
 const norm = (value: string) => value.normalize('NFKC').toLocaleLowerCase('lt').replace(/\s+/g, ' ').trim();
+const structuredFields = ['event_date', 'event_end_date', 'event_time', 'venue', 'city', 'ticket_url'] as const;
+type StructuredField = typeof structuredFields[number];
 
 export function sourceEvidence(source: Snapshot) {
   let metadata: Snapshot = {};
   try { metadata = jsonValue<Snapshot>(source.source_data_json) ?? {}; } catch { /* Older source payloads can be malformed. */ }
-  let parsedDetails: Snapshot = {};
-  try { parsedDetails = jsonValue<Snapshot>(source.detail_evidence_json) ?? (metadata.structured_details as Snapshot | undefined) ?? {}; } catch { /* Use the listing text when details are unavailable. */ }
+  const imported = (metadata.structured_details as Snapshot | undefined) ?? {};
+  let enriched: Snapshot = {};
+  try { enriched = jsonValue<Snapshot>(source.detail_evidence_json) ?? {}; } catch { /* Keep the originally imported fields. */ }
   const normalizedDetails = Object.fromEntries(['event_date', 'event_end_date', 'event_time', 'venue', 'ticket_url', 'price_text', 'price_type']
-    .filter(field => typeof parsedDetails[field] === 'string').map(field => [field, parsedDetails[field]]));
+    .map(field => [field, enriched[field] ?? imported[field]])
+    .filter(([, value]) => typeof value === 'string'));
   const rawTime = typeof metadata.startTime === 'string' ? metadata.startTime : '';
+  const avilys = source.source_key === 'avilys';
+  const start = avilys ? /^(\d{4}-\d{2}-\d{2})T((?:[01]\d|2[0-3]):[0-5]\d)(?::[0-5]\d(?:\.\d{1,9})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)?$/.exec(rawTime) : null;
+  const startDay = avilys && /^\d{4}-\d{2}-\d{2}T/.test(rawTime) ? rawTime.slice(0, 10) : '';
+  const candidates: Record<StructuredField, unknown> = {
+    event_date: startDay || normalizedDetails.event_date,
+    event_time: start && validField('event_date', start[1]) ? start[2] : normalizedDetails.event_time,
+    event_end_date: normalizedDetails.event_end_date,
+    venue: avilys ? metadata.venueName : normalizedDetails.venue,
+    city: avilys ? metadata.city : source.source_key === 'vilnius-events' ? 'Vilnius' : undefined,
+    ticket_url: avilys ? metadata.ticketUrl : normalizedDetails.ticket_url,
+  };
+  const structuredFieldsFound: Partial<Record<StructuredField, string>> = {};
+  for (const field of structuredFields) {
+    const value = candidates[field];
+    if (typeof value === 'string' && validField(field, value.trim())) structuredFieldsFound[field] = value.trim();
+  }
   const structured = Object.fromEntries(['title', 'city', 'venueName', 'ticketUrl', 'sourceUrl', 'priceFrom', 'priceTo', 'free', 'featured_media', 'image', 'imageUrl']
     .filter(field => typeof metadata[field] === 'string' || typeof metadata[field] === 'number' || typeof metadata[field] === 'boolean')
     .map(field => [field, metadata[field]]));
@@ -40,14 +60,15 @@ export function sourceEvidence(source: Snapshot) {
     source: source.source_key, listing_url: source.source_url, original_url: source.about_url,
     ...structured,
     ...normalizedDetails,
-    ...(source.source_key === 'avilys' && rawTime ? { local_start: rawTime.slice(0, 16), source_start: rawTime } : {}),
+    ...(avilys && rawTime ? { local_start: rawTime.slice(0, 16), source_start: rawTime } : {}),
+    structured_fields: structuredFieldsFound,
     description: descriptionText(String(source.content_html ?? '')).slice(0, 18_000),
   };
 }
 
 export function evidenceText(evidence: ReturnType<typeof sourceEvidence>[]) {
   // Put each value on its own line so the model can quote description text or a structured value directly.
-  return evidence.map(source => Object.values(source).filter(value => value != null).join('\n')).join('\n');
+  return evidence.map(({ structured_fields, ...source }) => [...Object.values(source), ...Object.values(structured_fields)].filter(value => value != null).join('\n')).join('\n');
 }
 
 export function parseFindings(value: unknown, evidence: string): Finding[] {
@@ -64,6 +85,40 @@ export function parseFindings(value: unknown, evidence: string): Finding[] {
     }
     return finding;
   });
+}
+
+export function reconcileStructuredFields(findings: Finding[], sources: ReturnType<typeof sourceEvidence>[], saved: Snapshot, manualFields: string[]) {
+  const decisions = new Map<Field, Finding>();
+  const descriptions = sources.map(source => norm(source.description));
+  for (const field of structuredFields) {
+    const provided = new Map<string, string>();
+    for (const source of sources) {
+      const value = source.structured_fields[field];
+      if (value) provided.set(norm(value), value);
+    }
+    if (!provided.size) continue;
+
+    const current = saved[field];
+    const savedValue = typeof current === 'string' && current.trim() ? current : '';
+    const matchesSaved = provided.has(norm(savedValue));
+    if (savedValue && !matchesSaved && manualFields.includes(field)) continue;
+
+    const values = [...provided.values()];
+    const structured = values[0];
+    const conflictingText = findings.find(finding => finding.field === field && finding.proposed && finding.evidence
+      && !provided.has(norm(finding.proposed)) && canAutoFill(field, finding.proposed, finding.evidence)
+      && descriptions.some(description => description.includes(norm(finding.evidence))));
+    if (conflictingText) {
+      decisions.set(field, { ...conflictingText, disposition: 'attention', reason: `The description disagrees with the structured source value (${structured}).` });
+    } else if (values.length > 1) {
+      decisions.set(field, { field, disposition: 'attention', proposed: '', evidence: values.join(' / '), reason: 'The structured sources give different values.' });
+    } else if (savedValue && !matchesSaved) {
+      decisions.set(field, { field, disposition: 'attention', proposed: structured, evidence: structured, reason: 'The saved value differs from the structured source.' });
+    } else {
+      decisions.set(field, { field, disposition: savedValue ? 'confirmed' : 'suggestion', proposed: savedValue || structured, evidence: structured, reason: 'The structured source supplies this value.' });
+    }
+  }
+  return [...findings.filter(finding => !decisions.has(finding.field)), ...decisions.values()];
 }
 
 export const editable = ['title', 'description', 'event_date', 'event_end_date', 'event_time', 'venue', 'city', 'ticket_url', 'about_url', 'price_type', 'price_text', 'artists', 'review_status'] as const;

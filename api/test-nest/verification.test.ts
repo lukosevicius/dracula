@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import type { Pool } from 'mysql2/promise';
-import { canAutoFill, evidenceText, parseFindings, sourceEvidence } from '../dist/verification/rules.js';
+import { canAutoFill, evidenceText, parseFindings, reconcileStructuredFields, sourceEvidence } from '../dist/verification/rules.js';
 import { generate, manageProvider } from '../dist/verification/providers.js';
 import { estimatedTokenCost, usageWindow, verificationUsage } from '../dist/verification/usage.js';
 import type { TokenUsage } from '../dist/verification/usage.js';
@@ -24,6 +24,32 @@ test('verification rejects invented evidence and preserves Avilys wall time', ()
   assert.equal(canAutoFill('event_date', '2026-11-23', 'lapkričio 23 d.'), false);
   assert.equal(result[1].disposition, 'attention');
   assert.equal(result[1].proposed, '');
+});
+
+test('structured values confirm sparse listings and only cited contradictions raise attention', () => {
+  const avilys = sourceEvidence({
+    source_key: 'avilys',
+    source_data_json: { startTime: '2026-11-24T19:00:00Z', venueName: 'Šv. Kotrynos bažnyčia', city: 'Vilnius' },
+    content_html: '<p>Koncertas prasidės 20:30.</p>',
+  });
+  const saved = { event_date: '2026-11-24', event_time: '19:00', venue: 'Šv. Kotrynos bažnyčia', city: 'Vilnius' };
+  assert.deepEqual(avilys.structured_fields, saved);
+  const model = { findings: [
+    { field: 'event_time', disposition: 'attention', proposed: '20:30', evidence: 'Koncertas prasidės 20:30.', reason: 'Different start time.' },
+    { field: 'venue', disposition: 'attention', proposed: 'Unknown club', evidence: 'Invented club', reason: 'It mentions a different venue.' },
+    { field: 'city', disposition: 'unknown', proposed: '', evidence: '', reason: 'The description does not mention a city.' },
+  ] };
+  const result = reconcileStructuredFields(parseFindings(model, evidenceText([avilys])), [avilys], saved, []);
+  assert.deepEqual(result.map(finding => [finding.field, finding.disposition, finding.proposed]), [
+    ['event_date', 'confirmed', '2026-11-24'], ['event_time', 'attention', '20:30'],
+    ['venue', 'confirmed', saved.venue], ['city', 'confirmed', 'Vilnius'],
+  ]);
+  const vilnius = sourceEvidence({
+    source_key: 'vilnius-events',
+    source_data_json: { structured_details: { event_date: '2026-11-24', event_time: '19:00', venue: 'Club' } },
+    detail_evidence_json: { event_time: null, venue: 'New Club' },
+  });
+  assert.deepEqual(vilnius.structured_fields, { event_date: '2026-11-24', event_time: '19:00', venue: 'New Club', city: 'Vilnius' });
 });
 
 test('Gemini and OpenAI use structured provider responses with credentials in headers', async () => {
@@ -89,7 +115,7 @@ test('verification fills a missing time, publishes clean music, and records the 
     CREATE TABLE seeker_settings(setting_key TEXT PRIMARY KEY,setting_value TEXT);
     INSERT INTO events(id,title,event_date,venue) VALUES(1,'Clean concert','2099-11-01','Music Club'),(2,'Conflicting concert','2099-11-02','Music Club'),(3,'Clay workshop','2099-11-03','Music Club');
     INSERT INTO event_sources SELECT id,id,'avilys',id,'https://avilys.app/',NULL,
-      CASE id WHEN 2 THEN 'Koncertas 18:00 arba 20:00' WHEN 3 THEN 'Keramikos dirbtuvės 19:00' ELSE 'Koncertas 19:00' END,
+      CASE id WHEN 2 THEN 'Koncertas prasidės 20:00' WHEN 3 THEN 'Keramikos dirbtuvės 19:00' ELSE 'Koncertas' END,
       json_object('startTime',event_date||'T19:00:00Z','venueName',venue) FROM events;
     INSERT INTO verification_jobs(id,profile_id,provider,model,import_job_id,allow_publish,actor) VALUES(1,1,'gemini','gemini-3.5-flash-lite',42,1,'import');
     INSERT INTO job_leases VALUES(42,4102444800000);
@@ -118,10 +144,10 @@ test('verification fills a missing time, publishes clean music, and records the 
       const date = choice.includes('Conflicting concert') ? '2099-11-02' : choice.includes('Clay workshop') ? '2099-11-03' : '2099-11-01';
       const other = choice.includes('Clay workshop');
       const result = (field:string,proposed:string,evidence:string,disposition='suggestion') => ({field,proposed,evidence,disposition,reason:'The listing provides this evidence.'});
-      const findings = [result('event_date',date,date,'confirmed'),result('venue','Music Club','Music Club','confirmed'),
+      const findings = [result('event_date','','','unknown'),result('venue','','Unknown Club','attention'),
         date.endsWith('02')
-          ? corrected ? result('event_time','20:00','20:00','confirmed') : result('event_time','','18:00 arba 20:00','attention')
-          : result('event_time','19:00','19:00'),
+          ? corrected ? result('event_time','20:00','20:00','confirmed') : result('event_time','20:00','Koncertas prasidės 20:00','attention')
+          : result('event_time','','','unknown'),
         result('review_status',other?'not_music':'music',other?'Keramikos dirbtuvės':'Koncertas')];
       return Response.json({candidates:[{content:{parts:[{text:invalidOutput ? '{' : JSON.stringify({findings})}]}}],
         usageMetadata:{promptTokenCount:200,cachedContentTokenCount:50,candidatesTokenCount:26,thoughtsTokenCount:4}});
@@ -134,6 +160,8 @@ test('verification fills a missing time, publishes clean music, and records the 
       [1,'19:00','music','live','verified',0], [2,null,'music','draft','verified',1], [3,'19:00','not_music','draft','verified',0],
     ]);
     const finding = db.prepare("SELECT id FROM verification_findings WHERE event_id=2 AND status='open'").get()!;
+    const conflictingTime = db.prepare('SELECT finding FROM verification_findings WHERE id=?').get(finding.id)!;
+    assert.equal(JSON.parse(String(conflictingTime.finding)).evidence, 'Koncertas prasidės 20:00');
     const revision = () => Number(db.prepare('SELECT revision FROM events WHERE id=2').get()!.revision);
     await resolveFinding(pool,2,Number(finding.id),{decision:'approve',value:'20:00',revision:revision()},'Seeker editor');
     assert.equal(db.prepare('SELECT publication_status FROM events WHERE id=2').get()!.publication_status,'draft');

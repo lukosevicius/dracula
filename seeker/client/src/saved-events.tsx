@@ -1,13 +1,13 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { ReviewStatus } from '../../types';
-import { api, errorMessage, isActive, plainText, type EventPage, type EventRow, useJobs } from './data';
+import { api, errorMessage, isActive, type EventRow, useJobs } from './data';
 import EventEditor from './event-editor';
 import EventItem from './event-item';
 import { Feedback, PageHeading, PanelHeading } from './workspace';
 
 const storageKey = 'seeker-saved-events';
-type SavedEventsContextValue = { events: EventRow[]; isSaved: (id: number) => boolean; toggle: (event: EventRow) => Promise<void>; update: (event: EventRow) => void; loading: boolean; error: string; pendingIds: number[] };
-const SavedEventsContext = createContext<SavedEventsContextValue>({ events: [], isSaved: () => false, toggle: async () => {}, update: () => {}, loading: true, error: '', pendingIds: [] });
+type SavedEventsContextValue = { events: EventRow[]; isSaved: (id: number) => boolean; toggle: (event: EventRow) => Promise<void>; update: (event: EventRow) => void; refresh: (id: number) => Promise<void>; loading: boolean; error: string; pendingIds: number[] };
+const SavedEventsContext = createContext<SavedEventsContextValue>({ events: [], isSaved: () => false, toggle: async () => {}, update: () => {}, refresh: async () => {}, loading: true, error: '', pendingIds: [] });
 
 function readLegacySavedIds(): number[] {
   try {
@@ -62,7 +62,17 @@ export function SavedEventsProvider({ children }: { children: ReactNode }) {
     setEvents(current => current.map(item => item.id === event.id ? event : item));
   }
 
-  return <SavedEventsContext.Provider value={{ events, isSaved: id => events.some(event => event.id === id), toggle, update, loading, error, pendingIds }}>{children}</SavedEventsContext.Provider>;
+  async function refresh(id: number) {
+    try {
+      const result = await api<{ events: EventRow[] }>('/api/saved-events');
+      const row = result.events.find(event => event.id === id);
+      if (row) update(row);
+    } catch {
+      // Keep the saved copy usable if a read fails after a successful edit.
+    }
+  }
+
+  return <SavedEventsContext.Provider value={{ events, isSaved: id => events.some(event => event.id === id), toggle, update, refresh, loading, error, pendingIds }}>{children}</SavedEventsContext.Provider>;
 }
 
 export function useSavedEvents() { return useContext(SavedEventsContext); }
@@ -70,7 +80,7 @@ export function useSavedEvents() { return useContext(SavedEventsContext); }
 const vilniusDateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Vilnius', year: 'numeric', month: '2-digit', day: '2-digit' });
 
 export function SavedEventsPage() {
-  const { events, isSaved, toggle, update, loading, error, pendingIds } = useSavedEvents();
+  const { events, isSaved, toggle, update, refresh, loading, error, pendingIds } = useSavedEvents();
   const [openId, setOpenId] = useState<number | null>(null);
   const [pendingId, setPendingId] = useState<number | null>(null);
   const [notice, setNotice] = useState('');
@@ -79,22 +89,11 @@ export function SavedEventsPage() {
   const { jobs, start, startingSource } = useJobs(() => {});
   const refreshing = startingSource !== null || jobs.some(job => ['avilys', 'vilnius-events'].includes(job.source) && isActive(job));
 
-  async function refreshSavedRow(row: EventRow) {
-    try {
-      const params = new URLSearchParams({ page: '1', limit: '100', when: 'all', search: plainText(row.title), source: row.source_key });
-      const result = await api<EventPage>(`/api/events?${params}`);
-      const current = result.events.find(event => event.id === row.id);
-      if (current) update(current);
-    } catch {
-      // The editor already reports a successful save; keep the saved copy usable if refresh fails.
-    }
-  }
-
   async function saveReview(row: EventRow, status: ReviewStatus) {
     setPendingId(row.id);
     try {
       await api(`/api/events/${row.id}/review`, { review_status: status });
-      await refreshSavedRow({ ...row, review_status: status });
+      await refresh(row.id);
     } catch (error) {
       setNoticeError(true);
       setNotice(errorMessage(error));
@@ -107,7 +106,7 @@ export function SavedEventsPage() {
     setPendingId(row.id);
     try {
       await api(`/api/events/${row.id}/confirm-assistant-review`, {});
-      await refreshSavedRow(row);
+      await refresh(row.id);
     } catch (error) {
       setNoticeError(true);
       setNotice(errorMessage(error));
@@ -151,7 +150,7 @@ export function SavedEventsPage() {
           selected={false} select={() => {}} disabled={loading || pendingIds.includes(event.id) || pendingId === event.id || refreshing} review={status => void saveReview(event, status)}
           changeInterestScore={score => void changeInterestScore(event, score)}
           confirm={() => void confirmAssistantReview(event)} showSource saved={isSaved(event.id)} toggleSaved={() => toggle(event)} selectionEnabled={false}
-          editor={<EventEditor row={event} onSaved={() => refreshSavedRow(event)} onRefresh={() => void refreshSourceDetails(event)} refreshing={refreshing} />} />)}
+          editor={<EventEditor row={event} onSaved={() => refresh(event.id)} onRefresh={() => void refreshSourceDetails(event)} refreshing={refreshing} />} />)}
         {!loading && !error && !events.length && <p className="empty-state">No saved events yet. Use the save button on an event to add it here.</p>}
       </div>
     </section>

@@ -83,7 +83,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
   const [loading, setLoading] = useState(true);
   const requestId = useRef(0);
   const catalogue = useRef<HTMLElement>(null);
-  const { events: savedEvents, isSaved, toggle: toggleSaved, update: updateSavedEvent, loading: savedEventsLoading, error: savedEventsError, pendingIds: savedPendingIds } = useSavedEvents();
+  const { events: savedEvents, isSaved, toggle: toggleSaved, update: updateSavedEvent, refresh: refreshSavedEvent, loading: savedEventsLoading, error: savedEventsError, pendingIds: savedPendingIds } = useSavedEvents();
   const today = dateFormatter.format(new Date());
   const apiWhen = when === 'newest' ? 'upcoming' : when;
   const invalid = when === 'custom' && (!from || (!!to && to < from));
@@ -95,7 +95,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
     const id = ++requestId.current;
     setLoadError('');
     if (invalid) {
-      if (!silent) setLoading(false);
+      setLoading(false);
       return;
     }
     if (!silent) setLoading(true);
@@ -114,7 +114,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
     } catch (error) {
       if (id === requestId.current) setLoadError(errorMessage(error));
     } finally {
-      if (id === requestId.current && !silent) setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
   }, [page, review, readiness, assistantReview, query, price, time, sourceFilter, when, apiWhen, from, to, today, invalid, sort, publication, verification, queue]);
   const loadCurrent = useRef(load);
@@ -289,13 +289,17 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
   const rowIds = rows.map(row => row.id);
   const allSelected = rowIds.length > 0 && rowIds.every(id => selected.includes(id));
 
+  async function refreshEditedEvent(id: number) {
+    await Promise.all([loadCurrent.current(true), isSaved(id) ? refreshSavedEvent(id) : undefined]);
+  }
+
   function renderEvent(row: EventRow) {
     return <EventItem key={row.id} row={row} today={today} showSource={all} open={open === row.id} toggle={() => setOpen(current => current === row.id ? null : row.id)}
       selected={selected.includes(row.id)} select={checked => setSelection([row.id], checked)} disabled={bulkPending || pending.includes(row.id) || loading || savedEventsLoading || savedPendingIds.includes(row.id)}
       review={status => void changeRow(row.id, 'review', { review_status: status }, 'Review saved.')}
       confirm={() => void changeRow(row.id, 'confirm-assistant-review', {}, 'Assistant review checked.')}
       changeInterestScore={score => void changeRow(row.id, 'interest-score', { interest_score: score }, 'Interest score saved.')}
-      editor={<EventEditor row={row} onSaved={() => loadCurrent.current()} onRefresh={() => void startVilnius('details-event', row.id)} refreshing={busy} />}
+      editor={<EventEditor row={row} onSaved={() => refreshEditedEvent(row.id)} onRefresh={() => void startVilnius('details-event', row.id)} refreshing={busy} />}
       saved={isSaved(row.id)} toggleSaved={() => toggleSaved(row)} />;
   }
 

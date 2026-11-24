@@ -52,7 +52,7 @@ export function ProviderSettings() {
           </div>
         </li>)}
       </ul>}
-      <form className="stack" onSubmit={save}>
+      <form className="stack provider-settings-form" onSubmit={save}>
         <h3>{draft.id ? 'Edit AI provider' : 'Add AI provider'}</h3>
         <div className="field-grid">
           <label className="field">Connection name <input required maxLength={100} value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} /></label>
@@ -111,7 +111,7 @@ export function AgentSettings() {
         <div><strong>{agent.name}{agent.revoked_at ? ' · Revoked' : ''}</strong><p>{agent.scopes.map(scope => scopes[scope]).join(' · ')}</p></div>
         {!agent.revoked_at && <button type="button" className="secondary-button" disabled={busy} onClick={() => { if (window.confirm(`Revoke access for ${agent.name}?`)) void change({ action: 'revoke', id: agent.id }); }}>Revoke</button>}
       </li>)}</ul>}
-      <form className="stack" onSubmit={event => { event.preventDefault(); void change({ action: 'create', name, scopes: selected }); }}>
+      <form className="stack agent-settings-form" onSubmit={event => { event.preventDefault(); void change({ action: 'create', name, scopes: selected }); }}>
         <label className="field">Agent name <input required maxLength={100} value={name} onChange={event => setName(event.target.value)} /></label>
         <fieldset className="agent-permissions">
           <legend>Permissions</legend>

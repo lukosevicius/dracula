@@ -27,8 +27,9 @@ type HistoryEntry = { id: number; action: string; actor: string; occurred_at: st
 type Verification = {
   revision: number; publication_status: 'live' | 'draft'; verification_status: keyof typeof verificationLabels; needs_attention: number;
   findings: Finding[]; log: HistoryEntry[]; next_before: number | null;
-  last_run: { id: number; status: string; model: string | null; error_message: string | null; result: { fields?: Record<string, string> } | null } | null;
+  last_run: { id: number; job_id: number; status: 'queued' | 'running' | 'completed' | 'failed' | 'skipped'; model: string | null; error_message: string | null; result: { fields?: Record<string, string> } | null } | null;
 };
+type QueuedVerification = { id: number; queued?: number };
 type Job = { id: number; model: string | null; import_job_id: number | null; total: number; queued: number; running: number; completed: number; failed: number; skipped: number; flagged: number; error_message: string | null };
 
 const workflow = '/api/workflow';
@@ -44,8 +45,8 @@ export function EventBadges({ row }: { row: Pick<EventRow, 'publication_status' 
   </div>;
 }
 
-export function VerificationRequest({ eventIds, onQueued, inline = false, active = false }: {
-  eventIds: number[]; onQueued: () => void | Promise<void>; inline?: boolean; active?: boolean;
+export function VerificationRequest({ eventIds, onQueued, inline = false, pending }: {
+  eventIds: number[]; onQueued: (job: QueuedVerification) => void | Promise<void>; inline?: boolean; pending?: 'queued' | 'verifying';
 }) {
   const [profiles, setProfiles] = useState<ProfilesResponse | null>(null);
   const [profile, setProfile] = useState('');
@@ -54,6 +55,7 @@ export function VerificationRequest({ eventIds, onQueued, inline = false, active
   const [message, setMessage] = useState('');
   const [error, setError] = useState(false);
   const request = useRef<{ options: string; key: string } | null>(null);
+  const active = Boolean(pending);
 
   const load = useCallback(async () => {
     try { setProfiles(await api<ProfilesResponse>(workflow + '/providers')); setError(false); setMessage(''); }
@@ -69,10 +71,10 @@ export function VerificationRequest({ eventIds, onQueued, inline = false, active
     const options = JSON.stringify(payload);
     if (request.current?.options !== options) request.current = { options, key: crypto.randomUUID() };
     try {
-      const result = await api<{ id: number; queued: number; already_queued: number }>(workflow + '/verification/jobs', { ...payload, request_key: request.current.key });
-      setMessage(result.queued === 0 ? 'These events are already queued.' : `Verification job #${result.id} queued.`);
+      const result = await api<QueuedVerification>(workflow + '/verification/jobs', { ...payload, request_key: request.current.key });
+      if (!inline) setMessage(result.queued === 0 ? 'These events are already queued.' : `Verification job #${result.id} queued.`);
       request.current = null;
-      await onQueued();
+      await onQueued(result);
     } catch (cause) { setError(true); setMessage(errorMessage(cause)); }
     finally { setBusy(false); }
   }
@@ -88,7 +90,7 @@ export function VerificationRequest({ eventIds, onQueued, inline = false, active
         </select>
       </label>}
       <button className="primary-button" type="button" disabled={busy || active || !profiles?.configured || !profiles.profiles.length || (!profile && !profiles.default_id) || eventIds.length > 200} onClick={() => void run()}>
-        {busy ? 'Queueing…' : inline ? 'Evaluate' : 'Start verification'}
+        {pending === 'verifying' ? 'Evaluating…' : pending === 'queued' ? 'Queued…' : busy ? 'Queueing…' : inline ? 'Evaluate' : 'Start verification'}
       </button>
     </div>
     <label className="checkbox-label"><input type="checkbox" checked={publish} onChange={event => setPublish(event.target.checked)} disabled={busy || active} /> Publish clear music events after verification</label>
@@ -135,30 +137,63 @@ export function EventVerification({ row, onSaved }: { row: EventRow; onSaved: ()
   const [data, setData] = useState<Verification | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [drafts, setDrafts] = useState<Record<number, string>>({});
+  const [requestedJob, setRequestedJob] = useState<{ id?: number } | null>(null);
+  const [requestedHere, setRequestedHere] = useState(false);
+  const loadSequence = useRef(0);
   const path = `${workflow}/events/${row.id}`;
   const load = useCallback(async () => {
-    try { setData(await api<Verification>(path + '/verification')); }
-    catch (cause) { setFailure(errorMessage(cause)); }
+    const sequence = ++loadSequence.current;
+    try {
+      const result = await api<Verification>(path + '/verification');
+      if (sequence !== loadSequence.current) return;
+      setData(result);
+      setLoadError('');
+      setRequestedJob(current => current && (current.id === undefined || Number(result.last_run?.job_id) >= current.id) ? null : current);
+    } catch (cause) {
+      if (sequence === loadSequence.current) setLoadError(errorMessage(cause));
+    }
   }, [path]);
-  useEffect(() => { void load(); }, [load, row.revision, row.verification_status, row.needs_attention]);
+  useEffect(() => { void load(); return () => { loadSequence.current++; }; }, [load, row.revision, row.verification_status, row.needs_attention]);
   const saveCallback = useRef(onSaved);
-  const lastResult = useRef<number | null>(null);
+  const observedRun = useRef('');
   useEffect(() => { saveCallback.current = onSaved; }, [onSaved]);
   const status = data?.verification_status ?? row.verification_status;
-  const active = status === 'queued' || status === 'verifying';
+  const run = data?.last_run;
+  const pending = status === 'verifying' || run?.status === 'running' ? 'verifying'
+    : requestedJob !== null || status === 'queued' || run?.status === 'queued' ? 'queued' : undefined;
+  const active = Boolean(pending);
   useEffect(() => {
     if (!active) return;
-    const timer = window.setInterval(() => void load(), 2500);
-    return () => window.clearInterval(timer);
+    let disposed = false;
+    let timer: number;
+    async function poll() {
+      await load();
+      if (!disposed) timer = window.setTimeout(poll, 2000);
+    }
+    timer = window.setTimeout(poll, 2000);
+    return () => { disposed = true; window.clearTimeout(timer); };
   }, [active, load]);
   useEffect(() => {
-    const run = data?.last_run;
-    if (run?.status === 'completed' && run.id !== lastResult.current) {
-      lastResult.current = run.id;
-      if (row.revision !== data?.revision || row.verification_status !== 'verified') void Promise.resolve(saveCallback.current()).catch(() => undefined);
+    if (!data) return;
+    const runKey = run ? `${run.id}:${run.status}` : 'none';
+    const finished = run?.status === 'completed' || run?.status === 'failed' || run?.status === 'skipped';
+    const newResult = finished && observedRun.current !== runKey && (requestedHere || Boolean(observedRun.current));
+    observedRun.current = runKey;
+    if (newResult || data.revision !== row.revision || data.verification_status !== (row.verification_status ?? 'not_verified')
+        || Boolean(data.needs_attention) !== Boolean(row.needs_attention) || data.publication_status !== row.publication_status) {
+      void Promise.resolve(saveCallback.current()).catch(() => undefined);
+      if (finished) window.dispatchEvent(new Event('seeker:attention-changed'));
     }
-  }, [data?.last_run, data?.revision, row.revision, row.verification_status]);
+  }, [data?.verification_status, data?.revision, data?.needs_attention, data?.publication_status, run?.id, run?.status, requestedHere, row.revision, row.verification_status, row.needs_attention, row.publication_status]);
+
+  function onQueued(job: QueuedVerification) {
+    setRequestedHere(true);
+    // Empty and replayed jobs can refer to an event already being checked by another job.
+    setRequestedJob(job.queued === 1 ? { id: job.id } : {});
+    return load();
+  }
 
   async function update(url: string, value: Record<string, unknown>) {
     if (!data) return;
@@ -182,13 +217,15 @@ export function EventVerification({ row, onSaved }: { row: EventRow; onSaved: ()
 
   return <section className="verification-section stack" aria-label="Publication and verification">
     <div className="publication-controls">
-      <EventBadges row={data ?? row} />
+      <EventBadges row={pending ? { ...(data ?? row), verification_status: pending } : data ?? row} />
       {data && <button className="secondary-button" type="button" disabled={busy} onClick={() => void update(path + '/publication', { status: data.publication_status === 'live' ? 'draft' : 'live' })}>
         {data.publication_status === 'live' ? 'Unpublish' : 'Publish in Dracula'}
       </button>}
     </div>
-    <VerificationRequest eventIds={[row.id]} onQueued={load} inline active={active} />
-    {data?.last_run?.error_message && <Feedback message={data.last_run.error_message} error />}
+    <VerificationRequest eventIds={[row.id]} onQueued={onQueued} inline pending={pending} />
+    {active && <Feedback message={pending === 'queued' ? 'Verification queued.' : 'AI verification in progress…'} />}
+    {!active && requestedHere && run?.status === 'completed' && <Feedback message={data?.needs_attention ? 'Verification complete. Review the findings below.' : 'Verification complete.'} />}
+    {!active && run?.error_message && <Feedback message={run.error_message} error />}
     {data?.findings.length ? <div className="stack">
       <h4>Needs attention</h4>
       {data.findings.map(finding => <article className="verification-finding stack" key={finding.id}>
@@ -221,6 +258,6 @@ export function EventVerification({ row, onSaved }: { row: EventRow; onSaved: ()
       </li>)}</ol>}
       {data?.next_before && <button className="secondary-button" type="button" onClick={() => void olderLog()}>Load older entries</button>}
     </Disclosure>
-    <Feedback message={failure} error />
+    <Feedback message={failure || loadError} error />
   </section>;
 }
