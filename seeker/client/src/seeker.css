@@ -292,6 +292,8 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
 .selection-actions strong { margin-right: 4px; font-size: 12px; }
 .selection-actions button { min-height: 29px; padding: 4px 7px; font-size: 12px; }
 .event-list { min-width: 0; }
+.event-group-heading { display: flex; align-items: baseline; gap: 8px; margin: 0; padding: 10px 17px; border-block: 1px solid var(--border); background: var(--raised); font-size: 13px; }
+.event-group-heading time { color: var(--muted); font-size: 11px; font-weight: 400; }
 .duplicate-pair { border-top: 1px solid var(--border); }
 .duplicate-pair > h3 { padding: 10px 17px; color: var(--muted); font-size: 12px; }
 .event-item + .event-item { border-top: 1px solid var(--border); }
@@ -443,6 +445,7 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
   .metric strong { font-size: 15px; }
   .panel-heading, .panel-body, .catalogue-tools, .selection-bar, .event-details { padding-inline: 12px; }
   .event-list, .saved-event-list { display: grid; gap: 8px; padding: 8px; }
+  .event-group-heading { padding: 8px 4px; background: transparent; border-block: 0; }
   .event-item { min-width: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--input); }
   .event-row {
     grid-template-columns: 18px 36px minmax(0, 1fr);

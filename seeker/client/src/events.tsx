@@ -1,7 +1,8 @@
 import { VerificationJobs, VerificationRequest, useVerificationJobs, verificationLabels } from './verification';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import type { DateFilter, ReviewStatus } from '../../types';
-import { api, errorMessage, formatDate, isActive, labels, plainText, priceInfo, reviews, sourceNames, useJobs, type EventPage } from './data';
+import { api, errorMessage, isActive, labels, plainText, priceInfo, reviews, sourceNames, useJobs, type EventPage, type EventRow } from './data';
+import { groupNewestEvents, shiftDate } from './event-groups';
 import { useSavedEvents } from './saved-events';
 import EventItem from './event-item';
 import EventEditor from './event-editor';
@@ -9,8 +10,10 @@ import { AvilysImport, VilniusImport, VilniusNotes } from './imports';
 import { Disclosure, Feedback, Icon, Metrics, PageHeading, Pagination, PanelHeading, SearchField } from './workspace';
 
 const pageSize = 25;
-const dateOptions: [DateFilter, string][] = [
-  ['upcoming', 'Upcoming'], ['today', 'Today'], ['tomorrow', 'Tomorrow'], ['weekend', 'This weekend'],
+type EventDateFilter = DateFilter | 'newest';
+const quickDateOptions = [['newest', 'Newest'], ['today', 'Today'], ['tomorrow', 'Tomorrow']] as const;
+const dateOptions: ReadonlyArray<readonly [EventDateFilter, string]> = [
+  ...quickDateOptions, ['upcoming', 'Upcoming'], ['weekend', 'This weekend'],
   ['custom', 'Custom dates'], ['all', 'All dates'], ['past', 'Past'], ['unknown', 'Unknown date'],
 ];
 const dateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Vilnius', year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -29,22 +32,16 @@ function preserveUnchangedRows(previous: EventPage | null, next: EventPage): Eve
   };
 }
 
-function shift(date: string, days: number) {
-  const value = new Date(`${date}T12:00:00Z`);
-  value.setUTCDate(value.getUTCDate() + days);
-  return value.toISOString().slice(0, 10);
-}
-
 function dateRange(filter: DateFilter, from: string, to: string, today: string) {
   if (filter === 'today') return { from: today, to: today };
   if (filter === 'tomorrow') {
-    const tomorrow = shift(today, 1);
+    const tomorrow = shiftDate(today, 1);
     return { from: tomorrow, to: tomorrow };
   }
   if (filter === 'weekend') {
     const day = new Date(`${today}T12:00:00Z`).getUTCDay();
-    const saturday = shift(today, day === 0 ? -1 : 6 - day);
-    return { from: saturday, to: shift(saturday, 1) };
+    const saturday = shiftDate(today, day === 0 ? -1 : 6 - day);
+    return { from: saturday, to: shiftDate(saturday, 1) };
   }
   if (filter === 'custom') return { from, to: to || from };
   return null;
@@ -59,8 +56,8 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
   const [price, setPrice] = useState('all');
   const [time, setTime] = useState('all');
   const [sort, setSort] = useState<'date' | 'score-asc' | 'score-desc'>('date');
-  const defaultWhen = queue ? 'all' : 'upcoming';
-  const [when, setWhen] = useState<DateFilter>(defaultWhen);
+  const defaultWhen = queue ? 'all' : 'newest';
+  const [when, setWhen] = useState<EventDateFilter>(defaultWhen);
   const [review, setReview] = useState(queue === 'not-music' ? 'not_music' : 'all');
   const [publication, setPublication] = useState('all');
   const [verification, setVerification] = useState('all');
@@ -88,6 +85,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
   const catalogue = useRef<HTMLElement>(null);
   const { events: savedEvents, isSaved, toggle: toggleSaved, update: updateSavedEvent, loading: savedEventsLoading, error: savedEventsError, pendingIds: savedPendingIds } = useSavedEvents();
   const today = dateFormatter.format(new Date());
+  const apiWhen = when === 'newest' ? 'upcoming' : when;
   const invalid = when === 'custom' && (!from || (!!to && to < from));
   const extraCount = Number(readiness !== 'all') + Number(assistantReview !== 'all') + Number(sourceFilter !== defaultSource) + Number(publication !== 'all') + Number(verification !== 'all');
   const isFiltered = Boolean(query || when !== defaultWhen || price !== 'all' || time !== 'all' || (review !== 'all' && queue !== 'not-music') || extraCount || savedOnly || sort !== 'date');
@@ -101,8 +99,8 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
       return;
     }
     if (!silent) setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: String(pageSize), review, readiness, assistantReview, search: query, price, time, source: sourceFilter, when, today, sort, publication, verification, needs_attention: queue === 'attention' ? 'yes' : 'all' });
-    const range = dateRange(when, from, to, today);
+    const params = new URLSearchParams({ page: String(page), limit: String(pageSize), review, readiness, assistantReview, search: query, price, time, source: sourceFilter, when: apiWhen, today, sort, publication, verification, needs_attention: queue === 'attention' ? 'yes' : 'all' });
+    const range = dateRange(apiWhen, from, to, today);
     if (range) {
       params.set('from', range.from);
       params.set('to', range.to);
@@ -118,7 +116,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
     } finally {
       if (id === requestId.current && !silent) setLoading(false);
     }
-  }, [page, review, readiness, assistantReview, query, price, time, sourceFilter, when, from, to, today, invalid, sort, publication, verification, queue]);
+  }, [page, review, readiness, assistantReview, query, price, time, sourceFilter, when, apiWhen, from, to, today, invalid, sort, publication, verification, queue]);
   const loadCurrent = useRef(load);
 
   useEffect(() => {
@@ -140,6 +138,13 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
     setLoading(true);
     setPage(1);
     setter(value);
+  }
+
+  function changeWhen(value: EventDateFilter) {
+    if (value === when && page === 1 && !specificDateMode) return;
+    setSpecificDateMode(false);
+    if (value === 'newest') setSort('date');
+    updateFilters(setWhen, value);
   }
 
   function resetFilters() {
@@ -248,14 +253,14 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
     }
   }
 
+  const dateWindow = dateRange(apiWhen, from, to, today);
   const savedRows = sourceSavedEvents.filter(row => {
     const eventDate = row.event_date;
     const eventEnd = row.event_end_date || eventDate;
-    const dateWindow = dateRange(when, from, to, today);
-    const matchesWhen = when === 'all'
-      || (when === 'upcoming' && !!eventDate && !!eventEnd && eventEnd >= today)
-      || (when === 'past' && !!eventEnd && eventEnd < today)
-      || (when === 'unknown' && !eventDate)
+    const matchesWhen = apiWhen === 'all'
+      || (apiWhen === 'upcoming' && !!eventDate && !!eventEnd && eventEnd >= today)
+      || (apiWhen === 'past' && !!eventEnd && eventEnd < today)
+      || (apiWhen === 'unknown' && !eventDate)
       || (!!dateWindow && !!eventDate && !!eventEnd && eventDate <= dateWindow.to && eventEnd >= dateWindow.from);
     const savedPrice = priceInfo(row);
     const ready = row.publication_status === 'live' && (!eventDate || !eventEnd || eventEnd >= today);
@@ -278,9 +283,21 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
     if (sort === 'score-asc') return (a.interest_score || 1) - (b.interest_score || 1) || dateCompare;
     return dateCompare;
   });
-  const rows = invalid ? [] : savedOnly ? savedRows : data?.events ?? [];
+  const filteredRows = invalid ? [] : savedOnly ? savedRows : data?.events ?? [];
+  const rows = when === 'newest' ? filteredRows.filter(row => row.event_date && (row.event_end_date || row.event_date) >= today) : filteredRows;
+  const groups = when === 'newest' ? groupNewestEvents(rows, today) : null;
   const rowIds = rows.map(row => row.id);
   const allSelected = rowIds.length > 0 && rowIds.every(id => selected.includes(id));
+
+  function renderEvent(row: EventRow) {
+    return <EventItem key={row.id} row={row} today={today} showSource={all} open={open === row.id} toggle={() => setOpen(current => current === row.id ? null : row.id)}
+      selected={selected.includes(row.id)} select={checked => setSelection([row.id], checked)} disabled={bulkPending || pending.includes(row.id) || loading || savedEventsLoading || savedPendingIds.includes(row.id)}
+      review={status => void changeRow(row.id, 'review', { review_status: status }, 'Review saved.')}
+      confirm={() => void changeRow(row.id, 'confirm-assistant-review', {}, 'Assistant review checked.')}
+      changeInterestScore={score => void changeRow(row.id, 'interest-score', { interest_score: score }, 'Interest score saved.')}
+      editor={<EventEditor row={row} onSaved={() => loadCurrent.current()} onRefresh={() => void startVilnius('details-event', row.id)} refreshing={busy} />}
+      saved={isSaved(row.id)} toggleSaved={() => toggleSaved(row)} />;
+  }
 
   return (
     <>
@@ -297,7 +314,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
             <div className="catalogue-tools event-tools">
               <SearchField label="Search by event title" value={query} onChange={value => updateFilters(setQuery, value)} />
               <div className="filter-grid">
-                <label className="field">When <select value={when} onChange={event => { setSpecificDateMode(false); updateFilters(setWhen, event.target.value as DateFilter); }}>
+                <label className="field">When <select value={when} onChange={event => changeWhen(event.target.value as EventDateFilter)}>
                   {dateOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 </select></label>
                 <label className="field">Price <select value={price} onChange={event => updateFilters(setPrice, event.target.value)}>
@@ -309,18 +326,22 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
                 {queue !== 'not-music' && <label className="field">Music classification <select value={review} onChange={event => updateFilters(setReview, event.target.value)}>
                   <option value="all">All statuses</option>{reviews.map(status => <option key={status} value={status}>{labels[status]}</option>)}
                 </select></label>}
-                <label className="field">Sort by <select value={sort} onChange={event => updateFilters(setSort, event.target.value as typeof sort)}>
+                <label className="field">Sort by <select value={sort} onChange={event => {
+                  const value = event.target.value as typeof sort;
+                  if (when === 'newest' && value !== 'date') setWhen('upcoming');
+                  updateFilters(setSort, value);
+                }}>
                   <option value="date">Event date</option><option value="score-asc">Score: low to high</option><option value="score-desc">Score: high to low</option>
                 </select></label>
               </div>
               <div className="date-quick-filters" role="group" aria-label="Quick date filters">
-                {(['today', 'tomorrow'] as const).map(filter => <button
+                {quickDateOptions.map(([filter, label]) => <button
                   key={filter}
                   type="button"
                   className={`secondary-button date-filter-button ${when === filter ? 'active' : ''}`}
                   aria-pressed={when === filter}
-                  onClick={() => { setSpecificDateMode(false); setFrom(''); setTo(''); updateFilters(setWhen, filter); }}
-                >{filter === 'today' ? 'Today' : 'Tomorrow'}</button>)}
+                  onClick={() => { setFrom(''); setTo(''); changeWhen(filter); }}
+                >{label}</button>)}
                 <button
                   type="button"
                   className={`secondary-button date-filter-button ${specificDateMode && when === 'custom' ? 'active' : ''}`}
@@ -391,15 +412,12 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
             <div className="catalogue-feedback"><Feedback message={message} error={actionError} /></div>
             {loadError && <div className="catalogue-error"><Feedback message={loadError} error /><button className="secondary-button" type="button" onClick={() => void load()}>Retry</button></div>}
             <div className="event-list" aria-busy={loading}>
-              {rows.map(row => (
-                <EventItem key={row.id} row={row} today={today} showSource={all} open={open === row.id} toggle={() => setOpen(current => current === row.id ? null : row.id)}
-                  selected={selected.includes(row.id)} select={checked => setSelection([row.id], checked)} disabled={bulkPending || pending.includes(row.id) || loading || savedEventsLoading || savedPendingIds.includes(row.id)}
-                  review={status => void changeRow(row.id, 'review', { review_status: status }, 'Review saved.')}
-                  confirm={() => void changeRow(row.id, 'confirm-assistant-review', {}, 'Assistant review checked.')}
-                  changeInterestScore={score => void changeRow(row.id, 'interest-score', { interest_score: score }, 'Interest score saved.')}
-                  editor={<EventEditor row={row} onSaved={() => loadCurrent.current()} onRefresh={() => void startVilnius('details-event', row.id)} refreshing={busy} />}
-                  saved={isSaved(row.id)} toggleSaved={() => toggleSaved(row)} />
-              ))}
+              {groups ? groups.map(group => <Fragment key={group.key}>
+                <h3 className="event-group-heading">
+                  {group.title}{group.dateLabel && <time dateTime={group.key}>{group.dateLabel}</time>}
+                </h3>
+                {group.events.map(renderEvent)}
+              </Fragment>) : rows.map(renderEvent)}
               {!rows.length && !loadError && !invalid && <p className="empty-state" role="status">{loading ? 'Loading events…' : 'No events match these filters.'}</p>}
             </div>
             {!savedOnly && data && !invalid && data.total > pageSize && <Pagination page={data.page} total={data.total} size={pageSize} onChange={next => {
