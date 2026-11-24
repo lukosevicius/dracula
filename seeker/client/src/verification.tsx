@@ -38,9 +38,10 @@ const display = (value: unknown) => value === null || value === undefined || val
 const logDate = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Vilnius' });
 
 export function EventBadges({ row }: { row: Pick<EventRow, 'publication_status' | 'verification_status' | 'needs_attention'> }) {
+  const verificationStatus = row.verification_status ?? 'not_verified';
   return <div className="event-badges">
     <span className={row.publication_status === 'live' ? 'event-badge event-badge-live' : 'event-badge'}>{row.publication_status === 'live' ? 'In Dracula · Live' : 'Not in Dracula · Draft'}</span>
-    <span className="event-badge">{verificationLabels[row.verification_status ?? 'not_verified']}</span>
+    <span className={verificationStatus === 'verified' ? 'event-badge event-badge-verified' : 'event-badge'}>{verificationLabels[verificationStatus]}</span>
     {Boolean(row.needs_attention) && <span className="event-badge event-badge-attention">Needs attention</span>}
   </div>;
 }
