@@ -44,7 +44,9 @@ export function EventBadges({ row }: { row: Pick<EventRow, 'publication_status' 
   </div>;
 }
 
-export function VerificationRequest({ eventIds, onQueued }: { eventIds: number[]; onQueued: () => void | Promise<void> }) {
+export function VerificationRequest({ eventIds, onQueued, inline = false, active = false }: {
+  eventIds: number[]; onQueued: () => void | Promise<void>; inline?: boolean; active?: boolean;
+}) {
   const [profiles, setProfiles] = useState<ProfilesResponse | null>(null);
   const [profile, setProfile] = useState('');
   const [publish, setPublish] = useState(true);
@@ -53,10 +55,11 @@ export function VerificationRequest({ eventIds, onQueued }: { eventIds: number[]
   const [error, setError] = useState(false);
   const request = useRef<{ options: string; key: string } | null>(null);
 
-  async function load() {
-    try { setProfiles(await api<ProfilesResponse>(workflow + '/providers')); }
+  const load = useCallback(async () => {
+    try { setProfiles(await api<ProfilesResponse>(workflow + '/providers')); setError(false); setMessage(''); }
     catch (cause) { setError(true); setMessage(errorMessage(cause)); }
-  }
+  }, []);
+  useEffect(() => { if (inline) void load(); }, [inline, load]);
 
   async function run() {
     setBusy(true);
@@ -74,22 +77,25 @@ export function VerificationRequest({ eventIds, onQueued }: { eventIds: number[]
     finally { setBusy(false); }
   }
 
-  return <Disclosure title={eventIds.length > 1 ? 'Verify selected with AI' : 'Verify with AI'}>
-    <div className="stack" onFocus={() => { if (!profiles && !error) void load(); }}>
-      {!profiles && <button className="secondary-button" type="button" onClick={() => void load()}>Load AI models</button>}
-      {profiles && (!profiles.configured || !profiles.profiles.length) && <p className="muted">Add an AI provider in <a href="/settings.html">Settings</a> to start verification.</p>}
+  const controls = <div className="stack" onFocus={() => { if (!inline && !profiles && !error) void load(); }}>
+    {profiles && (!profiles.configured || !profiles.profiles.length) && <p className="muted">Add an AI provider in <a href="/settings.html">Settings</a> to start verification.</p>}
+    <div className={inline ? 'publication-controls' : 'stack'}>
+      {!profiles && (!inline || error) && <button className="secondary-button" type="button" onClick={() => void load()}>Load AI models</button>}
       {!!profiles?.profiles.length && <label className="field">AI model
-        <select value={profile} onChange={event => setProfile(event.target.value)} disabled={busy}>
+        <select value={profile} onChange={event => setProfile(event.target.value)} disabled={busy || active}>
           <option value="">Default model</option>
           {profiles.profiles.map(item => <option value={item.id} key={item.id}>{item.name} · {item.model}</option>)}
         </select>
       </label>}
-      <label className="checkbox-label"><input type="checkbox" checked={publish} onChange={event => setPublish(event.target.checked)} disabled={busy} /> Publish clear music events after verification</label>
-      <button className="primary-button" type="button" disabled={busy || !profiles?.configured || !profiles.profiles.length || (!profile && !profiles.default_id) || eventIds.length > 200} onClick={() => void run()}>{busy ? 'Queueing…' : 'Start verification'}</button>
-      {eventIds.length > 200 && <p>Select at most 200 events per verification run.</p>}
-      <Feedback message={message} error={error} />
+      <button className="primary-button" type="button" disabled={busy || active || !profiles?.configured || !profiles.profiles.length || (!profile && !profiles.default_id) || eventIds.length > 200} onClick={() => void run()}>
+        {busy ? 'Queueing…' : inline ? 'Evaluate' : 'Start verification'}
+      </button>
     </div>
-  </Disclosure>;
+    <label className="checkbox-label"><input type="checkbox" checked={publish} onChange={event => setPublish(event.target.checked)} disabled={busy || active} /> Publish clear music events after verification</label>
+    {eventIds.length > 200 && <p>Select at most 200 events per verification run.</p>}
+    {message && <Feedback message={message} error={error} />}
+  </div>;
+  return inline ? controls : <Disclosure title={eventIds.length > 1 ? 'Verify selected with AI' : 'Verify with AI'}>{controls}</Disclosure>;
 }
 
 export function useVerificationJobs(onChange: () => void) {
@@ -139,7 +145,8 @@ export function EventVerification({ row, onSaved }: { row: EventRow; onSaved: ()
   const saveCallback = useRef(onSaved);
   const lastResult = useRef<number | null>(null);
   useEffect(() => { saveCallback.current = onSaved; }, [onSaved]);
-  const active = data?.verification_status === 'queued' || data?.verification_status === 'verifying';
+  const status = data?.verification_status ?? row.verification_status;
+  const active = status === 'queued' || status === 'verifying';
   useEffect(() => {
     if (!active) return;
     const timer = window.setInterval(() => void load(), 2500);
@@ -180,7 +187,7 @@ export function EventVerification({ row, onSaved }: { row: EventRow; onSaved: ()
         {data.publication_status === 'live' ? 'Unpublish' : 'Publish in Dracula'}
       </button>}
     </div>
-    <VerificationRequest eventIds={[row.id]} onQueued={load} />
+    <VerificationRequest eventIds={[row.id]} onQueued={load} inline active={active} />
     {data?.last_run?.error_message && <Feedback message={data.last_run.error_message} error />}
     {data?.findings.length ? <div className="stack">
       <h4>Needs attention</h4>

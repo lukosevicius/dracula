@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { useEffect } from 'react';
 import AiEvaluation from './ai-evaluation';
+import AiUsage from './ai-usage';
 import ArtistPage from './artist';
 import EventPage from './event';
 import ArtistsPage from './artists';
@@ -35,6 +36,7 @@ const page = path === '/' ? <StartupPage />
   : path === '/event.html' ? <EventPage id={new URLSearchParams(window.location.search).get('id') || ''} />
   : path === '/settings.html' ? <SettingsPage />
   : path === '/ai-evaluation.html' ? <AiEvaluation />
+  : path === '/ai-usage.html' ? <AiUsage />
   : path === '/all-events.html' ? <EventsPage all />
   : path === '/needs-attention.html' ? <EventsPage all queue="attention" />
   : path === '/not-music.html' ? <EventsPage all queue="not-music" />

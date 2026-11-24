@@ -1,0 +1,4 @@
+.artist-table.ai-usage-table :is(th, td):last-child { width: auto; }
+.ai-usage-table :is(th, td) { white-space: nowrap; }
+.ai-usage-table td[colspan] { white-space: normal; }
+.ai-usage-run-events { display: grid; gap: 10px; padding: 6px 0; list-style: none; }

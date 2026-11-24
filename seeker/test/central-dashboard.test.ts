@@ -1,8 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createCentralDashboard } from '../central-dashboard.js';
 import type { createCentralApi } from '../central-api.js';
+
+test('AI usage forwards the reporting period and history page to the central API', async () => {
+  const calls: string[] = [];
+  const api = { seekerRead: async (path: string) => { calls.push(path); return { total: 0 }; } } as ReturnType<typeof createCentralApi>;
+  const handler = createCentralDashboard(api);
+  const request = { method: 'GET', url: '/api/workflow/verification/usage?period=week&page=2' } as IncomingMessage;
+  const response = {
+    writeHead(status: number) { assert.equal(status, 200); },
+    end(body: string) { assert.deepEqual(JSON.parse(body), { total: 0 }); },
+  } as ServerResponse;
+  assert.equal(await handler(request, response), true);
+  assert.deepEqual(calls, ['/verification/usage?period=week&page=2']);
+});
 
 test('central dashboard reads and edits through the API, and rejects unfinished operations',async()=>{
   const calls:unknown[]=[];

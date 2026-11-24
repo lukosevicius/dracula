@@ -22,7 +22,7 @@ export function createCentralDashboard(api:CentralApi, userAgent='Seeker/0.1.0',
     };
     try {
       const workflowPath = url.pathname.replace(/^\/api\/workflow(?=\/)/, '');
-      const workflowRead = request.method === 'GET' && /^(?:\/providers|\/agents|\/attention-count|\/verification\/jobs(?:\/\d{1,12})?|\/events\/\d{1,12}\/verification)$/.test(workflowPath);
+      const workflowRead = request.method === 'GET' && /^(?:\/providers|\/agents|\/attention-count|\/verification\/(?:usage|jobs(?:\/\d{1,12})?)|\/events\/\d{1,12}\/verification)$/.test(workflowPath);
       const workflowWrite = request.method === 'POST' && /^(?:\/providers|\/agents|\/verification\/jobs|\/events\/\d{1,12}\/(?:publication|findings\/\d{1,12}))$/.test(workflowPath);
       if (workflowRead) { send(200, await api.seekerRead(workflowPath + url.search)); return true; }
       if (workflowWrite) {
