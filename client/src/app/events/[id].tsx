@@ -36,7 +36,13 @@ export default function EventPage() {
   const title = displayText(event.title);
   const image = event.image_url ? { uri: event.image_url } : undefined;
   const source = eventSource(event.about_url, event.source_url);
-  const date = `${displayDate(event.event_date)}${event.event_end_date && event.event_end_date !== event.event_date ? ` – ${displayDate(event.event_end_date)}` : ''}${event.event_time ? ` · ${event.event_time}` : ''}`;
+  const date = event.event_date
+    ? `${displayDate(event.event_date)}${event.event_end_date && event.event_end_date !== event.event_date ? ` – ${displayDate(event.event_end_date)}` : ''}`
+    : null;
+  const time = event.event_time
+    ? `${event.event_time}${event.event_end_time ? ` iki ${event.event_end_time}` : ''}`
+    : null;
+  const price = event.price_text || (event.price_type === 'free' ? 'Nemokamai' : event.price_type === 'paid' ? 'Mokama' : 'Nenurodyta');
 
   async function openLink(url: string) {
     try { await Linking.openURL(url); }
@@ -54,10 +60,12 @@ export default function EventPage() {
     <View style={[styles.hero, desktop && styles.heroDesktop]}>
       {image && !imageFailed ? <Image source={image} style={[styles.image, desktop && styles.imageDesktop]} contentFit="cover" onError={() => setImageFailed(true)} accessibilityLabel={`Renginio ${title} nuotrauka`} /> : <View style={[styles.image, desktop && styles.imageDesktop, styles.placeholder]}><Text style={styles.placeholderText}>DRACULA</Text></View>}
       <View style={[styles.summary, desktop && styles.summaryDesktop]}>
-        <Text style={styles.date}>{date}</Text>
         <Text style={[styles.title, desktop && styles.titleDesktop]}>{title}</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}><CalendarButton event={event} /><SaveButton event={event} /></View>
+        {date ? <View style={styles.section}><Text style={styles.label}>DATA</Text><Text style={styles.value}>{date}</Text></View> : null}
+        {time ? <View style={styles.section}><Text style={styles.label}>LAIKAS</Text><Text style={styles.value}>{time}</Text></View> : null}
         {event.venue ? <View style={styles.section}><Text style={styles.label}>VIETA</Text><Text style={styles.value}>{displayText(event.venue)}</Text></View> : null}
+        <View style={styles.section}><Text style={styles.label}>KAINA</Text><Text style={styles.value}>{displayText(price)}</Text></View>
         {event.artists.length ? <View style={styles.section}><Text style={styles.label}>ATLIKĖJAI</Text>{event.artists.map(artist => <Link key={artist.mbid} href={{pathname:'/artists/[id]',params:{id:artist.mbid}}} style={styles.link}>{displayText(artist.name)} →</Link>)}</View> : null}
         {desktop ? links : null}
       </View>
@@ -80,7 +88,6 @@ const styles = StyleSheet.create({
   image: { width: '100%', height: 260, borderRadius: 18, backgroundColor: '#302631' },
   placeholder: { alignItems: 'center', justifyContent: 'center' },
   placeholderText: { color: '#80616a', fontWeight: '900', letterSpacing: 4, fontSize: 20 },
-  date: { color: '#ee969b', fontSize: 14, fontWeight: '700' },
   title: { color: '#fff', fontSize: 30, lineHeight: 37, fontWeight: '800' },
   section: { gap: 7, paddingTop: 8 },
   label: { color: '#ed7d83', fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },

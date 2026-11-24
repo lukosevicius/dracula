@@ -1,6 +1,6 @@
 import type { PublicEvent } from '../../../seeker/types';
 
-export type DisplayEvent = PublicEvent & { image_url?: string | null; price_type?: 'free' | 'paid' | 'unknown' | null; price_text?: string | null };
+export type DisplayEvent = PublicEvent & { event_end_time?: string | null; image_url?: string | null; price_type?: 'free' | 'paid' | 'unknown' | null; price_text?: string | null };
 export const apiUrl = (process.env.EXPO_PUBLIC_API_URL || 'https://api.dracula.lt').replace(/\/$/, '');
 export type EventPage = { items: DisplayEvent[]; total: number; nextOffset: number | null };
 

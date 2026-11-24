@@ -3,7 +3,7 @@ import { queueAfterImport } from '../verification/verification.js';
 import { sourceEvidence } from '../verification/rules.js';
 import {createHash,timingSafeEqual} from 'node:crypto';
 import type { Pool, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
-interface AvilysEvent { id: number; title: string; city: string; categories: {id: number}[]; description?: string; startTime?: string; venueName?: string; ticketUrl?: string; sourceUrl?: string; priceFrom?: number | string; priceTo?: number | string; free?: boolean }
+interface AvilysEvent { id: number; title: string; city: string; categories: {id: number}[]; description?: string; startTime?: string; endTime?: string; venueName?: string; ticketUrl?: string; sourceUrl?: string; priceFrom?: number | string; priceTo?: number | string; free?: boolean }
 interface ImportInput { verify_after_import?: boolean; publish_after_verification?: boolean; items: AvilysEvent[]; job: {id: number; owner: string} }
 interface Lease extends RowDataPacket { job_id: number; owner_hash: string; expires_at: number | string }
 const city = 'Vilnius';
@@ -13,6 +13,16 @@ const url=(value: string | undefined)=>{try{const u=new URL(value ?? '');return 
 const date=(value: string | undefined)=>{if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}T/.test(value))return null;const day=value.slice(0,10),parsed=new Date(`${day}T00:00:00Z`);return !Number.isNaN(parsed.valueOf())&&parsed.toISOString().slice(0,10)===day?day:null;};
 // Avilys supplies Vilnius wall time, even when the timestamp ends in Z.
 const time=(value: string | undefined)=>{if(!date(value))return null;const match=/^\d{4}-\d{2}-\d{2}T((?:[01]\d|2[0-3]):[0-5]\d)(?::[0-5]\d(?:\.\d{1,9})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)?$/.exec(value!);return match?.[1]??null;};
+const price=(event:AvilysEvent)=>{
+  const from=typeof event.priceFrom==='number'||typeof event.priceFrom==='string'?Number(event.priceFrom):NaN;
+  const to=typeof event.priceTo==='number'||typeof event.priceTo==='string'?Number(event.priceTo):NaN;
+  const priced=Number.isFinite(from)&&from>0;
+  return {
+    priceText:priced?(Number.isFinite(to)&&to>from?`${from}–${to} €`:`${from} €`):null,
+    priceType:priced?'paid':event.free===true?'free':event.free===false?'paid':'unknown',
+    available:priced||typeof event.free==='boolean',
+  };
+};
 
 /** Store unreviewed candidates; preserve editorial changes on subsequent imports. */
 export async function importAvilysPage(pool: Pool, data: unknown){
@@ -40,12 +50,8 @@ export async function importAvilysPage(pool: Pool, data: unknown){
       if(!links.length){
         const [insert]=await conn.execute<ResultSetHeader>('INSERT INTO events(title,event_date,event_end_date,event_time,venue,ticket_url,city,review_status,manual_fields,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[e.title.trim(),date(e.startTime),null,time(e.startTime),typeof e.venueName==='string'?e.venueName.slice(0,300):null,url(e.ticketUrl),city,'unsure','[]',now,now]);
         await conn.execute('INSERT INTO event_sources(event_id,source_key,source_id,source_url,content_html,source_data_json,last_checked_at,about_url) VALUES(?,?,?,?,?,?,?,?)',[insert.insertId,'avilys',String(e.id),sourceUrl,description,metadata,now,original]);
-        const from=typeof e.priceFrom==='number'||typeof e.priceFrom==='string'?Number(e.priceFrom):NaN;
-        const to=typeof e.priceTo==='number'||typeof e.priceTo==='string'?Number(e.priceTo):NaN;
-        const priced=Number.isFinite(from)&&from>0;
-        const priceText=priced?(Number.isFinite(to)&&to>from?`${from}–${to} €`:`${from} €`):null;
-        const priceType=priced?'paid':e.free===true?'free':e.free===false?'paid':'unknown';
-        if(priceText||priceType!=='unknown')await conn.execute('INSERT INTO event_prices(event_id,price_text,price_type,manual,checked_at) VALUES(?,?,?,?,?)',[insert.insertId,priceText,priceType,0,now]);
+        const pricing=price(e);
+        if(pricing.available)await conn.execute('INSERT INTO event_prices(event_id,price_text,price_type,manual,checked_at) VALUES(?,?,?,?,?)',[insert.insertId,pricing.priceText,pricing.priceType,0,now]);
         await history(conn,insert.insertId,'imported','Avilys',diff({},await snapshot(conn,insert.insertId)),{source_id:e.id,job_id:input.job.id});
         await queueAfterImport(conn,insert.insertId,input.job.id,input.verify_after_import!==false,input.publish_after_verification!==false);
         added++;
@@ -61,6 +67,10 @@ export async function importAvilysPage(pool: Pool, data: unknown){
           try{manual=JSON.parse(event.manual_fields);}catch{/* Invalid metadata must not unlock a field. */}
           if(event.event_time==null && Array.isArray(manual) && !manual.includes('event_time'))await conn.execute('UPDATE events SET event_time=?,updated_at=? WHERE id=? AND event_time IS NULL AND event_date=?',[sourceTime,now,links[0].event_id,sourceDate]);
         }
+        const pricing=price(e);
+        if(pricing.available)await conn.execute(`INSERT INTO event_prices(event_id,price_text,price_type,manual,checked_at) VALUES(?,?,?,?,?)
+          ON DUPLICATE KEY UPDATE price_text=IF(manual=0,VALUES(price_text),price_text),price_type=IF(manual=0,VALUES(price_type),price_type),checked_at=IF(manual=0,VALUES(checked_at),checked_at)`,
+        [id,pricing.priceText,pricing.priceType,0,now]);
         await conn.execute("UPDATE event_sources SET content_html=?,source_data_json=?,last_checked_at=?,about_url=? WHERE source_key='avilys' AND source_id=?",[description,metadata,now,original,String(e.id)]);
         const previousSource=sourceEvidence(links[0]);
         const nextSource=sourceEvidence({source_key:'avilys',source_url:sourceUrl,about_url:original,content_html:description,source_data_json:metadata});
