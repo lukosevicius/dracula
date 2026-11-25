@@ -8,6 +8,7 @@ import { generate, manageProvider } from '../dist/verification/providers.js';
 import { estimatedTokenCost, usageWindow, verificationUsage } from '../dist/verification/usage.js';
 import type { TokenUsage } from '../dist/verification/usage.js';
 import { defaultRules, listRules, updateRules } from '../dist/verification/rule-settings.js';
+import { planVerification, type VerificationInput } from '../dist/verification/verification-plan.js';
 import { createVerificationWorker, editPublication, manualVerification, queueRulesPreview, resolveFinding, rulesPreview, verificationDetails } from '../dist/verification/verification.js';
 
 test('verification rejects invented evidence and preserves Avilys wall time', () => {
@@ -57,14 +58,16 @@ test('structured values confirm sparse listings and only cited contradictions ra
 test('ticket pricing uses general admission, flags conflicts, and ignores optional charges or exemptions', () => {
   const listing = (description: string, metadata: Record<string, unknown> = {}) =>
     sourceEvidence({ source_key: 'avilys', source_data_json: metadata, content_html: description });
-  const petunija = listing('Staliukų rezervacija nemokama.<br>Vaikai iki 10 metų įleidžiami nemokamai.<br>BILIETAI: 16 €! Bilietai brangs!', { free: false });
+  const petunija = listing('Staliukų rezervacija nemokama.<br>Vaikai iki 10 metų įleidžiami nemokamai.<br>BILIETAI: 16 € | Bilietai brangs!', { free: false });
   assert.deepEqual(reconcilePrices([], [petunija], { price_type: 'paid' }).map(finding => [finding.field, finding.disposition, finding.proposed]), [
     ['price_text', 'suggestion', '16 €'], ['price_type', 'confirmed', 'paid'],
   ]);
   assert.equal(ticketPriceValue('From 16.50 EUR'), 'Nuo 16,5 €');
   assert.equal(ticketPriceValue('€16–€20'), '16–20 €');
-  const tiers = reconcilePrices([], [listing('Bilietai: 16 € / 20 €.')], { price_type: 'paid' });
-  assert.equal(tiers[0].disposition, 'attention');
+  for (const description of ['Bilietai: 16 € / 20 €.', 'Bilietai: 16 € | prie durų 20 €.']) {
+    const tiers = reconcilePrices([], [listing(description)], { price_type: 'paid' });
+    assert.equal(tiers[0].disposition, 'attention');
+  }
   const matching = reconcilePrices([], [listing('Bilietų kaina – nuo 16,50 €.', { priceFrom: 16.50 })], { price_type: 'paid', price_text: '16.50 EUR' });
   assert.equal(matching[0].disposition, 'confirmed');
   assert.deepEqual(reconcilePrices([], [listing('Staliukų rezervacija: 16 €. Vaikai iki 10 m. įleidžiami nemokamai.')], {}), []);
@@ -73,6 +76,28 @@ test('ticket pricing uses general admission, flags conflicts, and ignores option
   assert.deepEqual(reconcilePrices([], [petunija, listing('Įėjimas nemokamas.')], { price_type: 'paid' }).map(finding => [finding.field, finding.disposition]), [
     ['price_type', 'attention'],
   ]);
+});
+
+test('one clear value fills a blank on a live event and respects edits and review permissions', () => {
+  const input: VerificationInput = {
+    values: { event_date: '2099-11-25', event_time: null, venue: 'Tamsta Club', review_status: 'music' },
+    sources: [{ title: 'Concert', description: 'Pradžia 19:30.' }],
+    artistLinks: [], catalogue: new Map(), manualFields: [], priceManual: false, classificationManual: false,
+    publication: { status: 'live', manual: false, reviewRequired: false }, similar: [], dismissed: [], externalFinding: false,
+  };
+  const time = { field: 'event_time', disposition: 'confirmed', proposed: '19:30', evidence: 'Pradžia 19:30.', reason: 'Listed start time.' } as const;
+  const filled = planVerification(input, [time], defaultRules, false);
+  assert.equal(filled.updated.event_time, '19:30');
+  assert.deepEqual(filled.attention, []);
+  const locked = planVerification({ ...input, manualFields: ['event_time'] }, [time], defaultRules, false);
+  assert.equal(locked.updated.event_time, null);
+  assert.deepEqual(locked.attention, []);
+  const review = { ...defaultRules, permissions: { ...defaultRules.permissions, event_time: 'review' as const } };
+  assert.equal(planVerification(input, [time], review, false).attention[0].proposed, '19:30');
+  const conflicting = { ...time, proposed: '20:30', evidence: 'Pradžia 20:30.' };
+  const ambiguous = planVerification(input, [time, conflicting], defaultRules, false);
+  assert.equal(ambiguous.updated.event_time, null);
+  assert.equal(ambiguous.attention.length, 2);
 });
 
 test('Gemini and OpenAI use structured provider responses with credentials in headers', async () => {
@@ -186,10 +211,10 @@ test('verification fills a missing time, publishes clean music, and records the 
       if (choice.includes('PETUNIJOS AKUSTINIS')) {
         findings.push(
           result('description', '', '', 'attention'),
-          result('event', 'PETUNIJOS AKUSTINIS', 'PETUNIJOS AKUSTINIS', 'confirmed'),
+          result('cancellation', '', 'BILIETAI: 16 € | Bilietai brangs!', 'confirmed'),
           result('price_type', 'paid', 'Invented price-type quote', 'confirmed'),
           result('artists', 'Petunija', 'Petunija', 'confirmed'),
-          result('artists', 'Kęstučiu', 'Kartu su Kęstučiu, kuris skambins gitara.'),
+          result('artists', 'Kęstutis', 'Kartu su Kęstučiu, kuris skambins gitara.'),
         );
       }
       if (choice.includes('Petunia')) {
@@ -329,7 +354,7 @@ test('verification fills a missing time, publishes clean music, and records the 
         (9,'PETUNIJOS AKUSTINIS', '2099-11-25','19:30','Tamsta Club','music','live','verified'),
         (10,'PETUNIJOS AKUSTINIS (manual price)', '2099-11-26','19:30','Tamsta Club','music','live','verified');
       INSERT INTO event_sources SELECT id,id,'avilys',id,'https://avilys.app/',NULL,
-        'Petunija. Kartu su Kęstučiu, kuris skambins gitara.<br>Staliukų rezervacija nemokama.<br>Vaikai iki 10 metų įleidžiami nemokamai.<br>BILIETAI: 16 €! Bilietai brangs!',
+        'Petunija. Kartu su Kęstučiu, kuris skambins gitara.<br>Staliukų rezervacija nemokama.<br>Vaikai iki 10 metų įleidžiami nemokamai.<br>BILIETAI: 16 € | Bilietai brangs!',
         json_object('startTime',event_date||'T19:30:00Z','venueName',venue,'free',false) FROM events WHERE id IN (9,10);
       INSERT INTO event_prices(event_id,price_type,manual) VALUES(9,'paid',0),(10,'paid',1);
       INSERT INTO event_artist_decisions VALUES(9,'pet','accepted'),(10,'pet','accepted');
@@ -343,7 +368,7 @@ test('verification fills a missing time, publishes clean music, and records the 
     assert.equal(petunija.needs_attention,0);
     assert.equal(petunija.findings.length,0);
     assert.deepEqual(petunija.log[0].context.actions?.map(action => [action.status, action.field, action.proposed]), [
-      ['observation','artists','Kęstučiu'], ['applied','price_text','16 €'],
+      ['observation','artists','Kęstutis'], ['applied','price_text','16 €'],
     ]);
     assert.deepEqual(petunija.log[0].changes,{price_text:{before:null,after:'16 €'}});
     assert.deepEqual(db.prepare('SELECT artist_mbid FROM event_artist_decisions WHERE event_id=9').all().map(row=>row.artist_mbid),['pet']);

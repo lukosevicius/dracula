@@ -34,7 +34,7 @@ export type VerificationInput = {
   externalFinding: boolean;
 };
 
-const present = (value: unknown) => value !== null && value !== undefined && value !== '' && value !== 'unknown';
+const present = (value: unknown) => value != null && (typeof value !== 'string' || (value.trim() !== '' && value !== 'unknown'));
 const equal = (first: unknown, second: unknown) => (first ?? null) === (second ?? null);
 
 export function validDateRange(field: string, value: string, current: Snapshot) {
@@ -155,35 +155,38 @@ export function planVerification(input: VerificationInput, findings: Finding[], 
       continue;
     }
     if (disposition === 'attention') { flag(entry); continue; }
+    const missing = !present(current);
     if (disposition === 'unknown') {
-      if (!present(current) && important.some(required => required === field)) flag({ ...entry, reason: 'The source does not establish this event detail.' });
+      if (missing && important.some(required => required === field)) flag({ ...entry, reason: 'The source does not establish this event detail.' });
       else fields[field] ??= 'unknown';
       continue;
     }
-    if ((disposition === 'confirmed' || proposed === current) && field !== 'review_status' && (present(current) || field === 'image')) {
+    if (field !== 'review_status' && ((!missing && (proposed === current || (disposition === 'confirmed' && !proposed))) ||
+        (field === 'image' && disposition === 'confirmed'))) {
       const critical = important.some(required => required === field);
       if (critical && ((proposed && proposed !== current) || !canAutoFill(field, String(current), evidence))) {
-        flag({ ...entry, reason: 'The quoted source evidence does not establish the saved value.' });
+        fields[field] ??= 'unknown';
       } else fields[field] ??= 'confirmed';
       continue;
     }
-    if (disposition === 'confirmed' && field !== 'review_status') {
+    if (disposition === 'confirmed' && field !== 'review_status' && (!proposed || !editable.includes(field as Editable))) {
       if (important.some(required => required === field)) flag({ ...entry, reason: 'The saved event detail is missing.' });
       continue;
     }
     if (field === 'review_status' && proposed === current && proposed !== 'unsure') { fields[field] ??= 'confirmed'; continue; }
-    const conflicts = findings.some(other => other !== finding && other.field === field && other.proposed && proposed !== other.proposed && other.disposition === 'suggestion');
+    const conflicts = findings.some(other => other !== finding && other.field === field && other.proposed &&
+      normalizeEvidence(proposed) !== normalizeEvidence(other.proposed) && (other.disposition === 'suggestion' || other.disposition === 'confirmed'));
     const draft = input.publication.status === 'draft';
     const classify = field === 'review_status' && !input.classificationManual &&
-      (current === 'unsure' ? ['music', 'not_music'].includes(proposed) : draft && proposed === 'unsure');
+      (missing || current === 'unsure' ? ['music', 'not_music'].includes(proposed) : draft && proposed === 'unsure');
     const pricing = field === 'price_text' || field === 'price_type';
-    if (pricing && input.priceManual && !present(current)) {
-      outcome('kept', { ...entry, reason: 'Pricing is locked by a manual edit.' });
+    if (missing && (manual.has(field) || (pricing && input.priceManual))) {
+      outcome('kept', { ...entry, reason: 'This field is locked by a manual edit.' });
       fields[field] ??= 'kept';
       continue;
     }
-    const fill = !present(current) && (pricing || (draft && canAutoFill(field, proposed, evidence)));
-    const copyTitle = draft && field === 'title' && validField(field, proposed) &&
+    const fill = missing && (pricing ? validField(field, proposed) : canAutoFill(field, proposed, evidence));
+    const copyTitle = (missing || draft) && field === 'title' && validField(field, proposed) &&
       normalizeEvidence(proposed) === normalizeEvidence(evidence) && input.sources.length > 0 &&
       input.sources.every(source => normalizeEvidence(source.title) === normalizeEvidence(proposed));
     if (permissionFor(field, proposed) === 'auto' && !conflicts && !manual.has(field) &&

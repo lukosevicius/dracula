@@ -8,7 +8,7 @@ const admission = /(?<!\p{L})(?:biliet(?:ai|o|ų|as)|įėjim(?:as|o)|tickets?|ad
 const amount = '(\\d+[,.]\\d{1,2}|\\d+)';
 const amountPattern = `(?:(nuo|from)\\s+)?(?:€\\s*)?${amount}(?:\\s*(?:€|eur))?(?:\\s*[-–—]\\s*(?:€\\s*)?${amount})?\\s*(?:€|eur)?`;
 const pricePattern = new RegExp(`^${amountPattern}$`, 'u');
-const ticketLabel = /^(?:bilietai|bilieto kaina|bilietų kaina|įėjimo kaina|įėjimas|kaina|tickets?(?: price)?|admission|entry)(?!\p{L})\s*[:–-]?\s*/u;
+const ticketLabel = /^(?:bilietai(?: kainuoja)?|bilieto kaina|bilietų kaina|įėjimo kaina|įėjimas|kaina|tickets?(?: price| cost)?|admission|entry)(?!\p{L})\s*[:–-]?\s*/u;
 const ticketAmounts = /(?:\d+[,.]\d{1,2}|\d+)\s*(?:€|eur\b)|€\s*\d+/gu;
 const free = /^(?:(?:bilietai|įėjimas(?: yra)?)\s*[:–-]?\s*(?:nemokami|nemokamas)|įėjimas laisvas|renginys nemokamas|nemokamas renginys|free (?:entry|admission)|(?:entry|admission)\s*[:–-]?\s*(?:is )?free)[.!]?$/u;
 
@@ -43,7 +43,9 @@ function sourcePrices(source: Source) {
     const clean = normalizeEvidence(evidence).replace(/^• /u, '');
     const label = ticketLabel.exec(clean);
     const description = label ? clean.slice(label[0].length).replace(/[.!?]$/u, '').trim() : '';
-    const text = ticketPriceValue(description);
+    const [beforePipe, ...notes] = description.split(/\s*\|\s*/u);
+    const text = ticketPriceValue(description) ??
+      (notes.length && [...notes.join(' ').matchAll(ticketAmounts)].length === 0 ? ticketPriceValue(beforePipe) : undefined);
     if (text) prices.push({ type: 'paid', text, evidence: evidence.slice(0, 500) });
     else if (label && [...description.matchAll(ticketAmounts)].length > 1) {
       prices.push({ type: 'paid', ambiguous: true, evidence: evidence.slice(0, 500) });
