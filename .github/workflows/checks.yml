@@ -36,10 +36,10 @@ jobs:
           fi
           changes=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- api/migrations/)
           if [[ -n "$changes" ]]; then
-            echo "::warning::API migrations changed. Before releasing, review compatibility and backups, then run Database migrations on main with action up."
+            echo "::warning::Publish API release applies pending migrations from main after checks pass. Review compatibility and backups before merging."
             {
               echo '### Production database migration required'
-              echo 'Review compatibility with the currently deployed API and verify a backup. After merging to main, run **Database migrations** with action **up**, then retry **Publish API release** if necessary.'
+              echo 'Review compatibility with the currently deployed API and verify a backup before merging. **Publish API release** applies pending migrations before deploying the API.'
               echo 'Changed migration files:'
               echo '```'
               printf '%s\n' "$changes"

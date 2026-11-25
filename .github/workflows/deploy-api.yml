@@ -63,6 +63,16 @@ jobs:
       - name: Install API dependencies
         working-directory: api
         run: npm ci
+      - name: Verify the release still matches main
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags --depth=1 origin main
+          if ! git diff --quiet "$RELEASE_SHA" FETCH_HEAD -- api .github/workflows/checks.yml .github/workflows/deploy-api.yml .github/scripts/verify-api-deployment{,.test}.mjs; then
+            echo "::error::main contains newer API or release workflow changes. Run Publish API release from the latest main revision."
+            exit 1
+          fi
       - name: Verify Hostinger access before publishing
         shell: bash
         run: |
@@ -70,7 +80,7 @@ jobs:
           test -n "$HOSTINGER_API_TOKEN"
           [[ "$HOSTINGER_SSH_USER" =~ ^[a-zA-Z0-9_-]+$ ]]
           curl --fail --silent --show-error --max-time 20 -o /dev/null -H "Authorization: Bearer $HOSTINGER_API_TOKEN" "https://developers.hostinger.com/api/hosting/v1/accounts/$HOSTINGER_SSH_USER/websites/api.dracula.lt/nodejs/builds?per_page=1"
-      - name: Check production migrations
+      - name: Apply and verify production migrations
         working-directory: api
         shell: bash
         env:
@@ -91,8 +101,9 @@ jobs:
           chmod 600 "$HOME/.ssh/known_hosts"
           ssh -f -N -M -S "$HOME/.ssh/dracula-tunnel" -L 127.0.0.1:13306:127.0.0.1:3306 -p "$SSH_PORT" -i "$HOME/.ssh/dracula_migrate" -o BatchMode=yes -o StrictHostKeyChecking=yes -o ExitOnForwardFailure=yes "$HOSTINGER_SSH_USER@$SSH_HOST"
           trap 'ssh -S "$HOME/.ssh/dracula-tunnel" -O exit -p "$SSH_PORT" "$HOSTINGER_SSH_USER@$SSH_HOST" >/dev/null 2>&1 || true' EXIT
-          if ! DB_HOST=127.0.0.1 DB_PORT=13306 npm run migrate -- check; then
-            echo "::error::Migration check failed. Review the output above. For pending migrations, verify compatibility and backups, run the Database migrations workflow on main with action up, then rerun this release. Do not apply migrations if the error reports invalid or changed history."
+          export DB_HOST=127.0.0.1 DB_PORT=13306
+          if ! npm run migrate -- up || ! node dist/migrate.js check; then
+            echo "::error::Production migration failed. The API release is blocked. Review the migration output and resolve any invalid or incomplete history before retrying."
             exit 1
           fi
       - name: Advance API deployment branch
