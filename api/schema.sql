@@ -54,6 +54,23 @@ CREATE TABLE verification_providers (
   encrypted_key VARBINARY(4096) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE verification_rule_versions (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  rules JSON NOT NULL,
+  activated_by VARCHAR(191) NOT NULL,
+  activated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE verification_rule_state (
+  id TINYINT PRIMARY KEY,
+  active_version_id BIGINT NULL,
+  draft JSON NULL,
+  revision INT UNSIGNED NOT NULL DEFAULT 1,
+  FOREIGN KEY(active_version_id) REFERENCES verification_rule_versions(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO verification_rule_state(id) VALUES(1);
+
 CREATE TABLE verification_jobs (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   profile_id BIGINT NULL,
@@ -64,11 +81,14 @@ CREATE TABLE verification_jobs (
   request_key VARCHAR(100) NULL,
   request_hash CHAR(64) NULL,
   allow_publish BOOLEAN NOT NULL DEFAULT TRUE,
+  rules_version_id BIGINT NULL,
+  preview_rules JSON NULL,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   started_at DATETIME(3) NULL,
   UNIQUE KEY(import_job_id),
   UNIQUE KEY(actor,request_key),
-  INDEX idx_verification_jobs_created(created_at)
+  INDEX idx_verification_jobs_created(created_at),
+  FOREIGN KEY(rules_version_id) REFERENCES verification_rule_versions(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE event_verifications (

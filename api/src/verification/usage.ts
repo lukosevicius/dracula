@@ -113,16 +113,16 @@ export async function verificationUsage(pool: Pool, query: URLSearchParams) {
       FROM verification_provider_requests p WHERE p.requested_at>=? AND p.requested_at<?
       GROUP BY p.provider,p.model ORDER BY requests DESC,p.provider,p.model`, [...window]);
     const [[count]] = await conn.execute<RowDataPacket[]>('SELECT COUNT(*) AS total FROM verification_jobs WHERE created_at>=? AND created_at<?', [...window]);
-    const [runs] = await conn.execute<RowDataPacket[]>(`SELECT j.id,j.provider,j.model,j.import_job_id,j.actor,
+    const [runs] = await conn.execute<RowDataPacket[]>(`SELECT j.id,j.provider,j.model,j.import_job_id,j.actor,j.preview,
       DATE_FORMAT(j.created_at,'%Y-%m-%dT%H:%i:%sZ') AS queued_at,
       DATE_FORMAT(j.started_at,'%Y-%m-%dT%H:%i:%sZ') AS started_at,
       COUNT(v.id) AS events,COALESCE(SUM(v.status='completed'),0) AS completed,
       COALESCE(SUM(v.status='failed'),0) AS failed,COALESCE(SUM(v.status='skipped'),0) AS skipped,
       COALESCE(SUM(v.status IN ('queued','running')),0) AS pending,
       COALESCE(SUM(v.status='completed' AND ${historicalFinding}),0) AS flagged
-      FROM (SELECT id,provider,model,import_job_id,actor,created_at,started_at FROM verification_jobs
+      FROM (SELECT id,provider,model,import_job_id,actor,preview_rules IS NOT NULL AS preview,created_at,started_at FROM verification_jobs
         WHERE created_at>=? AND created_at<? ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?) j
-      LEFT JOIN event_verifications v ON v.job_id=j.id GROUP BY j.id,j.provider,j.model,j.import_job_id,j.actor,j.created_at,j.started_at
+      LEFT JOIN event_verifications v ON v.job_id=j.id GROUP BY j.id,j.provider,j.model,j.import_job_id,j.actor,j.preview,j.created_at,j.started_at
       ORDER BY j.created_at DESC,j.id DESC`, [...window, limit, (page - 1) * limit]);
     const byModel = models.map(row => ({
       provider: String(row.provider), model: String(row.model),
@@ -142,7 +142,7 @@ export async function verificationUsage(pool: Pool, query: URLSearchParams) {
       by_model: byModel,
       runs: runs.map(row => ({
         id: Number(row.id), provider: row.provider, model: row.model, import_job_id: row.import_job_id,
-        actor: row.actor, queued_at: row.queued_at, started_at: row.started_at, events: Number(row.events), completed: Number(row.completed),
+        actor: row.actor, preview: Boolean(row.preview), queued_at: row.queued_at, started_at: row.started_at, events: Number(row.events), completed: Number(row.completed),
         failed: Number(row.failed), skipped: Number(row.skipped), pending: Number(row.pending), flagged: Number(row.flagged),
       })),
       page, limit, total: Number(count.total),

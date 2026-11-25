@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { Readable } from 'node:stream';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createCentralDashboard } from '../central-dashboard.js';
 import type { createCentralApi } from '../central-api.js';
@@ -15,6 +16,36 @@ test('AI usage forwards the reporting period and history page to the central API
   } as ServerResponse;
   assert.equal(await handler(request, response), true);
   assert.deepEqual(calls, ['/verification/usage?period=week&page=2']);
+});
+
+test('AI rules and preview requests go through the central workflow API', async () => {
+  const calls: unknown[] = [];
+  const api = {
+    seekerRead: async (path: string) => { calls.push(path); return { ok: true }; },
+    seekerWrite: async (path: string, value: unknown) => { calls.push([path, value]); return { ok: true }; },
+  } as unknown as ReturnType<typeof createCentralApi>;
+  const handle = createCentralDashboard(api);
+  for (const [method, url, body] of [
+    ['GET', '/api/workflow/verification/rules', null],
+    ['POST', '/api/workflow/verification/rules', { action: 'activate', revision: 3 }],
+    ['POST', '/api/workflow/verification/rules/previews', { event_id: 24 }],
+    ['GET', '/api/workflow/verification/rules/previews/12', null],
+  ] as const) {
+    const input = Object.assign(Readable.from(body ? [Buffer.from(JSON.stringify(body))] : []), {
+      method, url, headers: body ? { 'content-type': 'application/json' } : {},
+    }) as unknown as IncomingMessage;
+    const response = {
+      writeHead(status: number) { assert.equal(status, 200); },
+      end(value: string) { assert.deepEqual(JSON.parse(value), { ok: true }); },
+    } as ServerResponse;
+    assert.equal(await handle(input, response), true);
+  }
+  assert.deepEqual(calls, [
+    '/verification/rules',
+    ['/verification/rules', { action: 'activate', revision: 3 }],
+    ['/verification/rules/previews', { event_id: 24 }],
+    '/verification/rules/previews/12',
+  ]);
 });
 
 test('central dashboard reads and edits through the API, and rejects unfinished operations',async()=>{

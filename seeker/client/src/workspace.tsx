@@ -49,6 +49,7 @@ const navigation = [
   ] },
   { label: 'Tools', items: [
     { path: '/ai-evaluation.html', name: 'AI evaluation', icon: 'spark' },
+    { path: '/ai-rules.html', name: 'AI rules', icon: 'settings' },
     { path: '/ai-usage.html', name: 'AI usage', icon: 'clock' },
   ] },
   { label: 'Preferences', items: [

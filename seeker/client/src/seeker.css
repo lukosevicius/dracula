@@ -559,3 +559,9 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
 .verification-fields dd { margin: 0; }
 .agent-permissions { display: grid; gap: .35rem; border: 1px solid var(--border); }
 .batch-verification { margin: .4rem 1rem; }
+
+.verification-outcomes, .verification-candidates { display: grid; gap: 8px; list-style: none; padding: 0; margin: 0; }
+.verification-outcomes > li { display: grid; gap: 5px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; overflow-wrap: anywhere; }
+.verification-outcomes blockquote { margin: 0; color: var(--muted); }
+.verification-candidates li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.verification-candidates a, .verification-log a { text-decoration: underline; text-underline-offset: .18em; }

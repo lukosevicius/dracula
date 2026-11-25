@@ -8,8 +8,9 @@ import { DatabaseService } from '../database/database.service.js';
 import { claimImport, identity, importRequest, listAgents, manageAgent, queueImport, type Scope } from './agents.js';
 import { fail, type Snapshot } from './history.js';
 import { listProviders, manageProvider } from './providers.js';
+import { listRules, updateRules } from './rule-settings.js';
 import { verificationUsage } from './usage.js';
-import { editPublication, manualVerification, proposeFinding, recentVerificationJobs, resolveFinding, verificationDetails, verificationJob } from './verification.js';
+import { editPublication, manualVerification, proposeFinding, queueRulesPreview, recentVerificationJobs, resolveFinding, rulesPreview, verificationDetails, verificationJob } from './verification.js';
 
 async function readJson(request: Request): Promise<Snapshot> {
   if (!/^application\/json(?:\s*;|$)/i.test(String(request.headers['content-type'] ?? ''))) throw fail(415, 'Expected JSON.');
@@ -52,6 +53,7 @@ export class SeekerController {
       const url = new URL(req.originalUrl, 'http://localhost');
       const path = url.pathname.slice('/v1/seeker'.length);
       const event = /^\/events\/([1-9]\d{0,11})(?:\/(verification|publication|findings)(?:\/([1-9]\d{0,11}))?)?$/.exec(path);
+      const preview = /^\/verification\/rules\/previews\/([1-9]\d{0,14})$/.exec(path);
       const verification = /^\/verification\/jobs\/([1-9]\d{0,11})$/.exec(path);
       const imported = /^\/imports\/([1-9]\d{0,11})$/.exec(path);
       if (req.method === 'GET') {
@@ -85,6 +87,14 @@ export class SeekerController {
           require('admin');
           return send(200, { agents: await listAgents(pool) });
         }
+        if (path === '/verification/rules') {
+          require('admin');
+          return send(200, await listRules(pool));
+        }
+        if (preview) {
+          require('admin');
+          return send(200, await rulesPreview(pool, Number(preview[1])));
+        }
         if (path === '/verification/usage') {
           require('admin');
           return send(200, await verificationUsage(pool, url.searchParams));
@@ -113,6 +123,15 @@ export class SeekerController {
           require('admin');
           return send(200, { ok: true, ...await manageAgent(pool, body) });
         }
+        if (path === '/verification/rules') {
+          require('admin');
+          await updateRules(pool, body, access.actor);
+          return send(200, { ok: true, ...await listRules(pool) });
+        }
+        if (path === '/verification/rules/previews') {
+          require('admin');
+          return send(202, { ok: true, ...await queueRulesPreview(pool, body, access.actor) });
+        }
         if (path === '/verification/jobs') {
           require('verification:run');
           if (!access.admin && !body.request_key) throw fail(400, 'Supply a request key for safe retries.');
@@ -136,7 +155,7 @@ export class SeekerController {
         if (event?.[2] === 'findings') {
           if (event[3]) {
             require('findings:resolve');
-            await resolveFinding(pool, Number(event[1]), Number(event[3]), body, access.actor);
+            await resolveFinding(pool, Number(event[1]), Number(event[3]), body, access.actor, access.scopes.includes('publication:write'));
             return send(200, { ok: true });
           }
           require('findings:propose');

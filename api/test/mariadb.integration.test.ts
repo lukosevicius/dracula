@@ -254,7 +254,7 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     assert.equal((await workflow('/events',undefined,agentHeaders)).status,401);
 
     // Recreate the pre-city, pre-preferences and pre-score schema to exercise migrations.
-    await pool.query('DROP TABLE verification_provider_requests,verification_findings,event_verifications,verification_jobs,verification_providers,event_history,seeker_agent_keys,seeker_import_requests');
+    await pool.query('DROP TABLE verification_provider_requests,verification_findings,event_verifications,verification_jobs,verification_rule_state,verification_rule_versions,verification_providers,event_history,seeker_agent_keys,seeker_import_requests');
     await pool.query('ALTER TABLE event_sources DROP COLUMN detail_evidence_json');
     await pool.query(`ALTER TABLE events DROP COLUMN city, DROP COLUMN interest_score,
       DROP INDEX idx_events_public_date, DROP INDEX idx_events_verification, DROP INDEX idx_events_attention,

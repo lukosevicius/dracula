@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import AiEvaluation from './ai-evaluation';
 import AiUsage from './ai-usage';
 import ArtistPage from './artist';
@@ -14,6 +14,7 @@ import { Workspace } from './workspace';
 import { PullToRefresh } from './pull-to-refresh';
 import './seeker.css';
 
+const AiRules = lazy(() => import('./ai-rules'));
 const path = window.location.pathname;
 function StartupPage() {
   useEffect(() => {
@@ -36,6 +37,7 @@ const page = path === '/' ? <StartupPage />
   : path === '/event.html' ? <EventPage id={new URLSearchParams(window.location.search).get('id') || ''} />
   : path === '/settings.html' ? <SettingsPage />
   : path === '/ai-evaluation.html' ? <AiEvaluation />
+  : path === '/ai-rules.html' ? <Suspense fallback={<p className="empty-state" role="status">Loading AI rules…</p>}><AiRules /></Suspense>
   : path === '/ai-usage.html' ? <AiUsage />
   : path === '/all-events.html' ? <EventsPage all />
   : path === '/needs-attention.html' ? <EventsPage all queue="attention" />

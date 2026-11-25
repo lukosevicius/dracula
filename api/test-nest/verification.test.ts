@@ -6,7 +6,8 @@ import { canAutoFill, evidenceText, parseFindings, reconcileStructuredFields, so
 import { generate, manageProvider } from '../dist/verification/providers.js';
 import { estimatedTokenCost, usageWindow, verificationUsage } from '../dist/verification/usage.js';
 import type { TokenUsage } from '../dist/verification/usage.js';
-import { createVerificationWorker, editPublication, resolveFinding } from '../dist/verification/verification.js';
+import { defaultRules, listRules, updateRules } from '../dist/verification/rule-settings.js';
+import { createVerificationWorker, editPublication, manualVerification, queueRulesPreview, resolveFinding, rulesPreview, verificationDetails } from '../dist/verification/verification.js';
 
 test('verification rejects invented evidence and preserves Avilys wall time', () => {
   const source = sourceEvidence({
@@ -97,22 +98,27 @@ test('verification fills a missing time, publishes clean music, and records the 
       description_override TEXT,about_url_override TEXT,revision INTEGER DEFAULT 1,verification_status TEXT DEFAULT 'queued',needs_attention INTEGER DEFAULT 0);
     CREATE TABLE event_sources(id INTEGER,event_id INTEGER,source_key TEXT,source_id TEXT,source_url TEXT,about_url TEXT,content_html TEXT,source_data_json TEXT);
     CREATE TABLE event_images(event_id INTEGER,source_url TEXT,width INTEGER,height INTEGER);
-    CREATE TABLE vilnius_events(source_id INTEGER,featured_media INTEGER);
+    CREATE TABLE vilnius_events(source_id INTEGER,featured_media INTEGER,title TEXT);
     CREATE TABLE vilnius_images(media_id INTEGER,source_url TEXT,width INTEGER,height INTEGER);
-    CREATE TABLE event_artist_decisions(event_id INTEGER,artist_mbid TEXT,decision TEXT);
-    CREATE TABLE artists(mbid TEXT,name TEXT);
+    CREATE TABLE event_artist_decisions(event_id INTEGER,artist_mbid TEXT,decision TEXT,PRIMARY KEY(event_id,artist_mbid));
+    CREATE TABLE artists(mbid TEXT,name TEXT,disambiguation TEXT,aliases_json TEXT);
     CREATE TABLE event_prices(event_id INTEGER,price_type TEXT,price_text TEXT,manual INTEGER);
     CREATE TABLE event_history(id INTEGER PRIMARY KEY,event_id INTEGER,action TEXT,actor TEXT,occurred_at TEXT,changes TEXT,context TEXT);
     CREATE TABLE verification_jobs(id INTEGER PRIMARY KEY,profile_id INTEGER,provider TEXT,model TEXT,import_job_id INTEGER,allow_publish INTEGER,
-      actor TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,started_at TEXT);
-    CREATE TABLE event_verifications(id INTEGER PRIMARY KEY,event_id INTEGER,job_id INTEGER,event_revision INTEGER,status TEXT,claim TEXT,lease_until TEXT,
-      result TEXT,error_message TEXT,finished_at TEXT,attempts INTEGER DEFAULT 0);
+      actor TEXT NOT NULL,request_key TEXT,request_hash TEXT,rules_version_id INTEGER,preview_rules TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,started_at TEXT);
+    CREATE TABLE event_verifications(id INTEGER PRIMARY KEY,event_id INTEGER,job_id INTEGER,event_revision INTEGER,status TEXT DEFAULT 'queued',claim TEXT,lease_until TEXT,
+      result TEXT,error_message TEXT,finished_at TEXT,attempts INTEGER DEFAULT 0,UNIQUE(job_id,event_id));
     CREATE TABLE verification_findings(id INTEGER PRIMARY KEY,event_id INTEGER,verification_id INTEGER,field_name TEXT,finding TEXT,status TEXT DEFAULT 'open',resolved_by TEXT);
     CREATE TABLE verification_provider_requests(id TEXT PRIMARY KEY,verification_id INTEGER,provider TEXT,model TEXT,requested_at TEXT,finished_at TEXT,
       input_tokens INTEGER,cached_input_tokens INTEGER,output_tokens INTEGER,estimated_cost_usd REAL);
     CREATE TABLE job_leases(job_id INTEGER,expires_at INTEGER);
     CREATE TABLE verification_providers(id INTEGER PRIMARY KEY,name TEXT,provider TEXT,model TEXT,encrypted_key BLOB);
     CREATE TABLE seeker_settings(setting_key TEXT PRIMARY KEY,setting_value TEXT);
+    CREATE TABLE verification_rule_versions(id INTEGER PRIMARY KEY AUTOINCREMENT, rules TEXT, activated_by TEXT, activated_at TEXT);
+    CREATE TABLE verification_rule_state(id INTEGER PRIMARY KEY, active_version_id INTEGER, draft TEXT, revision INTEGER DEFAULT 1);
+    INSERT INTO verification_rule_state(id) VALUES(1);
+    INSERT INTO verification_rule_versions(id,rules) VALUES(1,'{}');
+    DELETE FROM verification_rule_versions WHERE id=1;
     INSERT INTO events(id,title,event_date,venue) VALUES(1,'Clean concert','2099-11-01','Music Club'),(2,'Conflicting concert','2099-11-02','Music Club'),(3,'Clay workshop','2099-11-03','Music Club');
     INSERT INTO event_sources SELECT id,id,'avilys',id,'https://avilys.app/',NULL,
       CASE id WHEN 2 THEN 'Koncertas prasidės 20:00' WHEN 3 THEN 'Keramikos dirbtuvės 19:00' ELSE 'Koncertas' END,
@@ -125,7 +131,9 @@ test('verification fills a missing time, publishes clean music, and records the 
     beginTransaction: async () => db.exec('BEGIN'), commit: async () => db.exec('COMMIT'), rollback: async () => db.exec('ROLLBACK'), release() {},
     async execute(sql: string, values: (SQLInputValue | boolean)[] = []) {
       const statement = sql.replace(/ FOR UPDATE$/, '').replaceAll('DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 120 SECOND)', "datetime('now','+120 seconds')")
-        .replaceAll('UTC_TIMESTAMP(3)', 'CURRENT_TIMESTAMP').replaceAll('INSERT IGNORE', 'INSERT OR IGNORE');
+        .replaceAll('UTC_TIMESTAMP(3)', 'CURRENT_TIMESTAMP').replaceAll('INSERT IGNORE', 'INSERT OR IGNORE')
+        .replace("ON DUPLICATE KEY UPDATE decision='accepted'", "ON CONFLICT(event_id,artist_mbid) DO UPDATE SET decision='accepted'")
+        .replace("ON DUPLICATE KEY UPDATE event_revision=VALUES(event_revision)", "ON CONFLICT(job_id,event_id) DO UPDATE SET event_revision=excluded.event_revision");
       const params = values.map(value => typeof value === 'boolean' ? Number(value) : value);
       const query = db.prepare(statement);
       if (statement.startsWith('SELECT')) return [query.all(...params)];
@@ -139,8 +147,10 @@ test('verification fills a missing time, publishes clean music, and records the 
     await manageProvider(pool, secret, { action:'save', name:'Stub', provider:'gemini', model:'gemini-3.5-flash-lite', key:'test-provider-key' });
     let corrected = false;
     let invalidOutput = false;
+    let lastPrompt = '';
     const worker = createVerificationWorker(pool, secret, async (_url, init) => {
       const choice = String(init?.body);
+      lastPrompt = choice;
       const date = choice.includes('Conflicting concert') ? '2099-11-02' : choice.includes('Clay workshop') ? '2099-11-03' : '2099-11-01';
       const other = choice.includes('Clay workshop');
       const result = (field:string,proposed:string,evidence:string,disposition='suggestion') => ({field,proposed,evidence,disposition,reason:'The listing provides this evidence.'});
@@ -149,6 +159,11 @@ test('verification fills a missing time, publishes clean music, and records the 
           ? corrected ? result('event_time','20:00','20:00','confirmed') : result('event_time','20:00','Koncertas prasidės 20:00','attention')
           : result('event_time','','','unknown'),
         result('review_status',other?'not_music':'music',other?'Keramikos dirbtuvės':'Koncertas')];
+      if (choice.includes('Petunia')) {
+        findings.push(result('artists','Petunia','Koncertas · Petunia ir Duo, Unknown Act'));
+        if (choice.includes('Unknown Act')) findings.push(result('artists','Unknown Act','Unknown Act'));
+        if (choice.includes('Duo')) findings.push(result('artists','Duo','Duo'));
+      }
       return Response.json({candidates:[{content:{parts:[{text:invalidOutput ? '{' : JSON.stringify({findings})}]}}],
         usageMetadata:{promptTokenCount:200,cachedContentTokenCount:50,candidatesTokenCount:26,thoughtsTokenCount:4}});
     });
@@ -188,5 +203,95 @@ test('verification fills a missing time, publishes clean music, and records the 
     assert.equal(report.usage.output_tokens,150);
     assert.equal(report.by_model[0].model,'gemini-3.5-flash-lite');
     assert.equal(report.usage.estimated_cost_usd?.toFixed(7),'0.0006075');
+    invalidOutput = false;
+    const basic = await listRules(pool);
+    assert.equal(basic.active.id, 1);
+    const actor = 'Seeker editor';
+    const draft = { action:'save', revision:basic.revision, markdown:'# Test only', permissions:{ ...defaultRules.permissions, artists:'review', event_time:'disabled', publication_status:'review' } };
+    await updateRules(pool, draft, actor);
+    const saved = await listRules(pool);
+    assert.equal(saved.active.markdown, defaultRules.markdown);
+    assert.equal(saved.draft?.markdown, draft.markdown);
+    await assert.rejects(updateRules(pool, { action:'activate', revision:basic.revision }, actor), { status:409 });
+
+    db.exec(`INSERT INTO artists VALUES ('pet','Petunija',NULL,'["Petunia"]'), ('duo-1','Duo','Lithuanian band','[]'), ('duo-2','Duo','DJ duo','[]');
+      INSERT INTO events(id,title,event_date,venue,verification_status) VALUES(6,'Concert test','2099-11-01','Music Club','not_verified');
+      INSERT INTO event_sources SELECT id,id,'avilys',id,'https://avilys.app/',NULL,
+        'Koncertas · Petunia ir Duo, Unknown Act',json_object('startTime',event_date||'T19:00:00Z','venueName',venue) FROM events WHERE id=6;`);
+    const previewInput = { event_id:6, profile_id:1, revision:saved.revision, request_key:'preview-rules' };
+    const preview = await queueRulesPreview(pool,previewInput,actor);
+    assert.deepEqual(await queueRulesPreview(pool,previewInput,actor),preview);
+    await assert.rejects(queueRulesPreview(pool,{ ...previewInput, event_id:1 },actor), { status:409 });
+    const beforePreview = db.prepare('SELECT * FROM events WHERE id=6').get();
+    assert.equal(await worker(),true);
+    assert.match(lastPrompt,/Test only/);
+    assert.match(lastPrompt,/artist_catalogue_candidates.*Petunija/);
+    const previewResult = await rulesPreview(pool, preview.id);
+    assert.equal(previewResult.status,'completed');
+    assert.equal(previewResult.draft_revision,saved.revision);
+    assert.equal(previewResult.result?.actions.find(action => action.field==='event_time')?.status,'disabled');
+    assert.equal(previewResult.result?.actions.find(action => action.proposed==='Petunia')?.status,'review');
+    assert.deepEqual(db.prepare('SELECT * FROM events WHERE id=6').get(),beforePreview);
+    assert.equal((await verificationDetails(pool,6)).last_run,null);
+    assert.equal((await verificationDetails(pool,6)).log.length,0);
+
+    const automatic = { ...draft, revision:saved.revision, markdown:'# Activate these rules', permissions:{ ...defaultRules.permissions, publication_status:'review' } };
+    await updateRules(pool,automatic,actor);
+    const newerDraft = await listRules(pool);
+    await updateRules(pool,{ action:'activate',revision:newerDraft.revision },actor);
+    const activated = await listRules(pool);
+    assert.equal(activated.active.id,2);
+    db.exec(`INSERT INTO events(id,title,event_date,event_time,venue,verification_status) VALUES
+        (7,'Concert with publication review','2099-12-05','19:00','Music Club','not_verified'),
+        (8,'Conflicting concert keep','2099-11-02','19:00','Music Club','not_verified');
+      INSERT INTO event_sources SELECT id,id,'avilys',id,'https://avilys.app/',NULL,
+        CASE WHEN id=8 THEN 'Koncertas prasidės 20:00' ELSE 'Koncertas' END,
+        json_object('startTime',event_date||'T19:00:00Z','venueName',venue) FROM events WHERE id IN (7,8);
+      UPDATE events SET title='Earlier concert' WHERE id=2;`);
+    corrected = false;
+    const run = await manualVerification(pool,{ event_ids:[6,7,8],profile_id:1,request_key:'active-rules' },actor);
+    await updateRules(pool,{ action:'restore',revision:activated.revision,version_id:1 },actor);
+    const restored = await listRules(pool);
+    assert.equal(restored.draft?.markdown,defaultRules.markdown);
+    await updateRules(pool,{ action:'activate',revision:restored.revision },actor);
+    assert.equal(await worker(),true);
+    assert.match(lastPrompt,/Activate these rules/);
+    const evaluated = await verificationDetails(pool,6);
+    assert.equal(evaluated.last_run?.job_id,run.id);
+    assert.equal(evaluated.log[0].context.rules_version_id,2);
+    assert.equal(evaluated.log[0].context.trigger,'manual');
+    assert.equal(evaluated.log[0].context.actions?.find(action => action.proposed==='Petunia')?.status,'applied');
+    assert.equal(db.prepare("SELECT artist_mbid FROM event_artist_decisions WHERE event_id=6").get()!.artist_mbid,'pet');
+    const unmatched = evaluated.findings.find(finding => finding.proposed === 'Unknown Act')!;
+    assert.equal(unmatched.reason,'Artist not in catalogue.');
+    const ambiguous = evaluated.findings.find(finding => finding.proposed === 'Duo')!;
+    assert.equal(ambiguous.candidates?.length,2);
+    await assert.rejects(resolveFinding(pool,6,ambiguous.id,{decision:'approve',artist_id:'pet',revision:evaluated.revision},actor), { status:400 });
+    await resolveFinding(pool,6,ambiguous.id,{decision:'approve',artist_id:'duo-2',revision:evaluated.revision},actor);
+    assert.equal(db.prepare("SELECT decision FROM event_artist_decisions WHERE event_id=6 AND artist_mbid='duo-2'").get()!.decision,'accepted');
+
+    assert.equal(await worker(),true);
+    const publishReview = await verificationDetails(pool,7);
+    assert.equal(publishReview.publication_status,'draft');
+    const publication = publishReview.findings.find(finding => finding.field === 'publication_status')!;
+    const approve = { decision:'approve', revision:publishReview.revision };
+    await assert.rejects(resolveFinding(pool,7,publication.id,approve,actor,false), { status:403 });
+    await resolveFinding(pool,7,publication.id,approve,actor);
+    assert.equal((await verificationDetails(pool,7)).publication_status,'live');
+
+    assert.equal(await worker(),true);
+    const disputed = await verificationDetails(pool,8);
+    const time = disputed.findings.find(finding => finding.field === 'event_time')!;
+    assert.equal(time.current,'19:00');
+    assert.equal(time.proposed,'20:00');
+    await resolveFinding(pool,8,time.id,{decision:'dismiss',keep_current:true,revision:disputed.revision},actor);
+    assert.deepEqual(Object.values(db.prepare("SELECT event_time,manual_fields FROM events WHERE id=8").get()!),['19:00','["event_time"]']);
+    await manualVerification(pool,{event_ids:[8],profile_id:1,request_key:'recheck-time'},actor);
+    assert.equal(await worker(),true);
+    const rechecked = await verificationDetails(pool,8);
+    assert.equal(rechecked.findings.length,0);
+    assert.equal(rechecked.log[0].context.actions?.find(action => action.field==='event_time')?.status,'kept');
+
+
   } finally { db.close(); }
 });

@@ -11,7 +11,7 @@ type Usage = {
 };
 type ModelUsage = Usage & { provider: string; model: string };
 type Run = {
-  id: number; provider: string | null; model: string | null; import_job_id: number | null; actor: string;
+  id: number; provider: string | null; model: string | null; import_job_id: number | null; actor: string; preview?: boolean;
   queued_at: string; started_at: string | null; events: number; completed: number; failed: number; skipped: number; pending: number; flagged: number;
 };
 type Report = {
@@ -127,19 +127,19 @@ export default function AiUsage() {
                   <tr>
                     <td><strong><time dateTime={run.started_at ?? run.queued_at}>{startTime.format(new Date(run.started_at ?? run.queued_at))}</time></strong>
                       <small>{run.started_at ? 'Started' : 'Queued'} · Run #{run.id}</small></td>
-                    <td>{run.actor === 'import' ? (run.import_job_id ? `Import #${run.import_job_id}` : 'Import') : 'Manual'}</td>
+                    <td>{run.preview ? 'Rules preview' : run.actor === 'import' ? (run.import_job_id ? `Import #${run.import_job_id}` : 'Import') : 'Manual'}</td>
                     <td>{run.model ?? 'No model configured'}{run.provider && <small>{providerName(run.provider)}</small>}</td>
                     <td>{checked(run).toLocaleString()} / {run.events.toLocaleString()}</td>
                     <td>
-                      {run.completed.toLocaleString()} verified
+                      {run.completed.toLocaleString()} {run.preview ? 'previewed' : 'verified'}
                       {run.flagged > 0 && <small>{run.flagged.toLocaleString()} flagged</small>}
                       {run.failed > 0 && <small>{run.failed.toLocaleString()} failed</small>}
                       {run.skipped > 0 && <small>{run.skipped.toLocaleString()} skipped</small>}
                       {run.pending > 0 && <small>{run.pending.toLocaleString()} pending</small>}
                     </td>
-                    <td><button className="secondary-button" type="button" aria-expanded={expanded === run.id} onClick={() => setExpanded(expanded === run.id ? null : run.id)}>
+                    <td>{run.preview ? <a className="secondary-button" href="/ai-rules.html">AI rules</a> : <button className="secondary-button" type="button" aria-expanded={expanded === run.id} onClick={() => setExpanded(expanded === run.id ? null : run.id)}>
                       {expanded === run.id ? 'Hide events' : 'View events'}
-                    </button></td>
+                    </button>}</td>
                   </tr>
                   {expanded === run.id && <tr><td colSpan={6}><RunEvents id={run.id} /></td></tr>}
                 </Fragment>)}

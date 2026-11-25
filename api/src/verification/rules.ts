@@ -23,7 +23,7 @@ export const resultSchema = {
   additionalProperties: false,
 };
 
-const norm = (value: string) => value.normalize('NFKC').toLocaleLowerCase('lt').replace(/\s+/g, ' ').trim();
+export const normalizeEvidence = (value: string) => value.normalize('NFKC').toLocaleLowerCase('lt').replace(/\s+/g, ' ').trim();
 const structuredFields = ['event_date', 'event_end_date', 'event_time', 'venue', 'city', 'ticket_url'] as const;
 type StructuredField = typeof structuredFields[number];
 
@@ -59,6 +59,7 @@ export function sourceEvidence(source: Snapshot) {
   return {
     source: source.source_key, listing_url: source.source_url, original_url: source.about_url,
     ...structured,
+    title: descriptionText(typeof metadata.title === 'string' ? metadata.title : typeof source.original_title === 'string' ? source.original_title : String(source.fallback_title ?? '')),
     ...normalizedDetails,
     ...(avilys && rawTime ? { local_start: rawTime.slice(0, 16), source_start: rawTime } : {}),
     structured_fields: structuredFieldsFound,
@@ -80,7 +81,7 @@ export function parseFindings(value: unknown, evidence: string): Finding[] {
         item.proposed.length > 2048 || item.evidence.length > 500 || !item.reason.trim() || item.reason.length > 500) throw fail(502, 'The model returned an invalid field result.');
     const finding: Finding = { field: item.field, disposition: item.disposition, proposed: item.proposed.trim(), evidence: item.evidence.trim(), reason: item.reason.trim() };
     if (finding.disposition === 'unknown') return { ...finding, proposed: '', evidence: '' };
-    if (!finding.evidence || !norm(evidence).includes(norm(finding.evidence))) {
+    if (!finding.evidence || !normalizeEvidence(evidence).includes(normalizeEvidence(finding.evidence))) {
       return { ...finding, disposition: 'attention', proposed: '', evidence: '', reason: 'The model could not substantiate its finding with a quote from the source.' };
     }
     return finding;
@@ -89,25 +90,25 @@ export function parseFindings(value: unknown, evidence: string): Finding[] {
 
 export function reconcileStructuredFields(findings: Finding[], sources: ReturnType<typeof sourceEvidence>[], saved: Snapshot, manualFields: string[]) {
   const decisions = new Map<Field, Finding>();
-  const descriptions = sources.map(source => norm(source.description));
+  const descriptions = sources.map(source => normalizeEvidence(source.description));
   for (const field of structuredFields) {
     const provided = new Map<string, string>();
     for (const source of sources) {
       const value = source.structured_fields[field];
-      if (value) provided.set(norm(value), value);
+      if (value) provided.set(normalizeEvidence(value), value);
     }
     if (!provided.size) continue;
 
     const current = saved[field];
     const savedValue = typeof current === 'string' && current.trim() ? current : '';
-    const matchesSaved = provided.has(norm(savedValue));
+    const matchesSaved = provided.has(normalizeEvidence(savedValue));
     if (savedValue && !matchesSaved && manualFields.includes(field)) continue;
 
     const values = [...provided.values()];
     const structured = values[0];
     const conflictingText = findings.find(finding => finding.field === field && finding.proposed && finding.evidence
-      && !provided.has(norm(finding.proposed)) && canAutoFill(field, finding.proposed, finding.evidence)
-      && descriptions.some(description => description.includes(norm(finding.evidence))));
+      && !provided.has(normalizeEvidence(finding.proposed)) && canAutoFill(field, finding.proposed, finding.evidence)
+      && descriptions.some(description => description.includes(normalizeEvidence(finding.evidence))));
     if (conflictingText) {
       decisions.set(field, { ...conflictingText, disposition: 'attention', reason: `The description disagrees with the structured source value (${structured}).` });
     } else if (values.length > 1) {
@@ -145,7 +146,7 @@ export function validField(field: Field, value: string) {
 const months = ['sausio', 'vasario', 'kovo', 'balandžio', 'gegužės', 'birželio', 'liepos', 'rugpjūčio', 'rugsėjo', 'spalio', 'lapkričio', 'gruodžio'];
 export function canAutoFill(field: Field, value: string, evidence: string) {
   if (!validField(field, value) || evidence.length < 2) return false;
-  const quote = norm(evidence);
+  const quote = normalizeEvidence(evidence);
   if (field === 'event_date' || field === 'event_end_date') {
     const [year, month, day] = value.split('-');
     const words = `${months[Number(month) - 1]} ${Number(day)}`;
@@ -161,5 +162,5 @@ export function canAutoFill(field: Field, value: string, evidence: string) {
     return value === 'paid' && /\d\s*(?:€|eur\b)/u.test(quote);
   }
   if (field === 'price_text' && !/\d/.test(value)) return false;
-  return ['venue', 'city', 'price_text', 'ticket_url', 'about_url'].includes(field) && quote.includes(norm(value));
+  return ['venue', 'city', 'price_text', 'ticket_url', 'about_url'].includes(field) && quote.includes(normalizeEvidence(value));
 }
