@@ -1,7 +1,7 @@
 import { VerificationJobs, VerificationRequest, useVerificationJobs, verificationLabels } from './verification';
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import type { DateFilter, ReviewStatus } from '../../types';
-import { api, errorMessage, isActive, labels, plainText, priceInfo, reviews, sourceNames, useJobs, type EventPage, type EventRow } from './data';
+import { api, errorMessage, isActive, labels, plainText, priceInfo, publicationLabels, reviews, sourceNames, useJobs, type EventPage, type EventRow } from './data';
 import { groupNewestEvents, shiftDate } from './event-groups';
 import { useSavedEvents } from './saved-events';
 import EventItem from './event-item';
@@ -295,6 +295,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
     return <EventItem key={row.id} row={row} today={today} showSource={all} open={open === row.id} toggle={() => setOpen(current => current === row.id ? null : row.id)}
       selected={selected.includes(row.id)} select={checked => setSelection([row.id], checked)} disabled={bulkPending || loading || savedEventsLoading}
       pendingEdit={rowEdits.pending.get(row.id)} bookmarkPending={savedPendingIds.includes(row.id)} confirmPending={pending.includes(row.id)}
+      changePublication={status => void rowEdits.save(row.id, { publication_status: status }, row.revision)}
       review={status => void rowEdits.save(row.id, { review_status: status })}
       confirm={() => void confirmAssistantReview(row.id)}
       changeInterestScore={score => void rowEdits.save(row.id, { interest_score: score })}
@@ -375,7 +376,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
                 <Disclosure className="filter-disclosure" title={<><Icon name="filter" size={15} /> More filters{extraCount ? ` (${extraCount})` : ''}</>}>
                   <div className="filter-grid">
                     <label className="field">Publication <select value={publication} onChange={event => updateFilters(setPublication, event.target.value)}>
-                      <option value="all">All events</option><option value="live">In Dracula · Live</option><option value="draft">Not in Dracula · Draft</option>
+                      <option value="all">All events</option><option value="live">{publicationLabels.live}</option><option value="draft">{publicationLabels.draft}</option>
                     </select></label>
                     <label className="field">AI verification <select value={verification} onChange={event => updateFilters(setVerification, event.target.value)}>
                       <option value="all">All verification statuses</option>{Object.entries(verificationLabels).map(([key, label]) => <option value={key} key={key}>{label}</option>)}

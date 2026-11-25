@@ -1,17 +1,18 @@
 import { EventBadges } from './verification';
 import { isValidElement, memo, useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import type { ReviewStatus } from '../../types';
-import { formatDate, labels, plainText, priceInfo, reviews, sourceNames, type EventRow } from './data';
+import { formatDate, labels, plainText, priceInfo, publicationLabels, reviews, sourceNames, type EventRow, type PublicationStatus } from './data';
 import type { EventRowEdits } from './event-row-edits';
 import { Icon } from './workspace';
 
 const monthFormatter = new Intl.DateTimeFormat('en-GB', { month: 'short', timeZone: 'UTC' });
 
-function EventItem({ row, today, open, toggle, selected, select, disabled, pendingEdit, bookmarkPending, confirmPending, review, confirm, editor, showSource, saved, toggleSaved, changeInterestScore, selectionEnabled = true }: {
+function EventItem({ row, today, open, toggle, selected, select, disabled, pendingEdit, bookmarkPending, confirmPending, review, changePublication, confirm, editor, showSource, saved, toggleSaved, changeInterestScore, selectionEnabled = true }: {
   row: EventRow; today: string; open: boolean; toggle: () => void; selected: boolean;
   select: (checked: boolean) => void; disabled: boolean; review: (status: ReviewStatus) => void;
   confirm: () => void; editor: ReactNode; showSource: boolean; saved: boolean; toggleSaved: () => void;
   changeInterestScore: (score: 1 | 2 | 3 | 4 | 5) => void;
+  changePublication: (status: PublicationStatus) => void;
   pendingEdit?: EventRowEdits;
   bookmarkPending?: boolean;
   confirmPending?: boolean;
@@ -25,8 +26,10 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, pendi
   const price = priceInfo(row);
   const scorePending = pendingEdit?.interest_score !== undefined;
   const reviewPending = pendingEdit?.review_status !== undefined;
+  const publicationPending = pendingEdit?.publication_status !== undefined;
   const interestScore = pendingEdit?.interest_score ?? (row.interest_score || 1);
   const reviewStatus = pendingEdit?.review_status ?? row.review_status;
+  const publicationStatus = pendingEdit?.publication_status ?? row.publication_status ?? 'draft';
   const [copyStatus, setCopyStatus] = useState('');
   useEffect(() => {
     if (!copyStatus) return;
@@ -70,7 +73,7 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, pendi
               {showSource && <span>{sourceNames[row.source_key] ?? row.source_key}</span>}
             </span>
           </div>
-          <EventBadges row={row} />
+          <EventBadges row={{ ...row, publication_status: publicationStatus }} />
           {row.attention_reason && <p className="event-attention-reason">{row.attention_reason}</p>}
           <div className="interest-score-buttons" role="group" aria-label={`Interest score for ${title}`} title={`Interest score: ${interestScore} of 5`}>
             {[1, 2, 3, 4, 5].map(score => <button
@@ -87,6 +90,13 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, pendi
         </div>
         <div className="event-actions">
           <div className="event-review">
+            <label className={`review-select publication-select publication-select-${publicationStatus}`}>
+              <select aria-label={`Publication status for ${title}`} value={publicationStatus} aria-busy={publicationPending} disabled={disabled || publicationPending} onChange={event => changePublication(event.target.value as PublicationStatus)}>
+                <option value="draft">{publicationLabels.draft}</option>
+                <option value="live">{publicationLabels.live}</option>
+              </select>
+              <Icon name="down" size={13} />
+            </label>
             <label className={`review-select review-${reviewStatus}`}>
               <select aria-label={`Review status for ${title}`} value={reviewStatus} aria-busy={reviewPending} disabled={disabled || reviewPending} onChange={event => review(event.target.value as ReviewStatus)}>
                 {reviews.map(status => <option key={status} value={status}>{labels[status]}</option>)}

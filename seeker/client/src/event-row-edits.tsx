@@ -1,12 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, errorMessage, type EventRow } from './data';
+import { api, errorMessage, type EventRow, type PublicationStatus } from './data';
 import { Feedback } from './workspace';
 
-type RowFields = Pick<EventRow, 'review_status' | 'interest_score'>;
-export type EventRowEdits = Partial<RowFields>;
-type RowEdit = Pick<RowFields, 'review_status'> | Pick<RowFields, 'interest_score'>;
+type Publication = { publication_status: PublicationStatus; revision: number };
+export type EventRowEdits = Partial<Pick<EventRow, 'review_status' | 'interest_score'> & Publication>;
+type RowEdit = Pick<EventRow, 'review_status'> | Pick<EventRow, 'interest_score'> | Pick<Publication, 'publication_status'>;
 
-export function useEventRowEdits(onSaved: (id: number, patch: RowEdit) => void) {
+const editMessages = {
+  publication_status: { name: 'publication status', success: 'Publication status saved.' },
+  review_status: { name: 'review', success: 'Review saved.' },
+  interest_score: { name: 'interest score', success: 'Interest score saved.' },
+};
+
+async function readPublication(path: string): Promise<Publication> {
+  const { publication_status, revision } = await api<Publication>(path + '/verification');
+  return { publication_status, revision };
+}
+
+export function useEventRowEdits(onSaved: (id: number, patch: EventRowEdits) => void) {
   const active = useRef(new Map<number, EventRowEdits>());
   const [pending, setPending] = useState<ReadonlyMap<number, EventRowEdits>>(() => new Map());
   const [notice, setNotice] = useState<{ message: string; error: boolean } | null>(null);
@@ -20,8 +31,9 @@ export function useEventRowEdits(onSaved: (id: number, patch: RowEdit) => void) 
     return () => window.clearTimeout(timer);
   }, [notice]);
 
-  async function save(id: number, patch: RowEdit) {
-    const field = 'review_status' in patch ? 'review_status' : 'interest_score';
+  async function save(id: number, patch: RowEdit, revision?: number) {
+    const field = 'publication_status' in patch ? 'publication_status' : 'review_status' in patch ? 'review_status' : 'interest_score';
+    const publicationPath = `/api/workflow/events/${id}`;
     const previous = active.current.get(id);
     if (previous?.[field] !== undefined) return;
     active.current.set(id, { ...previous, ...patch });
@@ -29,11 +41,22 @@ export function useEventRowEdits(onSaved: (id: number, patch: RowEdit) => void) 
     setNotice(current => current?.error ? null : current);
 
     try {
-      await api(`/api/events/${id}/${field === 'review_status' ? 'review' : 'interest-score'}`, patch);
-      onSavedRef.current(id, patch);
-      setNotice(current => current?.error ? current : { message: field === 'review_status' ? 'Review saved.' : 'Interest score saved.', error: false });
+      let confirmed: EventRowEdits = patch;
+      if ('publication_status' in patch) {
+        const eventRevision = revision ?? (await readPublication(publicationPath)).revision;
+        await api(publicationPath + '/publication', { status: patch.publication_status, revision: eventRevision });
+        confirmed = await readPublication(publicationPath).catch(() => patch);
+      } else {
+        await api(`/api/events/${id}/${field === 'review_status' ? 'review' : 'interest-score'}`, patch);
+      }
+      onSavedRef.current(id, confirmed);
+      setNotice(current => current?.error ? current : { message: editMessages[field].success, error: false });
     } catch (cause) {
-      setNotice({ message: `Could not save the ${field === 'review_status' ? 'review' : 'interest score'}. ${errorMessage(cause)}`, error: true });
+      setNotice({ message: `Could not save the ${editMessages[field].name}. ${errorMessage(cause)}`, error: true });
+      if (field === 'publication_status') {
+        const current = await readPublication(publicationPath).catch(() => null);
+        if (current) onSavedRef.current(id, current);
+      }
     } finally {
       const remaining = { ...active.current.get(id) };
       delete remaining[field];

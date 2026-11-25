@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, errorMessage, type EventRow } from './data';
+import { api, errorMessage, publicationLabels, type EventRow } from './data';
 import { Disclosure, Feedback } from './workspace';
 
 export const verificationLabels = {
@@ -39,8 +39,9 @@ const logDate = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyl
 
 export function EventBadges({ row }: { row: Pick<EventRow, 'publication_status' | 'verification_status' | 'needs_attention'> }) {
   const verificationStatus = row.verification_status ?? 'not_verified';
+  const publicationStatus = row.publication_status ?? 'draft';
   return <div className="event-badges">
-    <span className={row.publication_status === 'live' ? 'event-badge event-badge-live' : 'event-badge'}>{row.publication_status === 'live' ? 'In Dracula · Live' : 'Not in Dracula · Draft'}</span>
+    <span className={publicationStatus === 'live' ? 'event-badge event-badge-live' : 'event-badge'}>{publicationLabels[publicationStatus]}</span>
     <span className={verificationStatus === 'verified' ? 'event-badge event-badge-verified' : 'event-badge'}>{verificationLabels[verificationStatus]}</span>
     {Boolean(row.needs_attention) && <span className="event-badge event-badge-attention">Needs attention</span>}
   </div>;
@@ -156,7 +157,7 @@ export function EventVerification({ row, onSaved }: { row: EventRow; onSaved: ()
       if (sequence === loadSequence.current) setLoadError(errorMessage(cause));
     }
   }, [path]);
-  useEffect(() => { void load(); return () => { loadSequence.current++; }; }, [load, row.revision, row.verification_status, row.needs_attention]);
+  useEffect(() => { void load(); return () => { loadSequence.current++; }; }, [load, row.revision, row.publication_status, row.verification_status, row.needs_attention]);
   const saveCallback = useRef(onSaved);
   const observedRun = useRef('');
   useEffect(() => { saveCallback.current = onSaved; }, [onSaved]);

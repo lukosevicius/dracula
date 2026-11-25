@@ -135,6 +135,7 @@ export function SavedEventsPage() {
         {events.map(event => <EventItem key={event.id} row={event} today={today} open={openId === event.id} toggle={() => setOpenId(current => current === event.id ? null : event.id)}
           selected={false} select={() => {}} disabled={loading || refreshing}
           pendingEdit={rowEdits.pending.get(event.id)} bookmarkPending={pendingIds.includes(event.id)} confirmPending={pendingId === event.id}
+          changePublication={status => void rowEdits.save(event.id, { publication_status: status }, event.revision)}
           review={status => void rowEdits.save(event.id, { review_status: status })}
           changeInterestScore={score => void rowEdits.save(event.id, { interest_score: score })}
           confirm={() => void confirmAssistantReview(event)} showSource saved={isSaved(event.id)} toggleSaved={() => toggle(event)} selectionEnabled={false}

@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EventRecord, ImportRun, ReviewStatus } from '../../types';
 
+export const publicationLabels = { draft: 'Draft', live: 'Live' } as const;
+export type PublicationStatus = keyof typeof publicationLabels;
+
 export type EventRow = Omit<EventRecord, 'source_id' | 'artist_links' | 'artist_suggestions' | 'content_html'> & {
   id: number;
-  publication_status?: 'draft' | 'live';
+  publication_status?: PublicationStatus;
   verification_status?: 'not_verified' | 'queued' | 'verifying' | 'verified' | 'stale' | 'failed';
   revision?: number;
   needs_attention?: number;

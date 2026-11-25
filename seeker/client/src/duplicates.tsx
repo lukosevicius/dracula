@@ -107,6 +107,7 @@ export default function DuplicatesPage() {
           return <EventItem key={key} row={row} today={today} open={openKey === key} toggle={() => setOpenKey(current => current === key ? '' : key)}
             selected={false} select={() => {}} selectionEnabled={false} disabled={savedLoading}
             pendingEdit={rowEdits.pending.get(row.id)} bookmarkPending={pendingIds.includes(row.id)} confirmPending={pendingId === row.id}
+            changePublication={status => void rowEdits.save(row.id, { publication_status: status }, row.revision)}
             review={status => void rowEdits.save(row.id, { review_status: status })}
             confirm={() => void confirmAssistantReview(row.id)}
             changeInterestScore={score => void rowEdits.save(row.id, { interest_score: score })}
