@@ -6,6 +6,7 @@ import type { EventRowEdits } from './event-row-edits';
 import { Icon } from './workspace';
 
 const monthFormatter = new Intl.DateTimeFormat('en-GB', { month: 'short', timeZone: 'UTC' });
+const missingEvidenceReason = 'The model could not substantiate its finding with a quote from the source.';
 
 function EventItem({ row, today, open, toggle, selected, select, disabled, pendingEdit, bookmarkPending, confirmPending, review, changePublication, confirm, editor, showSource, saved, toggleSaved, changeInterestScore, selectionEnabled = true }: {
   row: EventRow; today: string; open: boolean; toggle: () => void; selected: boolean;
@@ -30,6 +31,7 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, pendi
   const interestScore = pendingEdit?.interest_score ?? (row.interest_score || 1);
   const reviewStatus = pendingEdit?.review_status ?? row.review_status;
   const publicationStatus = pendingEdit?.publication_status ?? row.publication_status ?? 'draft';
+  const attentionReason = row.attention_reason === missingEvidenceReason ? null : row.attention_reason;
   const [copyStatus, setCopyStatus] = useState('');
   useEffect(() => {
     if (!copyStatus) return;
@@ -74,7 +76,7 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, pendi
             </span>
           </div>
           <EventBadges row={{ ...row, publication_status: publicationStatus }} />
-          {row.attention_reason && <p className="event-attention-reason">{row.attention_reason}</p>}
+          {attentionReason && <p className="event-attention-reason">{attentionReason}</p>}
           <div className="interest-score-buttons" role="group" aria-label={`Interest score for ${title}`} title={`Interest score: ${interestScore} of 5`}>
             {[1, 2, 3, 4, 5].map(score => <button
               key={score}
