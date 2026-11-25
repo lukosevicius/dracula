@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import type { Pool } from 'mysql2/promise';
 import { canAutoFill, evidenceText, parseFindings, reconcileStructuredFields, sourceEvidence } from '../dist/verification/rules.js';
+import { reconcilePrices, ticketPriceValue } from '../dist/verification/prices.js';
 import { generate, manageProvider } from '../dist/verification/providers.js';
 import { estimatedTokenCost, usageWindow, verificationUsage } from '../dist/verification/usage.js';
 import type { TokenUsage } from '../dist/verification/usage.js';
@@ -23,7 +24,7 @@ test('verification rejects invented evidence and preserves Avilys wall time', ()
   assert.equal(canAutoFill('event_time', '21:00', result[0].evidence), false);
   assert.equal(canAutoFill('event_date', '2026-11-23', 'lapkričio 23 d. 2026 m.'), true);
   assert.equal(canAutoFill('event_date', '2026-11-23', 'lapkričio 23 d.'), false);
-  assert.equal(result[1].disposition, 'attention');
+  assert.equal(result[1].disposition, 'unknown');
   assert.equal(result[1].proposed, '');
 });
 
@@ -51,6 +52,27 @@ test('structured values confirm sparse listings and only cited contradictions ra
     detail_evidence_json: { event_time: null, venue: 'New Club' },
   });
   assert.deepEqual(vilnius.structured_fields, { event_date: '2026-11-24', event_time: '19:00', venue: 'New Club', city: 'Vilnius' });
+});
+
+test('ticket pricing uses general admission, flags conflicts, and ignores optional charges or exemptions', () => {
+  const listing = (description: string, metadata: Record<string, unknown> = {}) =>
+    sourceEvidence({ source_key: 'avilys', source_data_json: metadata, content_html: description });
+  const petunija = listing('Staliukų rezervacija nemokama.<br>Vaikai iki 10 metų įleidžiami nemokamai.<br>BILIETAI: 16 €! Bilietai brangs!', { free: false });
+  assert.deepEqual(reconcilePrices([], [petunija], { price_type: 'paid' }).map(finding => [finding.field, finding.disposition, finding.proposed]), [
+    ['price_text', 'suggestion', '16 €'], ['price_type', 'confirmed', 'paid'],
+  ]);
+  assert.equal(ticketPriceValue('From 16.50 EUR'), 'Nuo 16,5 €');
+  assert.equal(ticketPriceValue('€16–€20'), '16–20 €');
+  const tiers = reconcilePrices([], [listing('Bilietai: 16 € / 20 €.')], { price_type: 'paid' });
+  assert.equal(tiers[0].disposition, 'attention');
+  const matching = reconcilePrices([], [listing('Bilietų kaina – nuo 16,50 €.', { priceFrom: 16.50 })], { price_type: 'paid', price_text: '16.50 EUR' });
+  assert.equal(matching[0].disposition, 'confirmed');
+  assert.deepEqual(reconcilePrices([], [listing('Staliukų rezervacija: 16 €. Vaikai iki 10 m. įleidžiami nemokamai.')], {}), []);
+  const amounts = reconcilePrices([], [petunija, listing('Bilietai: 20 €.')], { price_type: 'paid' });
+  assert.deepEqual(amounts.map(finding => [finding.field, finding.disposition]), [['price_text', 'attention'], ['price_type', 'confirmed']]);
+  assert.deepEqual(reconcilePrices([], [petunija, listing('Įėjimas nemokamas.')], { price_type: 'paid' }).map(finding => [finding.field, finding.disposition]), [
+    ['price_type', 'attention'],
+  ]);
 });
 
 test('Gemini and OpenAI use structured provider responses with credentials in headers', async () => {
@@ -102,7 +124,7 @@ test('verification fills a missing time, publishes clean music, and records the 
     CREATE TABLE vilnius_images(media_id INTEGER,source_url TEXT,width INTEGER,height INTEGER);
     CREATE TABLE event_artist_decisions(event_id INTEGER,artist_mbid TEXT,decision TEXT,PRIMARY KEY(event_id,artist_mbid));
     CREATE TABLE artists(mbid TEXT,name TEXT,disambiguation TEXT,aliases_json TEXT);
-    CREATE TABLE event_prices(event_id INTEGER,price_type TEXT,price_text TEXT,manual INTEGER);
+    CREATE TABLE event_prices(event_id INTEGER PRIMARY KEY,price_type TEXT,price_text TEXT,manual INTEGER,checked_at TEXT);
     CREATE TABLE event_history(id INTEGER PRIMARY KEY,event_id INTEGER,action TEXT,actor TEXT,occurred_at TEXT,changes TEXT,context TEXT);
     CREATE TABLE verification_jobs(id INTEGER PRIMARY KEY,profile_id INTEGER,provider TEXT,model TEXT,import_job_id INTEGER,allow_publish INTEGER,
       actor TEXT NOT NULL,request_key TEXT,request_hash TEXT,rules_version_id INTEGER,preview_rules TEXT,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,started_at TEXT);
@@ -133,7 +155,9 @@ test('verification fills a missing time, publishes clean music, and records the 
       const statement = sql.replace(/ FOR UPDATE$/, '').replaceAll('DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 120 SECOND)', "datetime('now','+120 seconds')")
         .replaceAll('UTC_TIMESTAMP(3)', 'CURRENT_TIMESTAMP').replaceAll('INSERT IGNORE', 'INSERT OR IGNORE')
         .replace("ON DUPLICATE KEY UPDATE decision='accepted'", "ON CONFLICT(event_id,artist_mbid) DO UPDATE SET decision='accepted'")
-        .replace("ON DUPLICATE KEY UPDATE event_revision=VALUES(event_revision)", "ON CONFLICT(job_id,event_id) DO UPDATE SET event_revision=excluded.event_revision");
+        .replace("ON DUPLICATE KEY UPDATE event_revision=VALUES(event_revision)", "ON CONFLICT(job_id,event_id) DO UPDATE SET event_revision=excluded.event_revision")
+        .replace("ON DUPLICATE KEY UPDATE price_type=VALUES(price_type),price_text=VALUES(price_text),manual=VALUES(manual),checked_at=VALUES(checked_at)",
+          "ON CONFLICT(event_id) DO UPDATE SET price_type=excluded.price_type,price_text=excluded.price_text,manual=excluded.manual,checked_at=excluded.checked_at");
       const params = values.map(value => typeof value === 'boolean' ? Number(value) : value);
       const query = db.prepare(statement);
       if (statement.startsWith('SELECT')) return [query.all(...params)];
@@ -159,6 +183,15 @@ test('verification fills a missing time, publishes clean music, and records the 
           ? corrected ? result('event_time','20:00','20:00','confirmed') : result('event_time','20:00','Koncertas prasidės 20:00','attention')
           : result('event_time','','','unknown'),
         result('review_status',other?'not_music':'music',other?'Keramikos dirbtuvės':'Koncertas')];
+      if (choice.includes('PETUNIJOS AKUSTINIS')) {
+        findings.push(
+          result('description', '', '', 'attention'),
+          result('event', 'PETUNIJOS AKUSTINIS', 'PETUNIJOS AKUSTINIS', 'confirmed'),
+          result('price_type', 'paid', 'Invented price-type quote', 'confirmed'),
+          result('artists', 'Petunija', 'Petunija', 'confirmed'),
+          result('artists', 'Kęstučiu', 'Kartu su Kęstučiu, kuris skambins gitara.'),
+        );
+      }
       if (choice.includes('Petunia')) {
         findings.push(result('artists','Petunia','Koncertas · Petunia ir Duo, Unknown Act'));
         if (choice.includes('Unknown Act')) findings.push(result('artists','Unknown Act','Unknown Act'));
@@ -215,7 +248,7 @@ test('verification fills a missing time, publishes clean music, and records the 
     await assert.rejects(updateRules(pool, { action:'activate', revision:basic.revision }, actor), { status:409 });
 
     db.exec(`INSERT INTO artists VALUES ('pet','Petunija',NULL,'["Petunia"]'), ('duo-1','Duo','Lithuanian band','[]'), ('duo-2','Duo','DJ duo','[]');
-      INSERT INTO events(id,title,event_date,venue,verification_status) VALUES(6,'Concert test','2099-11-01','Music Club','not_verified');
+      INSERT INTO events(id,title,event_date,venue,verification_status) VALUES(6,'Petunia ir Duo','2099-11-01','Music Club','not_verified');
       INSERT INTO event_sources SELECT id,id,'avilys',id,'https://avilys.app/',NULL,
         'Koncertas · Petunia ir Duo, Unknown Act',json_object('startTime',event_date||'T19:00:00Z','venueName',venue) FROM events WHERE id=6;`);
     const previewInput = { event_id:6, profile_id:1, revision:saved.revision, request_key:'preview-rules' };
@@ -291,6 +324,32 @@ test('verification fills a missing time, publishes clean music, and records the 
     const rechecked = await verificationDetails(pool,8);
     assert.equal(rechecked.findings.length,0);
     assert.equal(rechecked.log[0].context.actions?.find(action => action.field==='event_time')?.status,'kept');
+
+    db.exec(`INSERT INTO events(id,title,event_date,event_time,venue,review_status,publication_status,verification_status) VALUES
+        (9,'PETUNIJOS AKUSTINIS', '2099-11-25','19:30','Tamsta Club','music','live','verified'),
+        (10,'PETUNIJOS AKUSTINIS (manual price)', '2099-11-26','19:30','Tamsta Club','music','live','verified');
+      INSERT INTO event_sources SELECT id,id,'avilys',id,'https://avilys.app/',NULL,
+        'Petunija. Kartu su Kęstučiu, kuris skambins gitara.<br>Staliukų rezervacija nemokama.<br>Vaikai iki 10 metų įleidžiami nemokamai.<br>BILIETAI: 16 €! Bilietai brangs!',
+        json_object('startTime',event_date||'T19:30:00Z','venueName',venue,'free',false) FROM events WHERE id IN (9,10);
+      INSERT INTO event_prices(event_id,price_type,manual) VALUES(9,'paid',0),(10,'paid',1);
+      INSERT INTO event_artist_decisions VALUES(9,'pet','accepted'),(10,'pet','accepted');
+      UPDATE events SET needs_attention=1 WHERE id=9;
+      INSERT INTO verification_findings(event_id,verification_id,field_name,finding) VALUES(9,1,'description','{}');`);
+    await manualVerification(pool,{event_ids:[9,10],profile_id:1,request_key:'petunija-live-pricing'},actor);
+    assert.equal(await worker(),true);
+    assert.equal(await worker(),true);
+    const petunija = await verificationDetails(pool,9);
+    assert.equal(petunija.publication_status,'live');
+    assert.equal(petunija.needs_attention,0);
+    assert.equal(petunija.findings.length,0);
+    assert.deepEqual(petunija.log[0].context.actions?.map(action => [action.status, action.field, action.proposed]), [
+      ['observation','artists','Kęstučiu'], ['applied','price_text','16 €'],
+    ]);
+    assert.deepEqual(petunija.log[0].changes,{price_text:{before:null,after:'16 €'}});
+    assert.deepEqual(db.prepare('SELECT artist_mbid FROM event_artist_decisions WHERE event_id=9').all().map(row=>row.artist_mbid),['pet']);
+    assert.equal(db.prepare('SELECT price_text FROM event_prices WHERE event_id=10').get()!.price_text,null);
+    assert.equal((await verificationDetails(pool,10)).findings.length,0);
+
 
 
   } finally { db.close(); }

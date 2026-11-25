@@ -5,7 +5,6 @@ export const permissions = ['auto', 'review', 'disabled'] as const;
 type Permission = typeof permissions[number];
 const actions = {
   title: ['Change event title', 'review'],
-  description: ['Change event description', 'review'],
   event_date: ['Set start date', 'auto'],
   event_end_date: ['Set end date', 'auto'],
   event_time: ['Set start time', 'auto'],
@@ -26,6 +25,16 @@ export type RuleAction = keyof typeof actions;
 export type Rules = { markdown: string; permissions: Record<RuleAction, Permission> };
 export type PreviewRules = { rules: Rules; draft_revision: number | null };
 const actionEntries = Object.entries(actions) as [RuleAction, [string, Permission]][];
+
+function storedRules(value: unknown): Rules {
+  const { markdown, permissions: selection } = jsonValue<Rules>(value);
+  return {
+    markdown,
+    permissions: Object.fromEntries(actionEntries.map(([key, [, fallback]]) => [key, selection[key] ?? fallback])) as Rules['permissions'],
+  };
+}
+
+// Preserve version 1 for earlier jobs and version history. The revised defaults are a stored version.
 export const defaultRules: Rules = {
   markdown: `# Music classification
 
@@ -51,7 +60,7 @@ export async function readRuleVersion(db: Pool | PoolConnection, id: number | nu
   if (id === null || id === 1) return defaultRules;
   const [rows] = await db.execute<RowDataPacket[]>('SELECT rules FROM verification_rule_versions WHERE id=?', [id]);
   if (!rows.length) throw fail(404, 'Rules version not found.');
-  return jsonValue<Rules>(rows[0].rules);
+  return storedRules(rows[0].rules);
 }
 
 async function ruleState(db: Pool | PoolConnection, lock = false): Promise<RuleState> {
@@ -68,7 +77,7 @@ export async function listRules(pool: Pool) {
     return {
       revision: Number(state.revision),
       active: { id: state.active_version_id ?? 1, ...await readRuleVersion(conn, state.active_version_id) },
-      draft: jsonValue<Rules | null>(state.draft),
+      draft: state.draft ? storedRules(state.draft) : null,
       versions: [...versions, { id: 1, activated_by: 'Seeker defaults', activated_at: null }],
       actions: actionEntries.map(([key, [label]]) => ({ key, label })),
     };
@@ -107,7 +116,7 @@ export async function updateRules(pool: Pool, body: Snapshot, actor: string) {
     if (body.action === 'activate' && state.draft) {
       const [version] = await conn.execute<ResultSetHeader>(
         'INSERT INTO verification_rule_versions(rules,activated_by,activated_at) VALUES(?,?,UTC_TIMESTAMP(3))',
-        [JSON.stringify(jsonValue<Rules>(state.draft)), actor],
+        [JSON.stringify(storedRules(state.draft)), actor],
       );
       await conn.execute('UPDATE verification_rule_state SET draft=NULL,active_version_id=?,revision=revision+1 WHERE id=1', [version.insertId]);
       return;
@@ -119,7 +128,7 @@ export async function updateRules(pool: Pool, body: Snapshot, actor: string) {
 export async function rulesForPreview(conn: PoolConnection, revision: unknown) {
   const state = await ruleState(conn);
   checkRuleRevision(state, revision);
-  const draft = jsonValue<Rules | null>(state.draft);
+  const draft = state.draft ? storedRules(state.draft) : null;
   const preview: PreviewRules = {
     rules: draft ?? await readRuleVersion(conn, state.active_version_id),
     draft_revision: draft ? Number(state.revision) : null,

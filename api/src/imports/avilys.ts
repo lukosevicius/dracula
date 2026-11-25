@@ -68,9 +68,11 @@ export async function importAvilysPage(pool: Pool, data: unknown){
           if(event.event_time==null && Array.isArray(manual) && !manual.includes('event_time'))await conn.execute('UPDATE events SET event_time=?,updated_at=? WHERE id=? AND event_time IS NULL AND event_date=?',[sourceTime,now,links[0].event_id,sourceDate]);
         }
         const pricing=price(e);
+        // A refresh without a structured amount can retain the price extracted from the same description.
+        const priceText = pricing.priceText ?? (links[0].content_html === description && before.price_type === pricing.priceType && typeof before.price_text === 'string' ? before.price_text : null);
         if(pricing.available)await conn.execute(`INSERT INTO event_prices(event_id,price_text,price_type,manual,checked_at) VALUES(?,?,?,?,?)
           ON DUPLICATE KEY UPDATE price_text=IF(manual=0,VALUES(price_text),price_text),price_type=IF(manual=0,VALUES(price_type),price_type),checked_at=IF(manual=0,VALUES(checked_at),checked_at)`,
-        [id,pricing.priceText,pricing.priceType,0,now]);
+        [id,priceText,pricing.priceType,0,now]);
         await conn.execute("UPDATE event_sources SET content_html=?,source_data_json=?,last_checked_at=?,about_url=? WHERE source_key='avilys' AND source_id=?",[description,metadata,now,original,String(e.id)]);
         const previousSource=sourceEvidence(links[0]);
         const nextSource=sourceEvidence({source_key:'avilys',source_url:sourceUrl,about_url:original,content_html:description,source_data_json:metadata});

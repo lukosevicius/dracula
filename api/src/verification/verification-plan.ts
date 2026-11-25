@@ -6,13 +6,13 @@ import type { Snapshot } from './history.js';
 
 export const important = ['event_date', 'event_time', 'venue'] as const;
 export type FindingDetails = Omit<Finding, 'field'> & {
-  field: Finding['field'] | 'publication_status';
+  field: Finding['field'] | 'description' | 'event' | 'publication_status';
   current: unknown;
   artistId?: string;
   candidates?: ArtistCandidate[];
 };
 export type Outcome = {
-  status: 'applied' | 'review' | 'disabled' | 'kept';
+  status: 'applied' | 'review' | 'disabled' | 'kept' | 'observation';
   field: FindingDetails['field'];
   current: unknown;
   proposed: string;
@@ -60,6 +60,7 @@ export function planVerification(input: VerificationInput, findings: Finding[], 
   const updated = { ...input.values };
   const manual = new Set(input.manualFields);
   const artistEvidence = input.sources.flatMap(source => [source.title, source.description].map(normalizeEvidence));
+  const observations = new Set<string>();
   let blockedPublication = input.externalFinding;
 
   const permissionFor = (field: FindingDetails['field'], proposed: string) => {
@@ -68,6 +69,13 @@ export function planVerification(input: VerificationInput, findings: Finding[], 
   };
   function outcome(status: Outcome['status'], { field, current, proposed, reason, evidence, candidates }: FindingDetails) {
     actions.push({ status, field, current, proposed, reason, evidence, ...(candidates ? { candidates } : {}) });
+  }
+  function observe(finding: FindingDetails) {
+    const name = normalizeArtist(finding.proposed);
+    if (!name || observations.has(name) || permissionFor('artists', finding.proposed) === 'disabled') return;
+    observations.add(name);
+    outcome('observation', finding);
+    fields.artists ??= 'observed';
   }
   function flag(finding: FindingDetails) {
     const { field } = finding;
@@ -101,8 +109,8 @@ export function planVerification(input: VerificationInput, findings: Finding[], 
   }
 
   for (const field of important) {
-    if (!findings.some(finding => finding.field === field)) {
-      flag({ field, disposition: 'attention', current: updated[field] ?? null, proposed: '', evidence: '', reason: 'The model did not check this field.' });
+    if (!present(updated[field]) && !findings.some(finding => finding.field === field)) {
+      flag({ field, disposition: 'attention', current: null, proposed: '', evidence: '', reason: 'This event detail is missing.' });
     }
   }
 
@@ -114,17 +122,27 @@ export function planVerification(input: VerificationInput, findings: Finding[], 
       if (disposition === 'unknown') { fields.artists ??= 'unknown'; continue; }
       if (!proposed || !validField(field, proposed) || !quotedArtistName(proposed, evidence) ||
           !artistEvidence.some(text => text.includes(normalizeEvidence(evidence)))) {
-        flag({ ...entry, current: null, candidates: [], reason: 'The listing quote does not identify this performer.' });
+        observe({ ...entry, current: null, reason: 'The listing quote does not identify this performer.' });
         continue;
       }
-      const candidates = input.catalogue.get(normalizeArtist(proposed)) ?? [];
+      const name = normalizeArtist(proposed);
+      const candidates = input.catalogue.get(name) ?? [];
       const match = candidates.length === 1 ? candidates[0] : undefined;
       const linked = match && input.artistLinks.find(artist => artist.mbid === match.mbid);
       const artistFinding = { ...entry, candidates, current: null, ...(match ? { artistId: match.mbid } : {}) };
-      if (linked?.decision === 'accepted') { fields.artists ??= 'confirmed'; continue; }
       if (linked?.decision === 'dismissed') {
         outcome('kept', { ...artistFinding, reason: 'This artist was dismissed for this event.' });
         fields.artists ??= 'kept';
+        continue;
+      }
+      if (input.artistLinks.some(artist => artist.decision === 'accepted' &&
+          (normalizeArtist(artist.name) === name || candidates.some(candidate => candidate.mbid === artist.mbid)))) {
+        fields.artists = 'confirmed';
+        continue;
+      }
+      if (disposition === 'attention' || (name.split(' ').length === 1 &&
+          (!candidates.length || !input.sources.some(source => quotedArtistName(proposed, source.title))))) {
+        observe({ ...artistFinding, reason: 'The listing gives too little detail to identify this performer confidently.' });
         continue;
       }
       if (permissionFor(field, proposed) === 'auto' && disposition === 'suggestion' && match &&
@@ -138,7 +156,7 @@ export function planVerification(input: VerificationInput, findings: Finding[], 
     }
     if (disposition === 'attention') { flag(entry); continue; }
     if (disposition === 'unknown') {
-      if (important.some(required => required === field)) flag({ ...entry, reason: 'The source does not establish this event detail.' });
+      if (!present(current) && important.some(required => required === field)) flag({ ...entry, reason: 'The source does not establish this event detail.' });
       else fields[field] ??= 'unknown';
       continue;
     }
@@ -149,18 +167,27 @@ export function planVerification(input: VerificationInput, findings: Finding[], 
       } else fields[field] ??= 'confirmed';
       continue;
     }
-    if (disposition === 'confirmed' && field !== 'review_status') { flag({ ...entry, reason: 'No saved value was available to confirm.' }); continue; }
+    if (disposition === 'confirmed' && field !== 'review_status') {
+      if (important.some(required => required === field)) flag({ ...entry, reason: 'The saved event detail is missing.' });
+      continue;
+    }
     if (field === 'review_status' && proposed === current && proposed !== 'unsure') { fields[field] ??= 'confirmed'; continue; }
     const conflicts = findings.some(other => other !== finding && other.field === field && other.proposed && proposed !== other.proposed && other.disposition === 'suggestion');
     const draft = input.publication.status === 'draft';
     const classify = field === 'review_status' && !input.classificationManual &&
       (current === 'unsure' ? ['music', 'not_music'].includes(proposed) : draft && proposed === 'unsure');
-    const fill = !present(current) && !(field.startsWith('price_') && input.priceManual) && canAutoFill(field, proposed, evidence);
-    const copySource = (field === 'title' || field === 'description') && validField(field, proposed) &&
+    const pricing = field === 'price_text' || field === 'price_type';
+    if (pricing && input.priceManual && !present(current)) {
+      outcome('kept', { ...entry, reason: 'Pricing is locked by a manual edit.' });
+      fields[field] ??= 'kept';
+      continue;
+    }
+    const fill = !present(current) && (pricing || (draft && canAutoFill(field, proposed, evidence)));
+    const copyTitle = draft && field === 'title' && validField(field, proposed) &&
       normalizeEvidence(proposed) === normalizeEvidence(evidence) && input.sources.length > 0 &&
-      input.sources.every(source => normalizeEvidence(source[field]) === normalizeEvidence(proposed));
+      input.sources.every(source => normalizeEvidence(source.title) === normalizeEvidence(proposed));
     if (permissionFor(field, proposed) === 'auto' && !conflicts && !manual.has(field) &&
-        (classify || (draft && (fill || copySource))) &&
+        (classify || fill || copyTitle) &&
         editable.includes(field as Editable) && !input.dismissed.some(old => replacedFinding(old, entry))) {
       proposedFields.set(field as Editable, finding);
     } else {

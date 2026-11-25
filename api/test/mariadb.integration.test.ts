@@ -278,6 +278,10 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
       await migrate(migrationDb,'up');
       await migrate(migrationDb,'check');
       await migrate(migrationDb,'up');
+      const rules = await (await workflow('/verification/rules')).json();
+      assert.equal(rules.active.id,2);
+      assert.match(rules.active.markdown,/Use the advertised general admission price/);
+      assert.ok(!rules.actions.some((action: { key: string }) => action.key === 'description'));
       const [[scoreColumn]]=await migrationDb.query<RowDataPacket[]>('SELECT interest_score FROM events WHERE id=1');
       assert.equal(scoreColumn.interest_score,1);
       const [migrated]=await migrationDb.query<RowDataPacket[]>('SELECT publication_status FROM events WHERE id IN (1,10001) ORDER BY id');

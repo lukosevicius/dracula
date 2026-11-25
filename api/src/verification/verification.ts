@@ -7,6 +7,7 @@ import { defaultProfileKey, generate, loadProfile } from './providers.js';
 import { beginProviderRequest, finishProviderRequest, historicalFinding, type TokenUsage } from './usage.js';
 import { catalogueByName, mentionedArtists, normalizeArtist, type Artist } from './artists.js';
 import { readRuleVersion, rulesForPreview, type PreviewRules, type Rules } from './rule-settings.js';
+import { reconcilePrices } from './prices.js';
 import { planVerification, validDateRange, type FindingDetails, type Outcome, type VerificationInput } from './verification-plan.js';
 import { editable, evidenceText, parseFindings, reconcileStructuredFields, resultSchema, sourceEvidence, validField, type Editable, type Finding } from './rules.js';
 
@@ -178,7 +179,6 @@ async function getInput(pool: Pool, id: number) {
     const values = {
       ...await snapshot(conn, id, event),
       title: descriptionText(event.title),
-      description: event.description_override ?? descriptionText(sources[0]?.content_html).slice(0, 6000),
       source_url: sources[0]?.source_url ?? null,
       about_url: event.about_url_override ?? sources[0]?.about_url ?? null,
       artists: artistLinks.filter(artist => artist.decision === 'accepted'),
@@ -322,11 +322,12 @@ export function createVerificationWorker(pool: Pool, secret?: string, request = 
       const candidates = mentionedArtists(input.catalogue, String(input.values.title), input.sources.flatMap(source =>
         [source.title, source.description].filter((value): value is string => typeof value === 'string')));
       const prompt = [
-        'Verify the saved event against the source listings. Check every schema field and return at least one result for event_date, event_time, venue, and review_status.',
+        'Verify the saved event against the source listings. Return a result for event_date, event_time, venue, and review_status. Use source descriptions as evidence. Report other fields only when they supply a useful correction, missing detail, or explicit conflict.',
         'Each listing has structured_fields extracted from its source data. A matching structured field is enough to confirm the saved value even if the description omits it. Quote the structured value directly.',
         'Use confirmed when evidence supports a saved value, suggestion for a missing or incorrect value, attention for ambiguity or conflicts, and unknown when both structured data and description lack evidence. Quote verbatim source text or a complete structured source value as evidence.',
         'Dates must be YYYY-MM-DD. Times are HH:MM in Europe/Vilnius. Avilys local_start is Vilnius wall time, even when source_start ends in Z.',
         'For review_status return music, not_music, or unsure with evidence. For an identified performer return one suggestion with their exact listed name per performer and quote the source title or description, including the name. Use attention if their performance is ambiguous. Catalogue candidates are hints and are never evidence.',
+        'Check the general ticket price and distinguish it from reservation fees, age exemptions, and optional extras. An explicit positive ticket price means paid admission. Return attention only for a material pricing conflict or ambiguity supported by the listing.',
         '',
         'ADDITIONAL RULES FROM THE SEEKER EDITOR',
         rules.markdown,
@@ -342,7 +343,8 @@ export function createVerificationWorker(pool: Pool, secret?: string, request = 
       } finally {
         await finishProviderRequest(pool, task.claim, profile.provider, profile.model, usage);
       }
-      const findings = reconcileStructuredFields(parseFindings(result, evidenceText(input.sources)), input.sources, input.values, input.manualFields);
+      const parsed = parseFindings(result, evidenceText(input.sources));
+      const findings = reconcilePrices(reconcileStructuredFields(parsed, input.sources, input.values, input.manualFields), input.sources, input.values);
       assessment = { input, findings, rules };
     } catch (error) {
       await finishTask(pool, task, undefined, trimmed(error instanceof Error && (error as {status?: number}).status ? error.message : 'Verification could not process this event.'));

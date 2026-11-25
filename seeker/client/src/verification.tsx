@@ -24,7 +24,7 @@ export type Profile = { id: number; name: string; provider: 'gemini' | 'openai';
 export type ProfilesResponse = { profiles: Profile[]; default_id: number | null; configured: boolean };
 type Candidate = { mbid: string; name: string; disambiguation: string | null };
 type Finding = { id: number; field: string; current: unknown; proposed: string; evidence: string; reason: string; candidates?: Candidate[] };
-export type Outcome = Omit<Finding, 'id'> & { status: 'applied' | 'review' | 'disabled' | 'kept' };
+export type Outcome = Omit<Finding, 'id'> & { status: 'applied' | 'review' | 'disabled' | 'kept' | 'observation' };
 type HistoryEntry = {
   id: number; action: string; actor: string; occurred_at: string; changes: Record<string, { before: unknown; after: unknown }>;
   context: { model?: string; evidence?: string | Record<string, string>; error?: string; rules_version_id?: number; trigger?: string; actions?: Outcome[]; field?: string; proposed?: string };
@@ -55,7 +55,7 @@ function artistLabel(artist: Candidate) {
 
 export function OutcomeList({ actions, preview = false }: { actions: Outcome[]; preview?: boolean }) {
   if (!actions.length) return <p className="muted">{preview ? 'No changes proposed.' : 'No changes or findings.'}</p>;
-  const statuses = { applied: preview ? 'Would apply' : 'Applied', review: 'Needs review', disabled: 'Disabled', kept: 'Kept previous decision' };
+  const statuses = { applied: preview ? 'Would apply' : 'Applied', review: 'Needs review', disabled: 'Disabled', kept: 'Kept previous decision', observation: 'Observation' };
   return <ul className="verification-outcomes">{actions.map((action, index) => {
     const name = action.field === 'artists' && action.proposed
       ? action.status === 'applied' ? `Linked ${action.candidates?.[0]?.name ?? action.proposed}` : action.proposed

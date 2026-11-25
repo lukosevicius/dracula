@@ -1,7 +1,7 @@
 import { descriptionText } from '../catalogue/description.js';
 import { fail, jsonValue, type Snapshot } from './history.js';
 
-const fields = ['title', 'description', 'event_date', 'event_end_date', 'event_time', 'venue', 'city', 'price_type', 'price_text', 'ticket_url', 'about_url', 'source_url', 'artists', 'image', 'review_status', 'cancellation', 'duplicate', 'event'] as const;
+const fields = ['title', 'event_date', 'event_end_date', 'event_time', 'venue', 'city', 'price_type', 'price_text', 'ticket_url', 'about_url', 'source_url', 'artists', 'image', 'review_status', 'cancellation', 'duplicate'] as const;
 export type Field = typeof fields[number];
 export type Finding = { field: Field; disposition: 'confirmed' | 'suggestion' | 'attention' | 'unknown'; proposed: string; evidence: string; reason: string };
 const dispositions = ['confirmed', 'suggestion', 'attention', 'unknown'];
@@ -74,15 +74,16 @@ export function evidenceText(evidence: ReturnType<typeof sourceEvidence>[]) {
 
 export function parseFindings(value: unknown, evidence: string): Finding[] {
   const findings = (value as { findings?: unknown })?.findings;
-  if (!Array.isArray(findings) || !findings.length || findings.length > 35) throw fail(502, 'The model returned invalid findings.');
-  return findings.map(item => {
+  if (!Array.isArray(findings) || findings.length > 35) throw fail(502, 'The model returned invalid findings.');
+  return findings.flatMap(item => {
+    if (item?.field === 'description' || item?.field === 'event') return [];
     if (!item || !fields.includes(item.field) || !dispositions.includes(item.disposition) ||
         typeof item.proposed !== 'string' || typeof item.evidence !== 'string' || typeof item.reason !== 'string' ||
         item.proposed.length > 2048 || item.evidence.length > 500 || !item.reason.trim() || item.reason.length > 500) throw fail(502, 'The model returned an invalid field result.');
     const finding: Finding = { field: item.field, disposition: item.disposition, proposed: item.proposed.trim(), evidence: item.evidence.trim(), reason: item.reason.trim() };
     if (finding.disposition === 'unknown') return { ...finding, proposed: '', evidence: '' };
     if (!finding.evidence || !normalizeEvidence(evidence).includes(normalizeEvidence(finding.evidence))) {
-      return { ...finding, disposition: 'attention', proposed: '', evidence: '', reason: 'The model could not substantiate its finding with a quote from the source.' };
+      return { ...finding, disposition: 'unknown', proposed: '', evidence: '', reason: 'The finding lacked a supporting quote.' };
     }
     return finding;
   });
@@ -125,7 +126,7 @@ export function reconcileStructuredFields(findings: Finding[], sources: ReturnTy
 export const editable = ['title', 'description', 'event_date', 'event_end_date', 'event_time', 'venue', 'city', 'ticket_url', 'about_url', 'price_type', 'price_text', 'artists', 'review_status'] as const;
 export type Editable = typeof editable[number];
 
-export function validField(field: Field, value: string) {
+export function validField(field: Field | Editable, value: string) {
   if (!value.trim()) return false;
   if (field === 'event_date' || field === 'event_end_date') {
     const day = new Date(`${value}T00:00:00Z`);
@@ -157,10 +158,5 @@ export function canAutoFill(field: Field, value: string, evidence: string) {
     const [hour, minute] = value.split(':');
     return new RegExp(`(?:^|[^0-9])(?:${hour}|${Number(hour)})[.:]${minute}(?:[^0-9]|$)`, 'u').test(quote);
   }
-  if (field === 'price_type') {
-    if (value === 'free') return /(?:^|[^\p{L}])(?:nemokama[sia]?|free (?:entry|admission)|įėjimas laisvas)(?:$|[^\p{L}])/u.test(quote);
-    return value === 'paid' && /\d\s*(?:€|eur\b)/u.test(quote);
-  }
-  if (field === 'price_text' && !/\d/.test(value)) return false;
-  return ['venue', 'city', 'price_text', 'ticket_url', 'about_url'].includes(field) && quote.includes(normalizeEvidence(value));
+  return ['venue', 'city', 'ticket_url', 'about_url'].includes(field) && quote.includes(normalizeEvidence(value));
 }

@@ -15,7 +15,7 @@ test('Avilys imports are idempotent, reviewable, and preserve edits on refresh',
     CREATE TABLE vilnius_events(source_id INTEGER,featured_media INTEGER);
     CREATE TABLE vilnius_images(media_id INTEGER,local_name TEXT);
     CREATE TABLE event_images(event_id INTEGER,local_name TEXT);
-    CREATE TABLE event_prices(event_id INTEGER,price_text TEXT,price_type TEXT,manual INTEGER,checked_at TEXT);
+    CREATE TABLE event_prices(event_id INTEGER PRIMARY KEY,price_text TEXT,price_type TEXT,manual INTEGER,checked_at TEXT);
     CREATE TABLE event_artist_decisions(event_id INTEGER,artist_mbid TEXT,decision TEXT);
     CREATE TABLE artists(mbid TEXT,name TEXT);`);
   db.exec(`ALTER TABLE events ADD COLUMN interest_score INTEGER NOT NULL DEFAULT 1;
@@ -30,14 +30,19 @@ test('Avilys imports are idempotent, reviewable, and preserve edits on refresh',
   db.function('IF',(condition, yes, no) => condition ? yes : no);
   const owner='a'.repeat(64),job={id:1,owner};
   db.prepare('INSERT INTO job_leases VALUES(?,?,?,?)').run('vilnius-events',1,createHash('sha256').update(owner).digest('hex'),Date.now()+60000);
-  const connection={async beginTransaction(){db.exec('BEGIN');},async commit(){db.exec('COMMIT');},async rollback(){db.exec('ROLLBACK');},release(){},async execute(sql: string,params: import('node:sqlite').SQLInputValue[]){const q=sql.replace(/ FOR UPDATE$/,'').replaceAll('UTC_TIMESTAMP(3)','CURRENT_TIMESTAMP');const stmt=db.prepare(q);if(/^SELECT/i.test(q))return [stmt.all(...params)];const result=stmt.run(...params);return [{insertId:Number(result.lastInsertRowid),affectedRows:Number(result.changes)}];}};
+  const connection={async beginTransaction(){db.exec('BEGIN');},async commit(){db.exec('COMMIT');},async rollback(){db.exec('ROLLBACK');},release(){},async execute(sql: string,params: import('node:sqlite').SQLInputValue[]){const q=sql.replace(/ FOR UPDATE$/,'').replaceAll('UTC_TIMESTAMP(3)','CURRENT_TIMESTAMP')
+      .replace('ON DUPLICATE KEY UPDATE price_text=IF(manual=0,VALUES(price_text),price_text),price_type=IF(manual=0,VALUES(price_type),price_type),checked_at=IF(manual=0,VALUES(checked_at),checked_at)',
+        'ON CONFLICT(event_id) DO UPDATE SET price_text=IF(manual=0,excluded.price_text,price_text),price_type=IF(manual=0,excluded.price_type,price_type),checked_at=IF(manual=0,excluded.checked_at,checked_at)');const stmt=db.prepare(q);if(/^SELECT/i.test(q))return [stmt.all(...params)];const result=stmt.run(...params);return [{insertId:Number(result.lastInsertRowid),affectedRows:Number(result.changes)}];}};
   const pool={getConnection:async()=>connection,execute:(sql: string,params: import('node:sqlite').SQLInputValue[])=>connection.execute(sql,params)} as unknown as import('mysql2/promise').Pool;
   const admin=createAdmin(pool,'a'.repeat(32));const catalogue=createCatalogue(pool,'https://example.com');
-  const event={id:10,title:'Concert',city:'vilnius',categories:[{id:1,name:'Music'}],description:'Music <script>',startTime:'2026-11-25T19:00:00Z',venueName:'Club',sourceUrl:'https://example.org/event'};
+  const event={id:10,title:'Concert',city:'vilnius',categories:[{id:1,name:'Music'}],description:'Music <script>',startTime:'2026-11-25T19:00:00Z',venueName:'Club',sourceUrl:'https://example.org/event',free:false};
   try {
     assert.deepEqual(await importAvilysPage(pool,{verify_after_import:false,items:[event],job}),{added:1,updated:0});
     assert.equal(db.prepare('SELECT city FROM events').get()!.city,'Vilnius');
     assert.equal(db.prepare('SELECT event_time FROM events').get()!.event_time,'19:00');
+    db.exec("UPDATE event_prices SET price_text='16 €'");
+    await importAvilysPage(pool,{verify_after_import:false,items:[event],job});
+    assert.equal(db.prepare('SELECT price_text FROM event_prices').get()!.price_text,'16 €');
     db.exec('UPDATE events SET event_time=NULL');
     await importAvilysPage(pool,{verify_after_import:false,items:[event],job});
     assert.equal(db.prepare('SELECT event_time FROM events').get()!.event_time,'19:00');
