@@ -1,12 +1,12 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import type { ReviewStatus } from '../../types';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, errorMessage, isActive, type EventRow, useJobs } from './data';
 import EventEditor from './event-editor';
 import EventItem from './event-item';
+import { useEventRowEdits } from './event-row-edits';
 import { Feedback, PageHeading, PanelHeading } from './workspace';
 
 const storageKey = 'seeker-saved-events';
-type SavedEventsContextValue = { events: EventRow[]; isSaved: (id: number) => boolean; toggle: (event: EventRow) => Promise<void>; update: (event: EventRow) => void; refresh: (id: number) => Promise<void>; loading: boolean; error: string; pendingIds: number[] };
+type SavedEventsContextValue = { events: EventRow[]; isSaved: (id: number) => boolean; toggle: (event: EventRow) => Promise<void>; update: (id: number, patch: Partial<EventRow>) => void; refresh: (id: number) => Promise<void>; loading: boolean; error: string; pendingIds: number[] };
 const SavedEventsContext = createContext<SavedEventsContextValue>({ events: [], isSaved: () => false, toggle: async () => {}, update: () => {}, refresh: async () => {}, loading: true, error: '', pendingIds: [] });
 
 function readLegacySavedIds(): number[] {
@@ -23,6 +23,7 @@ export function SavedEventsProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pendingIds, setPendingIds] = useState<number[]>([]);
+  const refreshRequests = useRef(new Map<number, symbol>());
   useEffect(() => {
     let active = true;
     void (async () => {
@@ -50,7 +51,9 @@ export function SavedEventsProvider({ children }: { children: ReactNode }) {
     setError('');
     try {
       await api(removing ? '/api/saved-events/remove' : '/api/saved-events', removing ? { id: event.id } : { ids: [event.id] });
+      refreshRequests.current.delete(event.id);
       setEvents(current => removing ? current.filter(item => item.id !== event.id) : [event, ...current]);
+      if (!removing) await refresh(event.id);
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -58,17 +61,24 @@ export function SavedEventsProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  function update(event: EventRow) {
-    setEvents(current => current.map(item => item.id === event.id ? event : item));
+  function update(id: number, patch: Partial<EventRow>) {
+    refreshRequests.current.delete(id);
+    setEvents(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
   }
 
   async function refresh(id: number) {
+    const request = Symbol();
+    refreshRequests.current.set(id, request);
     try {
       const result = await api<{ events: EventRow[] }>('/api/saved-events');
       const row = result.events.find(event => event.id === id);
-      if (row) update(row);
+      if (row && refreshRequests.current.get(id) === request) {
+        setEvents(current => current.map(item => item.id === id ? row : item));
+      }
     } catch {
       // Keep the saved copy usable if a read fails after a successful edit.
+    } finally {
+      if (refreshRequests.current.get(id) === request) refreshRequests.current.delete(id);
     }
   }
 
@@ -88,19 +98,10 @@ export function SavedEventsPage() {
   const today = vilniusDateFormatter.format(new Date());
   const { jobs, start, startingSource } = useJobs(() => {});
   const refreshing = startingSource !== null || jobs.some(job => ['avilys', 'vilnius-events'].includes(job.source) && isActive(job));
-
-  async function saveReview(row: EventRow, status: ReviewStatus) {
-    setPendingId(row.id);
-    try {
-      await api(`/api/events/${row.id}/review`, { review_status: status });
-      await refresh(row.id);
-    } catch (error) {
-      setNoticeError(true);
-      setNotice(errorMessage(error));
-    } finally {
-      setPendingId(null);
-    }
-  }
+  const rowEdits = useEventRowEdits((id, patch) => {
+    update(id, patch);
+    void refresh(id);
+  });
 
   async function confirmAssistantReview(row: EventRow) {
     setPendingId(row.id);
@@ -115,22 +116,6 @@ export function SavedEventsPage() {
     }
   }
 
-  async function changeInterestScore(row: EventRow, score: 1 | 2 | 3 | 4 | 5) {
-    setPendingId(row.id);
-    setNoticeError(false);
-    setNotice('');
-    try {
-      await api(`/api/events/${row.id}/interest-score`, { interest_score: score });
-      update({ ...row, interest_score: score });
-      setNotice('Interest score saved.');
-    } catch (cause) {
-      setNoticeError(true);
-      setNotice(errorMessage(cause));
-    } finally {
-      setPendingId(null);
-    }
-  }
-
   async function refreshSourceDetails(row: EventRow) {
     setNoticeError(false);
     setNotice('');
@@ -139,6 +124,7 @@ export function SavedEventsPage() {
   }
 
   return <>
+    {rowEdits.feedback}
     <PageHeading title="Saved" description="Events you bookmarked in Seeker." icon="save" />
     <section className="panel saved-events-panel">
       <PanelHeading title="Your saved events" end={<span className="count-label">{events.length} saved</span>} />
@@ -147,8 +133,10 @@ export function SavedEventsPage() {
       <div className="saved-event-list">
         {loading && <p className="empty-state" role="status">Loading saved events…</p>}
         {events.map(event => <EventItem key={event.id} row={event} today={today} open={openId === event.id} toggle={() => setOpenId(current => current === event.id ? null : event.id)}
-          selected={false} select={() => {}} disabled={loading || pendingIds.includes(event.id) || pendingId === event.id || refreshing} review={status => void saveReview(event, status)}
-          changeInterestScore={score => void changeInterestScore(event, score)}
+          selected={false} select={() => {}} disabled={loading || refreshing}
+          pendingEdit={rowEdits.pending.get(event.id)} bookmarkPending={pendingIds.includes(event.id)} confirmPending={pendingId === event.id}
+          review={status => void rowEdits.save(event.id, { review_status: status })}
+          changeInterestScore={score => void rowEdits.save(event.id, { interest_score: score })}
           confirm={() => void confirmAssistantReview(event)} showSource saved={isSaved(event.id)} toggleSaved={() => toggle(event)} selectionEnabled={false}
           editor={<EventEditor row={event} onSaved={() => refresh(event.id)} onRefresh={() => void refreshSourceDetails(event)} refreshing={refreshing} />} />)}
         {!loading && !error && !events.length && <p className="empty-state">No saved events yet. Use the save button on an event to add it here.</p>}

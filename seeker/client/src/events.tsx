@@ -5,6 +5,7 @@ import { api, errorMessage, isActive, labels, plainText, priceInfo, reviews, sou
 import { groupNewestEvents, shiftDate } from './event-groups';
 import { useSavedEvents } from './saved-events';
 import EventItem from './event-item';
+import { useEventRowEdits } from './event-row-edits';
 import EventEditor from './event-editor';
 import { AvilysImport, VilniusImport, VilniusNotes } from './imports';
 import { Disclosure, Feedback, Icon, Metrics, PageHeading, Pagination, PanelHeading, SearchField } from './workspace';
@@ -118,6 +119,11 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
     }
   }, [page, review, readiness, assistantReview, query, price, time, sourceFilter, when, apiWhen, from, to, today, invalid, sort, publication, verification, queue]);
   const loadCurrent = useRef(load);
+  const rowEdits = useEventRowEdits((id, patch) => {
+    setData(current => current ? { ...current, events: current.events.map(event => event.id === id ? { ...event, ...patch } : event) } : current);
+    updateSavedEvent(id, patch);
+    void refreshEditedEvent(id);
+  });
 
   useEffect(() => {
     loadCurrent.current = load;
@@ -181,22 +187,14 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
     setSelected(current => checked ? [...new Set([...current, ...ids])] : current.filter(id => !ids.includes(id)));
   }
 
-  async function changeRow(id: number, action: string, body: unknown, success: string) {
+  async function confirmAssistantReview(id: number) {
     setPending(current => [...current, id]);
     setActionError(false);
     setMessage('');
     try {
-      await api(`/api/events/${id}/${action}`, body);
-      if (action === 'interest-score') {
-        const interest_score = (body as { interest_score: 1 | 2 | 3 | 4 | 5 }).interest_score;
-        setData(current => current ? { ...current, events: current.events.map(event => event.id === id ? { ...event, interest_score } : event) } : current);
-        const saved = savedEvents.find(event => event.id === id);
-        if (saved) updateSavedEvent({ ...saved, interest_score });
-        await loadCurrent.current(true);
-      } else {
-        await loadCurrent.current();
-      }
-      setMessage(success);
+      await api(`/api/events/${id}/confirm-assistant-review`, {});
+      await refreshEditedEvent(id);
+      setMessage('Assistant review checked.');
     } catch (error) {
       setActionError(true);
       setMessage(errorMessage(error));
@@ -226,7 +224,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
   }
 
   async function bulkReview(status: ReviewStatus, sourceWide = false) {
-    if (bulkPending || pending.length) return;
+    if (bulkPending || pending.length || rowEdits.pending.size) return;
     setBulkPending(true);
     setActionError(false);
     try {
@@ -290,21 +288,23 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
   const allSelected = rowIds.length > 0 && rowIds.every(id => selected.includes(id));
 
   async function refreshEditedEvent(id: number) {
-    await Promise.all([loadCurrent.current(true), isSaved(id) ? refreshSavedEvent(id) : undefined]);
+    await Promise.all([loadCurrent.current(true), isSaved(id) || savedPendingIds.includes(id) ? refreshSavedEvent(id) : undefined]);
   }
 
   function renderEvent(row: EventRow) {
     return <EventItem key={row.id} row={row} today={today} showSource={all} open={open === row.id} toggle={() => setOpen(current => current === row.id ? null : row.id)}
-      selected={selected.includes(row.id)} select={checked => setSelection([row.id], checked)} disabled={bulkPending || pending.includes(row.id) || loading || savedEventsLoading || savedPendingIds.includes(row.id)}
-      review={status => void changeRow(row.id, 'review', { review_status: status }, 'Review saved.')}
-      confirm={() => void changeRow(row.id, 'confirm-assistant-review', {}, 'Assistant review checked.')}
-      changeInterestScore={score => void changeRow(row.id, 'interest-score', { interest_score: score }, 'Interest score saved.')}
+      selected={selected.includes(row.id)} select={checked => setSelection([row.id], checked)} disabled={bulkPending || loading || savedEventsLoading}
+      pendingEdit={rowEdits.pending.get(row.id)} bookmarkPending={savedPendingIds.includes(row.id)} confirmPending={pending.includes(row.id)}
+      review={status => void rowEdits.save(row.id, { review_status: status })}
+      confirm={() => void confirmAssistantReview(row.id)}
+      changeInterestScore={score => void rowEdits.save(row.id, { interest_score: score })}
       editor={<EventEditor row={row} onSaved={() => refreshEditedEvent(row.id)} onRefresh={() => void startVilnius('details-event', row.id)} refreshing={busy} />}
       saved={isSaved(row.id)} toggleSaved={() => toggleSaved(row)} />;
   }
 
   return (
     <>
+      {rowEdits.feedback}
       <PageHeading title={name} description={queue === 'attention' ? 'Review findings before publishing drafts.' : queue === 'not-music' ? 'Browse events classified as Not music.' : all ? 'Review events from all sources.' : avilys ? 'Import and review Vilnius music events from Avilys.' : 'Review imported events and manage the Go Vilnius feed.'} icon={avilys ? 'avilys' : 'calendar'} href={all ? undefined : avilys ? 'https://avilys.app/paieska' : 'https://www.vilnius-events.lt/'} linkLabel={`Open ${name}`} tools={!all} />
       {all && !queue && <Metrics items={[
         { label: 'Events across all sources', value: data?.counts.total.toLocaleString() ?? '—', icon: 'calendar' },
@@ -407,7 +407,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
               <label className="checkbox-label"><input type="checkbox" checked={allSelected} ref={element => { if (element) element.indeterminate = !allSelected && rowIds.some(id => selected.includes(id)); }} disabled={!rows.length || loading || bulkPending} onChange={event => setSelection(rowIds, event.target.checked)} /> Select this page</label>
               {selected.length > 0 && <div className="selection-actions">
                 <strong>{selected.length} selected</strong>
-                {reviews.map(status => <button className="secondary-button" type="button" key={status} disabled={bulkPending || pending.length > 0} onClick={() => void bulkReview(status)}>{labels[status]}</button>)}
+                {reviews.map(status => <button className="secondary-button" type="button" key={status} disabled={bulkPending || pending.length > 0 || rowEdits.pending.size > 0} onClick={() => void bulkReview(status)}>{labels[status]}</button>)}
                 <button className="text-button" type="button" disabled={bulkPending} onClick={() => setSelected([])}>Clear selection</button>
               </div>}
             </div>
@@ -440,7 +440,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
           <Disclosure className="standalone" title="Bulk review by source">
             <div className="stack">
               <p>Mark every Unsure event from {name} as Music, across all dates and pages.</p>
-              <button className="secondary-button" type="button" disabled={bulkPending || pending.length > 0} onClick={() => void bulkReview('music', true)}>Mark all Unsure as Music</button>
+              <button className="secondary-button" type="button" disabled={bulkPending || pending.length > 0 || rowEdits.pending.size > 0} onClick={() => void bulkReview('music', true)}>Mark all Unsure as Music</button>
             </div>
           </Disclosure>
         </aside>}

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, errorMessage, formatDate, plainText, useJobs, isActive, type EventPage, type EventRow } from './data';
 import EventEditor from './event-editor';
 import EventItem from './event-item';
+import { useEventRowEdits, type EventRowEdits } from './event-row-edits';
 import { useSavedEvents } from './saved-events';
 import { Feedback, PageHeading, PanelHeading } from './workspace';
 
@@ -34,13 +35,23 @@ export default function DuplicatesPage() {
   const [error, setError] = useState('');
   const [pendingId, setPendingId] = useState<number | null>(null);
   const [openKey, setOpenKey] = useState('');
-  const { isSaved, toggle, update, pendingIds, loading: savedLoading } = useSavedEvents();
+  const editsDuringLoad = useRef<Map<number, EventRowEdits> | null>(null);
+  const { isSaved, toggle, update, refresh, pendingIds, loading: savedLoading } = useSavedEvents();
   const { jobs, start, startingSource } = useJobs(() => {});
   const refreshing = startingSource !== null || jobs.some(job => ['avilys', 'vilnius-events'].includes(job.source) && isActive(job));
   const today = todayFormatter.format(new Date());
+  const rowEdits = useEventRowEdits((id, patch) => {
+    const loadingEdits = editsDuringLoad.current;
+    loadingEdits?.set(id, { ...loadingEdits.get(id), ...patch });
+    setEvents(current => current.map(event => event.id === id ? { ...event, ...patch } : event));
+    update(id, patch);
+    if (isSaved(id) || pendingIds.includes(id)) void refresh(id);
+  });
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    const edits = new Map<number, EventRowEdits>();
+    editsDuringLoad.current = edits;
+    if (!silent) setLoading(true);
     setError('');
     try {
       const rows: EventRow[] = [];
@@ -50,22 +61,27 @@ export default function DuplicatesPage() {
         result = await api<EventPage>(`/api/events?when=all&source=all&limit=100&page=${page++}`);
         rows.push(...result.events);
       } while (result.events.length && rows.length < result.total);
-      setEvents(rows);
-    } catch (cause) { setError(errorMessage(cause)); }
-    finally { setLoading(false); }
+      if (editsDuringLoad.current === edits) {
+        setEvents(rows.map(row => edits.has(row.id) ? { ...row, ...edits.get(row.id) } : row));
+      }
+    } catch (cause) {
+      if (editsDuringLoad.current === edits) setError(errorMessage(cause));
+    } finally {
+      if (editsDuringLoad.current === edits) {
+        editsDuringLoad.current = null;
+        setLoading(false);
+      }
+    }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
 
-  async function change(row: EventRow, action: string, body: object) {
-    setPendingId(row.id);
+  async function confirmAssistantReview(id: number) {
+    setPendingId(id);
     setError('');
     try {
-      await api(`/api/events/${row.id}/${action}`, body);
-      const next = { ...row, ...body };
-      setEvents(current => current.map(event => event.id === row.id ? next : event));
-      if (isSaved(row.id)) update(next);
-      if (action === 'confirm-assistant-review') await load();
+      await api(`/api/events/${id}/confirm-assistant-review`, {});
+      await Promise.all([load(true), isSaved(id) ? refresh(id) : undefined]);
     } catch (cause) { setError(errorMessage(cause)); }
     finally { setPendingId(null); }
   }
@@ -77,6 +93,7 @@ export default function DuplicatesPage() {
 
   const pairs = findPairs(events);
   return <>
+    {rowEdits.feedback}
     <PageHeading title="Possible duplicates" description="Events with similar titles on the same date." icon="calendar" />
     <section className="panel">
       <PanelHeading title="Possible duplicate events" end={!loading && <span className="count-label">{pairs.length} pairs</span>} />
@@ -88,12 +105,13 @@ export default function DuplicatesPage() {
         <div className="event-list">{[first, second].map(row => {
           const key = `${first.id}-${second.id}-${row.id}`;
           return <EventItem key={key} row={row} today={today} open={openKey === key} toggle={() => setOpenKey(current => current === key ? '' : key)}
-            selected={false} select={() => {}} selectionEnabled={false} disabled={savedLoading || pendingId === row.id || pendingIds.includes(row.id)}
-            review={status => void change(row, 'review', { review_status: status })}
-            confirm={() => void change(row, 'confirm-assistant-review', {})}
-            changeInterestScore={score => void change(row, 'interest-score', { interest_score: score })}
+            selected={false} select={() => {}} selectionEnabled={false} disabled={savedLoading}
+            pendingEdit={rowEdits.pending.get(row.id)} bookmarkPending={pendingIds.includes(row.id)} confirmPending={pendingId === row.id}
+            review={status => void rowEdits.save(row.id, { review_status: status })}
+            confirm={() => void confirmAssistantReview(row.id)}
+            changeInterestScore={score => void rowEdits.save(row.id, { interest_score: score })}
             showSource saved={isSaved(row.id)} toggleSaved={() => void toggle(row)}
-            editor={<EventEditor row={row} onSaved={load} onRefresh={() => void refreshSource(row)} refreshing={refreshing} />} />;
+            editor={<EventEditor row={row} onSaved={() => load(true)} onRefresh={() => void refreshSource(row)} refreshing={refreshing} />} />;
         })}</div>
       </section>)}
     </section>

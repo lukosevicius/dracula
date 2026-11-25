@@ -246,6 +246,7 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
 .feedback:empty { display: none; }
 .feedback-error { border-color: #704156; background: #301d2a; color: var(--accent); }
 .catalogue-error, .catalogue-feedback:has(.feedback:not(:empty)) { display: flex; align-items: start; flex-wrap: wrap; gap: 8px; padding: 9px 17px; }
+.event-edit-feedback { position: fixed; z-index: 20; inset-inline-end: 16px; inset-block-end: max(16px, env(safe-area-inset-bottom)); max-width: min(400px, calc(100vw - 32px)); pointer-events: none; }
 
 .table-wrap { overflow-x: auto; }
 .artist-table { width: 100%; border-collapse: collapse; text-align: left; }
@@ -303,6 +304,7 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
 .event-row { display: grid; grid-template-columns: 16px 42px minmax(0, 1fr) 108px 32px 32px 29px; align-items: center; gap: 10px; min-height: 69px; padding: 8px 13px 8px 17px; }
 .event-row-saved { grid-template-columns: 42px minmax(0, 1fr) 108px 32px 32px 29px; }
 .event-row:hover, .event-open .event-row, .event-selected .event-row { background: #211d29; }
+.event-row :is(button, select):disabled[aria-busy="true"] { opacity: 1; cursor: wait; }
 .save-event-button[aria-pressed="true"] { color: var(--accent); }
 .event-date { display: grid; place-content: center; gap: 2px; width: 41px; min-height: 44px; border: 1px solid var(--border-light); border-radius: 7px; background: var(--input); color: var(--muted); text-align: center; }
 .event-date span { text-transform: uppercase; font: 9px var(--mono); letter-spacing: .025em; }

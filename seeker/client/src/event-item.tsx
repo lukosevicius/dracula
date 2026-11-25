@@ -2,15 +2,19 @@ import { EventBadges } from './verification';
 import { isValidElement, memo, useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import type { ReviewStatus } from '../../types';
 import { formatDate, labels, plainText, priceInfo, reviews, sourceNames, type EventRow } from './data';
+import type { EventRowEdits } from './event-row-edits';
 import { Icon } from './workspace';
 
 const monthFormatter = new Intl.DateTimeFormat('en-GB', { month: 'short', timeZone: 'UTC' });
 
-function EventItem({ row, today, open, toggle, selected, select, disabled, review, confirm, editor, showSource, saved, toggleSaved, changeInterestScore, selectionEnabled = true }: {
+function EventItem({ row, today, open, toggle, selected, select, disabled, pendingEdit, bookmarkPending, confirmPending, review, confirm, editor, showSource, saved, toggleSaved, changeInterestScore, selectionEnabled = true }: {
   row: EventRow; today: string; open: boolean; toggle: () => void; selected: boolean;
   select: (checked: boolean) => void; disabled: boolean; review: (status: ReviewStatus) => void;
   confirm: () => void; editor: ReactNode; showSource: boolean; saved: boolean; toggleSaved: () => void;
   changeInterestScore: (score: 1 | 2 | 3 | 4 | 5) => void;
+  pendingEdit?: EventRowEdits;
+  bookmarkPending?: boolean;
+  confirmPending?: boolean;
   selectionEnabled?: boolean;
 }) {
   const title = plainText(row.title);
@@ -19,6 +23,10 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, revie
   const past = !!row.event_date && (row.event_end_date || row.event_date) < today;
   const time = row.event_time?.trim().slice(0, 5);
   const price = priceInfo(row);
+  const scorePending = pendingEdit?.interest_score !== undefined;
+  const reviewPending = pendingEdit?.review_status !== undefined;
+  const interestScore = pendingEdit?.interest_score ?? (row.interest_score || 1);
+  const reviewStatus = pendingEdit?.review_status ?? row.review_status;
   const [copyStatus, setCopyStatus] = useState('');
   useEffect(() => {
     if (!copyStatus) return;
@@ -64,29 +72,30 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, revie
           </div>
           <EventBadges row={row} />
           {row.attention_reason && <p className="event-attention-reason">{row.attention_reason}</p>}
-          <div className="interest-score-buttons" role="group" aria-label={`Interest score for ${title}`} title={`Interest score: ${row.interest_score || 1} of 5`}>
+          <div className="interest-score-buttons" role="group" aria-label={`Interest score for ${title}`} title={`Interest score: ${interestScore} of 5`}>
             {[1, 2, 3, 4, 5].map(score => <button
               key={score}
               type="button"
-              className={`interest-score-button ${(row.interest_score || 1) === score ? 'active' : ''}`}
+              className={`interest-score-button ${interestScore === score ? 'active' : ''}`}
               aria-label={`Set interest score to ${score} for ${title}`}
-              aria-pressed={(row.interest_score || 1) === score}
-              disabled={disabled}
+              aria-pressed={interestScore === score}
+              aria-busy={scorePending}
+              disabled={disabled || scorePending}
               onClick={() => changeInterestScore(score as 1 | 2 | 3 | 4 | 5)}
             >{score}</button>)}
           </div>
         </div>
         <div className="event-actions">
           <div className="event-review">
-            <label className={`review-select review-${row.review_status}`}>
-              <select aria-label={`Review status for ${title}`} value={row.review_status} disabled={disabled} onChange={event => review(event.target.value as ReviewStatus)}>
+            <label className={`review-select review-${reviewStatus}`}>
+              <select aria-label={`Review status for ${title}`} value={reviewStatus} aria-busy={reviewPending} disabled={disabled || reviewPending} onChange={event => review(event.target.value as ReviewStatus)}>
                 {reviews.map(status => <option key={status} value={status}>{labels[status]}</option>)}
               </select>
               <Icon name="down" size={13} />
             </label>
             <small>{assistantPending ? 'Needs your check' : past ? 'Past event' : ''}</small>
           </div>
-          <button type="button" className="icon-button save-event-button" aria-label={saved ? `Remove ${title} from saved events` : `Save ${title}`} aria-pressed={saved} aria-busy={disabled} disabled={disabled} title={saved ? 'Remove from saved events' : 'Save event'} onClick={toggleSaved}><Icon name="save" /></button>
+          <button type="button" className="icon-button save-event-button" aria-label={saved ? `Remove ${title} from saved events` : `Save ${title}`} aria-pressed={saved} aria-busy={bookmarkPending} disabled={disabled || bookmarkPending} title={saved ? 'Remove from saved events' : 'Save event'} onClick={toggleSaved}><Icon name="save" /></button>
           <div className="event-copy-control">
             <button type="button" className="icon-button" aria-label={`Copy event name and ID for ${title}`} title="Copy event name and ID" onClick={() => void copyReference()}><Icon name={copyStatus.startsWith('Event name') ? 'check' : 'copy'} /></button>
             <span className="event-copy-status" role="status">{copyStatus}</span>
@@ -99,7 +108,7 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, revie
           {assistantPending && (
             <div className="assistant-note">
               <div><strong>Assistant review</strong><p>{row.assistant_notes || 'No notes provided.'}</p></div>
-              <button className="secondary-button" type="button" disabled={disabled} onClick={confirm}><Icon name="check" size={15} /> Mark as checked</button>
+              <button className="secondary-button" type="button" disabled={disabled || confirmPending} onClick={confirm}><Icon name="check" size={15} /> Mark as checked</button>
             </div>
           )}
           {editor}
@@ -123,6 +132,9 @@ export default memo(EventItem, (previous, next) => previous.row === next.row
   && previous.open === next.open
   && previous.selected === next.selected
   && previous.disabled === next.disabled
+  && previous.pendingEdit === next.pendingEdit
+  && previous.bookmarkPending === next.bookmarkPending
+  && previous.confirmPending === next.confirmPending
   && previous.showSource === next.showSource
   && previous.saved === next.saved
   && previous.selectionEnabled === next.selectionEnabled
