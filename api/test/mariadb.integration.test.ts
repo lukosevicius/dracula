@@ -253,6 +253,32 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     assert.equal((await workflow('/agents',{action:'revoke',id:agent.id})).status,200);
     assert.equal((await workflow('/events',undefined,agentHeaders)).status,401);
 
+    const obsoleteFinding = JSON.stringify({field:'event',reason:'No saved value was available to confirm.'});
+    const currentFinding = JSON.stringify({field:'event_time',reason:'The source lists a different start time.'});
+    await pool.execute(`INSERT INTO verification_findings(event_id,verification_id,field_name,finding)
+      VALUES(?,?,'event',?),(?,?,'event',?),(?,?,'event_time',?)`, [
+      clean,cleanResult.last_run.id,obsoleteFinding,
+      flagged,flaggedResult.last_run.id,obsoleteFinding,
+      flagged,flaggedResult.last_run.id,currentFinding,
+    ]);
+    await pool.execute('UPDATE events SET needs_attention=1 WHERE id IN (?,?)',[clean,flagged]);
+    const cleanup = await readFile(new URL('../migrations/017-clear-ai-event-log.sql',import.meta.url),'utf8');
+    const cleanupDb = await pool.getConnection();
+    try { await cleanupDb.query(cleanup); } finally { cleanupDb.release(); }
+    const cleared = await (await workflow(`/events/${clean}/verification`)).json();
+    assert.deepEqual(cleared.log.map((entry:{action:string})=>entry.action),['imported']);
+    assert.deepEqual(cleared.findings,[]);
+    assert.equal(cleared.needs_attention,0);
+    assert.equal(cleared.publication_status,'live');
+    assert.equal(cleared.last_run.id,cleanResult.last_run.id);
+    const stillFlagged = await (await workflow(`/events/${flagged}/verification`)).json();
+    assert.deepEqual(stillFlagged.log.map((entry:{action:string})=>entry.action),['unpublished','published','finding_approved','imported']);
+    assert.deepEqual(stillFlagged.findings.map((finding:{reason:string})=>finding.reason),[JSON.parse(currentFinding).reason]);
+    assert.equal(stillFlagged.needs_attention,1);
+    await pool.execute("INSERT INTO event_history(event_id,action,actor,changes,context) VALUES(?,'verified','AI verification','{}','{}')",[clean]);
+    const afterCleanup = await (await workflow(`/events/${clean}/verification`)).json();
+    assert.deepEqual(afterCleanup.log.map((entry:{action:string})=>entry.action),['verified','imported']);
+
     // Recreate the pre-city, pre-preferences and pre-score schema to exercise migrations.
     await pool.query('DROP TABLE verification_provider_requests,verification_findings,event_verifications,verification_jobs,verification_rule_state,verification_rule_versions,verification_providers,event_history,seeker_agent_keys,seeker_import_requests');
     await pool.query('ALTER TABLE event_sources DROP COLUMN detail_evidence_json');

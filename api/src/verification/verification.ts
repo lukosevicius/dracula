@@ -380,7 +380,8 @@ export async function verificationDetails(pool: Pool, id: number, before?: numbe
   })[]>(`SELECT v.id,v.job_id,v.status,v.finished_at,v.error_message,v.result,j.provider,j.model,j.actor,COALESCE(j.rules_version_id,1) AS rules_version_id FROM event_verifications v
     JOIN verification_jobs j ON j.id=v.job_id WHERE v.event_id=? AND j.preview_rules IS NULL ORDER BY v.id DESC LIMIT 1`, [id]);
   const [log] = await pool.execute<RowDataPacket[]>(`SELECT id,action,actor,DATE_FORMAT(occurred_at,'%Y-%m-%dT%H:%i:%sZ') AS occurred_at,changes,context
-    FROM event_history WHERE event_id=? AND id<? ORDER BY id DESC LIMIT 41`, [id, before ?? Number.MAX_SAFE_INTEGER]);
+    FROM event_history WHERE event_id=? AND id<? AND JSON_EXTRACT(context,'$.archived_from_event_log') IS NULL
+    ORDER BY id DESC LIMIT 41`, [id, before ?? Number.MAX_SAFE_INTEGER]);
   return {
     ...events[0], findings: findings.map(row => ({ id: row.id, ...jsonValue<FindingDetails>(row.finding) })),
     last_run: runs[0] ? { ...runs[0], result: jsonValue<VerificationResult | null>(runs[0].result) } : null,
