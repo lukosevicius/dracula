@@ -10,10 +10,9 @@ import type { DisplayEvent } from '../utils/events-api';
 import { selectedDates, vilniusDate } from '../shared/event-date-filters';
 
 const filters: { id: DateFilter; label: string }[] = [
-  { id: 'upcoming', label: 'Artėjantys' }, { id: 'today', label: 'Šiandien' },
+  { id: 'upcoming', label: 'Visi' }, { id: 'today', label: 'Šiandien' },
   { id: 'tomorrow', label: 'Rytoj' }, { id: 'weekend', label: 'Šį savaitgalį' },
-  { id: 'custom', label: 'Pasirinkti datas' }, { id: 'all', label: 'Visi' },
-  { id: 'unknown', label: 'Data nežinoma' },
+  { id: 'custom', label: 'Pasirinkti datas' },
 ];
 const cities = ['Visi', 'Vilnius', 'Kaunas', 'Klaipėda', 'Palanga'] as const;
 type City = typeof cities[number];
