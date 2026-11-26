@@ -74,7 +74,9 @@ export class CatalogueService {
     return {items, next: more ? items.at(-1)!.id : null};
   }
   async get(id: number, _today = vilniusToday()) {
-    const [rows] = await this.db.pool.execute<EventRow[]>(`SELECT ${columns} ${joins} WHERE e.publication_status='live' AND e.id=? LIMIT 1`, [id]);
+    // An event merged into another keeps working at its old URL.
+    const [rows] = await this.db.pool.execute<EventRow[]>(`SELECT ${columns} ${joins} WHERE e.publication_status='live'
+      AND e.id=COALESCE((SELECT r.event_id FROM event_redirects r WHERE r.old_event_id=?),?) LIMIT 1`, [id, id]);
     return (await this.map(rows))[0] ?? null;
   }
   async saved(userId: number) {

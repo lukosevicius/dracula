@@ -1,6 +1,8 @@
 import { diff, history, lockEvent, recordChange, snapshot } from '../verification/history.js';
 import { queueAfterImport } from '../verification/verification.js';
 import { sourceEvidence } from '../verification/rules.js';
+import { findImportMatch } from '../events/duplicates.js';
+import { fillFromSource, recordAttach } from './attach.js';
 import {createHash,timingSafeEqual} from 'node:crypto';
 import type { Pool, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 interface AvilysEvent { id: number; title: string; city: string; categories: {id: number}[]; description?: string; startTime?: string; endTime?: string; venueName?: string; ticketUrl?: string; sourceUrl?: string; priceFrom?: number | string; priceTo?: number | string; free?: boolean }
@@ -33,7 +35,7 @@ export async function importAvilysPage(pool: Pool, data: unknown){
     if(!e||!Number.isSafeInteger(e.id)||e.id<1||ids.has(e.id)||typeof e.title!=='string'||!e.title.trim()||e.title.length>2000||typeof e.city!=='string'||e.city.toLowerCase()!==city.toLowerCase()||!Array.isArray(e.categories)||!e.categories.some(c=>c?.id===1)||typeof (e.description??'')!=='string'||(e.description?.length||0)>100000)throw fail(400,'Invalid Avilys event.');
     ids.add(e.id);
   }
-  const conn=await pool.getConnection();let added=0,updated=0;
+  const conn=await pool.getConnection();let added=0,updated=0,attached=0;
   try{await conn.beginTransaction();try{
     const [leases]=await conn.execute<Lease[]>('SELECT job_id,owner_hash,expires_at FROM job_leases WHERE source_key=? FOR UPDATE',['vilnius-events']);
     const lease=leases[0],hash=createHash('sha256').update(input.job.owner).digest('hex');
@@ -48,9 +50,23 @@ export async function importAvilysPage(pool: Pool, data: unknown){
       const [links]=await conn.execute<RowDataPacket[]>("SELECT * FROM event_sources WHERE source_key='avilys' AND source_id=? FOR UPDATE",[String(e.id)]);
       const sourceUrl=`https://avilys.app/event/${e.id}`, description=esc(e.description), metadata=JSON.stringify(e), original=url(e.sourceUrl);
       if(!links.length){
+        const venue=typeof e.venueName==='string'?e.venueName.slice(0,300):null,pricing=price(e);
+        const match=await findImportMatch(conn,{title:e.title.trim(),event_date:date(e.startTime),event_time:time(e.startTime),venue,city},'avilys');
+        if(match){
+          const event=await lockEvent(conn,match),before=await snapshot(conn,match,event);
+          await conn.execute('INSERT INTO event_sources(event_id,source_key,source_id,source_url,content_html,source_data_json,last_checked_at,about_url,is_secondary) VALUES(?,?,?,?,?,?,?,?,TRUE)',[match,'avilys',String(e.id),sourceUrl,description,metadata,now,original]);
+          await fillFromSource(conn,event,{event_time:time(e.startTime),venue,ticket_url:url(e.ticketUrl),city},now);
+          // Only a missing or unknown automatic price takes the Avilys value.
+          if(pricing.available)await conn.execute(`INSERT INTO event_prices(event_id,price_text,price_type,manual,checked_at) VALUES(?,?,?,0,?)
+            ON DUPLICATE KEY UPDATE price_text=IF(manual=0 AND price_type='unknown',VALUES(price_text),price_text),price_type=IF(manual=0 AND price_type='unknown',VALUES(price_type),price_type)`,[match,pricing.priceText,pricing.priceType,now]);
+          await recordAttach(conn,match,before,'Avilys',{source_key:'avilys',source_id:e.id,job_id:input.job.id});
+          await queueAfterImport(conn,match,input.job.id,input.verify_after_import!==false,input.publish_after_verification!==false);
+          attached++;
+          continue;
+        }
         const [insert]=await conn.execute<ResultSetHeader>('INSERT INTO events(title,event_date,event_end_date,event_time,venue,ticket_url,city,review_status,manual_fields,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[e.title.trim(),date(e.startTime),null,time(e.startTime),typeof e.venueName==='string'?e.venueName.slice(0,300):null,url(e.ticketUrl),city,'unsure','[]',now,now]);
         await conn.execute('INSERT INTO event_sources(event_id,source_key,source_id,source_url,content_html,source_data_json,last_checked_at,about_url) VALUES(?,?,?,?,?,?,?,?)',[insert.insertId,'avilys',String(e.id),sourceUrl,description,metadata,now,original]);
-        const pricing=price(e);
+
         if(pricing.available)await conn.execute('INSERT INTO event_prices(event_id,price_text,price_type,manual,checked_at) VALUES(?,?,?,?,?)',[insert.insertId,pricing.priceText,pricing.priceType,0,now]);
         await history(conn,insert.insertId,'imported','Avilys',diff({},await snapshot(conn,insert.insertId)),{source_id:e.id,job_id:input.job.id});
         await queueAfterImport(conn,insert.insertId,input.job.id,input.verify_after_import!==false,input.publish_after_verification!==false);
@@ -70,8 +86,10 @@ export async function importAvilysPage(pool: Pool, data: unknown){
         const pricing=price(e);
         // A refresh without a structured amount can retain the price extracted from the same description.
         const priceText = pricing.priceText ?? (links[0].content_html === description && before.price_type === pricing.priceType && typeof before.price_text === 'string' ? before.price_text : null);
+        // A secondary listing only replaces an unknown automatic price.
+        const replace=Number(links[0].is_secondary)?"manual=0 AND price_type='unknown'":'manual=0';
         if(pricing.available)await conn.execute(`INSERT INTO event_prices(event_id,price_text,price_type,manual,checked_at) VALUES(?,?,?,?,?)
-          ON DUPLICATE KEY UPDATE price_text=IF(manual=0,VALUES(price_text),price_text),price_type=IF(manual=0,VALUES(price_type),price_type),checked_at=IF(manual=0,VALUES(checked_at),checked_at)`,
+          ON DUPLICATE KEY UPDATE checked_at=IF(${replace},VALUES(checked_at),checked_at),price_text=IF(${replace},VALUES(price_text),price_text),price_type=IF(${replace},VALUES(price_type),price_type)`,
         [id,priceText,pricing.priceType,0,now]);
         await conn.execute("UPDATE event_sources SET content_html=?,source_data_json=?,last_checked_at=?,about_url=? WHERE source_key='avilys' AND source_id=?",[description,metadata,now,original,String(e.id)]);
         const previousSource=sourceEvidence(links[0]);
@@ -82,6 +100,6 @@ export async function importAvilysPage(pool: Pool, data: unknown){
         updated++;
       }
     }
-    await conn.commit();return {added,updated};
+    await conn.commit();return {added,updated,attached};
   }catch(cause){await conn.rollback();throw cause;}}finally{conn.release();}
 }

@@ -23,7 +23,7 @@ export function createAdmin(pool: Pool, token: string) {
       try {
         const [events] = await conn.execute<RowDataPacket[]>('SELECT * FROM events WHERE id=? FOR UPDATE', [id]);
         if(events.length!==1) throw error(404,'Event not found.');
-        const [vn] = await conn.execute<RowDataPacket[]>("SELECT source_id FROM event_sources WHERE event_id=? AND source_key='vilnius-events'", [id]);
+        const [vn] = await conn.execute<RowDataPacket[]>("SELECT source_id FROM event_sources WHERE event_id=? AND source_key='vilnius-events' AND is_secondary=FALSE", [id]);
         const sourceId=vn.length?Number(vn[0].source_id):null;
         if(vn.length && (!Number.isSafeInteger(sourceId)||Number(sourceId)<1)) throw error(409,'Event source is inconsistent.');
         const [source] = sourceId ? await conn.execute<RowDataPacket[]>('SELECT source_id,event_date,event_end_date,event_time,venue,ticket_url,manual_fields FROM vilnius_events WHERE source_id=? FOR UPDATE',[sourceId]) : [events];
@@ -193,14 +193,16 @@ export function createAdmin(pool: Pool, token: string) {
           const [sources]=await conn.execute<RowDataPacket[]>('SELECT * FROM event_sources WHERE event_id=? ORDER BY id',[id]);
           const [prices]=await conn.execute<RowDataPacket[]>('SELECT * FROM event_prices WHERE event_id=?',[id]);
           const [artists]=await conn.execute<RowDataPacket[]>('SELECT d.artist_mbid,d.decision,a.name FROM event_artist_decisions d JOIN artists a ON a.mbid=d.artist_mbid WHERE d.event_id=? ORDER BY a.name',[id]);
+          // Editors work on the primary Vilnius Events record; a secondary one still supplies its image.
           const vn=sources.find(source=>source.source_key==='vilnius-events');
           const [legacy]=vn ? await conn.execute<RowDataPacket[]>('SELECT * FROM vilnius_events WHERE source_id=?',[Number(vn.source_id)]) : [[]];
+          const primaryLegacy=vn && !Number(vn.is_secondary) ? legacy[0] : undefined;
           const [availableArtists]=await conn.execute<RowDataPacket[]>('SELECT mbid,name FROM artists',[]);
           const [images]=legacy[0]?.featured_media ? await conn.execute<RowDataPacket[]>("SELECT media_id,width,height,source_url,local_name,mime_type,'vilnius-events' AS source_key FROM vilnius_images WHERE media_id=?",[legacy[0].featured_media]) : [[]];
           const [avilysImages]=!images.length ? await conn.execute<RowDataPacket[]>("SELECT source_id,width,height,source_url,local_name,mime_type,source_key FROM event_images WHERE event_id=? AND source_key='avilys'",[id]) : [[]];
           const [candidates]=events[0].event_date ? await conn.execute<RowDataPacket[]>('SELECT id,title,event_date,venue FROM events WHERE id<>? AND event_date=? LIMIT 500',[id,events[0].event_date]) : [[]];
           await conn.commit();
-          return {event:events[0],sources,price:prices[0] || null,artist_decisions:artists,vilnius_event:legacy[0] || null,available_artists:availableArtists,image:images[0] || avilysImages[0] || null,match_candidates:candidates};
+          return {event:events[0],sources,price:prices[0] || null,artist_decisions:artists,vilnius_event:primaryLegacy || null,available_artists:availableArtists,image:images[0] || avilysImages[0] || null,match_candidates:candidates};
         } catch(cause) {await conn.rollback(); throw cause;}
       } finally {conn.release();}
     },

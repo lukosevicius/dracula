@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { addMergeTables } from '../test-support/nest.ts';
 import { mkdtemp, rm, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -126,6 +127,7 @@ test('Nest admin edits persist both event records and reject invalid input', asy
     ALTER TABLE events ADD COLUMN verification_status TEXT NOT NULL DEFAULT 'not_verified';
     CREATE TABLE event_artist_decisions(event_id INTEGER,artist_mbid TEXT,decision TEXT);
     CREATE TABLE event_history(event_id INTEGER,action TEXT,actor TEXT,occurred_at TEXT,changes TEXT,context TEXT)`);
+  addMergeTables(db);
   db.function('IF',(condition, yes, no) => condition ? yes : no);
   const connection={async beginTransaction(){db.exec('BEGIN')},async commit(){db.exec('COMMIT')},async rollback(){db.exec('ROLLBACK')},release(){},async execute(sql: string,params: import('node:sqlite').SQLInputValue[]){const query=sql.replace(/ FOR UPDATE$/,'').replaceAll('UTC_TIMESTAMP(3)','CURRENT_TIMESTAMP');const stmt=db.prepare(query);return [/^SELECT/i.test(query)?stmt.all(...params):stmt.run(...params)]}};
   const pool={getConnection:async()=>connection,execute:(sql: string,params: import('node:sqlite').SQLInputValue[])=>connection.execute(sql,params)};

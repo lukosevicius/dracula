@@ -19,7 +19,9 @@ test('saved events require a session, isolate users, and validate write origins 
   await assert.rejects(() => controller.saveEvents(request({ids:[1]},'https://evil.example') as never));
   await assert.rejects(() => controller.saveEvents(request({ids:[-1]}) as never));
   await controller.saveEvents(request({ids:[1,2,1]}) as never);
-  assert.deepEqual(calls[0].params,[7,1,2]);
+  // Each ID is matched directly and through merged-event redirects.
+  assert.deepEqual(calls[0].params,[7,1,2,1,2]);
+  assert.match(calls[0].sql,/event_redirects/);
   const deleteRequest = {...request(null),params:{id:'2'}};
   await controller.unsaveEvent(deleteRequest as never);
   assert.deepEqual(calls[1].params,[7,2]);

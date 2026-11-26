@@ -13,7 +13,7 @@ const fieldLabels: Record<string, string> = {
 };
 const editable = new Set(['title', 'description', 'event_date', 'event_end_date', 'event_time', 'venue', 'city', 'ticket_url', 'about_url', 'price_type', 'price_text', 'artists', 'review_status']);
 const historyLabels: Record<string, string> = {
-  imported: 'Imported', source_refreshed: 'Source refreshed', details_refreshed: 'Source details refreshed', verified: 'AI verification completed',
+  imported: 'Imported', source_refreshed: 'Source refreshed', source_attached: 'Another source listing added', merged: 'Merged duplicate event', details_refreshed: 'Source details refreshed', verified: 'AI verification completed',
   verification_failed: 'Verification failed', verification_skipped: 'Verification skipped', published: 'Published in Dracula', unpublished: 'Unpublished from Dracula',
   publication_confirmed: 'Publication status confirmed', publication_migrated: 'Existing public event carried forward',
   manual_edit: 'Event edited', price_changed: 'Price changed', artist_changed: 'Artist decision changed', classification_changed: 'Music classification changed',

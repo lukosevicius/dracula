@@ -12,6 +12,7 @@ test('Avilys imports local clock time without converting timezone offsets', asyn
     execute: async (sql: string, values: unknown[]) => {
       if (sql.startsWith('SELECT job_id')) return [[{ job_id: 1, owner_hash: createHash('sha256').update(owner).digest('hex'), expires_at: Date.now() + 60000 }]];
       if (sql.startsWith('SELECT p.event_id') || sql.startsWith('SELECT * FROM event_sources') || sql.startsWith('SELECT price_type') || sql.startsWith('SELECT artist_mbid')) return [[]];
+      if (sql.startsWith('SELECT e.id')) return [[]];
       if (sql.startsWith('INSERT INTO events(')) { inserted.push(values); return [{ insertId: inserted.length }]; }
       if (sql.startsWith('SELECT * FROM events')) return [[{ id: values[0], event_time: inserted[Number(values[0])-1][3] }]];
       return [{}];

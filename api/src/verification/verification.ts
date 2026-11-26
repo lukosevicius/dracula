@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
-import { normalizeEventSearch } from '../admin/event-search.js';
+import { similarEvents } from '../events/duplicates.js';
 import { descriptionText } from '../catalogue/description.js';
 import { diff, fail, history, jsonValue, lockEvent, setPublication, snapshot, transaction, type Snapshot } from './history.js';
 import { defaultProfileKey, generate, loadProfile } from './providers.js';
@@ -173,9 +173,7 @@ async function getInput(pool: Pool, id: number) {
     const [prices] = await conn.execute<RowDataPacket[]>('SELECT manual FROM event_prices WHERE event_id=?', [id]);
     const [previous] = await conn.execute<RowDataPacket[]>(`SELECT finding,status,verification_id FROM verification_findings
       WHERE event_id=? AND (status='dismissed' OR (status='open' AND verification_id IS NULL))`, [id]);
-    const [matches] = event.event_date ? await conn.execute<RowDataPacket[]>('SELECT id,title,venue FROM events WHERE event_date=? AND id<>? LIMIT 200', [event.event_date, id]) : [[]];
-    const similar = matches.filter(row => normalizeEventSearch(row.title) === normalizeEventSearch(event.title) &&
-      (!row.venue || !event.venue || normalizeEventSearch(row.venue) === normalizeEventSearch(event.venue)));
+    const similar = (await similarEvents(conn, { id, title: String(event.title), event_date: event.event_date, event_time: event.event_time, venue: event.venue, city: event.city })).map(match => ({ id: match }));
     const values = {
       ...await snapshot(conn, id, event),
       title: descriptionText(event.title),
@@ -193,7 +191,7 @@ async function getInput(pool: Pool, id: number) {
     }));
     const catalogue = catalogueByName(artists);
     return {
-      values, sources: listings, manualFields, similar: similar.map(row => ({ id: Number(row.id) })), artistLinks, catalogue,
+      values, sources: listings, manualFields, similar, artistLinks, catalogue,
       priceManual: Boolean(prices[0]?.manual),
       classificationManual: Boolean(event.classification_manual),
       publication: { status: String(event.publication_status), manual: Boolean(event.publication_manual), reviewRequired: Boolean(event.publication_review_required) },
@@ -213,7 +211,7 @@ async function applyField(conn: PoolConnection, event: RowDataPacket, field: Edi
   if (!validField(field, value)) throw fail(400, 'The proposed value is not valid for this field.');
   const id = Number(event.id);
   if (!validDateRange(field, value, event)) throw fail(409, 'The date range conflicts with the current event. Edit both dates in Event details.');
-  const [sources] = await conn.execute<RowDataPacket[]>("SELECT source_id FROM event_sources WHERE event_id=? AND source_key='vilnius-events'", [id]);
+  const [sources] = await conn.execute<RowDataPacket[]>("SELECT source_id FROM event_sources WHERE event_id=? AND source_key='vilnius-events' AND is_secondary=FALSE", [id]);
   const legacy = sources[0]?.source_id;
   if (field === 'artists') {
     const mbid = artistId ?? await findArtist(conn, value);

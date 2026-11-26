@@ -1,5 +1,7 @@
 import { diff, history, jsonValue, lockEvent, recordChange, snapshot, type Snapshot } from '../verification/history.js';
 import { queueAfterImport } from '../verification/verification.js';
+import { findImportMatch } from '../events/duplicates.js';
+import { fillFromSource, recordAttach } from './attach.js';
 import type {Pool, RowDataPacket, ResultSetHeader} from 'mysql2/promise';
 type Field = 'event_date' | 'event_end_date' | 'event_time' | 'venue' | 'ticket_url';
 type Details = Partial<Record<Field, string | null>>;
@@ -27,7 +29,7 @@ export async function importVilniusPage(pool: Pool, data: unknown) {
     if((d.event_date&&!dateOk(d.event_date))||(d.event_end_date&&(!d.event_date||!dateOk(d.event_end_date)||d.event_end_date<d.event_date))||(d.event_time&&!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(d.event_time))||(d.venue?.length||0)>300||(d.ticket_url?.length||0)>2048) throw problem(400,'Invalid event details.');
     if(d.ticket_url){try{if(!['http:','https:'].includes(new URL(d.ticket_url).protocol))throw Error();}catch{throw problem(400,'Invalid ticket URL.');}}
   }
-  const conn=await pool.getConnection();let added=0,updated=0;
+  const conn=await pool.getConnection();let added=0,updated=0,attached=0;
   const changedEventIds: number[]=[];
   try {
     await conn.beginTransaction();
@@ -46,6 +48,17 @@ export async function importVilniusPage(pool: Pool, data: unknown) {
         if(!existing.length){
           const values=fields.map(field=>item.details[field]||null);
           await conn.execute('INSERT INTO vilnius_events(source_id,title,source_url,content_html,categories_json,featured_media,published_at,modified_at,first_seen_at,updated_at,event_date,event_end_date,event_time,venue,ticket_url,details_manual,review_status,details_checked_at,details_version,manual_fields) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',[item.source_id,item.title,item.source_url,item.content_html,categories,item.featured_media||null,item.published_at||null,item.modified_at||null,now,now,...values,0,'unsure',null,0,'[]']);
+          const match=await findImportMatch(conn,{title:item.title,event_date:item.details.event_date||null,event_time:item.details.event_time||null,venue:item.details.venue||null,city},'vilnius-events');
+          if(match){
+            const event=await lockEvent(conn,match),before=await snapshot(conn,match,event);
+            await conn.execute('INSERT INTO event_sources(event_id,source_key,source_id,source_url,content_html,source_data_json,last_checked_at,is_secondary) VALUES(?,?,?,?,?,?,?,TRUE)',[match,'vilnius-events',String(item.source_id),item.source_url,item.content_html,metadata,null]);
+            await fillFromSource(conn,event,{...Object.fromEntries(fields.map((field,index)=>[field,values[index]])),city},now);
+            await recordAttach(conn,match,before,'Vilnius Events',{source_key:'vilnius-events',source_id:item.source_id,job_id:input.job?.id});
+            await queueAfterImport(conn,match,input.job?.id,input.verify_after_import!==false,input.publish_after_verification!==false);
+            changedEventIds.push(match);
+            attached++;
+            continue;
+          }
           const [result]=await conn.execute<ResultSetHeader>('INSERT INTO events(title,event_date,event_end_date,event_time,venue,ticket_url,city,review_status,manual_fields,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[item.title,...values,city,'unsure','[]',now,now]);
           await conn.execute('INSERT INTO event_sources(event_id,source_key,source_id,source_url,content_html,source_data_json,last_checked_at) VALUES(?,?,?,?,?,?,?)',[result.insertId,'vilnius-events',String(item.source_id),item.source_url,item.content_html,metadata,null]);
           await history(conn,result.insertId,'imported','Vilnius Events',diff({},await snapshot(conn,result.insertId)),{source_id:item.source_id,job_id:input.job?.id});
@@ -53,7 +66,7 @@ export async function importVilniusPage(pool: Pool, data: unknown) {
           changedEventIds.push(result.insertId);
           added++;
         } else {
-          const row=existing[0], [links]=await conn.execute<RowDataPacket[]>("SELECT event_id,source_data_json FROM event_sources WHERE source_key='vilnius-events' AND source_id=? FOR UPDATE",[String(item.source_id)]);
+          const row=existing[0], [links]=await conn.execute<RowDataPacket[]>("SELECT event_id,source_data_json,is_secondary FROM event_sources WHERE source_key='vilnius-events' AND source_id=? FOR UPDATE",[String(item.source_id)]);
           if(links.length!==1)throw problem(409,'Event source is inconsistent.');
           const id=Number(links[0].event_id);
           const event=await lockEvent(conn,id);
@@ -67,7 +80,10 @@ export async function importVilniusPage(pool: Pool, data: unknown) {
           const checked=changed?null:row.details_checked_at;
           const values=fields.map(field=>checked===null&&!manual.includes(field)?(item.details[field]??row[field]):row[field]);
           await conn.execute('UPDATE vilnius_events SET title=?,source_url=?,content_html=?,categories_json=?,featured_media=?,published_at=?,modified_at=?,updated_at=?,event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=?,details_checked_at=? WHERE source_id=?',[title,item.source_url,item.content_html,categories,item.featured_media||null,item.published_at||null,item.modified_at||null,now,...values,checked,item.source_id]);
-          await conn.execute('UPDATE events SET title=?,event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=?,city=?,updated_at=? WHERE id=?',[title,...values,manual.includes('city')?event.city:city,now,id]);
+          if(Number(links[0].is_secondary)){
+            // This listing joined an event first imported from another source; it only fills missing values.
+            await fillFromSource(conn,event,{...Object.fromEntries(fields.map((field,index)=>[field,values[index]])),city},now);
+          } else await conn.execute('UPDATE events SET title=?,event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=?,city=?,updated_at=? WHERE id=?',[title,...values,manual.includes('city')?event.city:city,now,id]);
           await conn.execute("UPDATE event_sources SET source_url=?,content_html=?,source_data_json=?,last_checked_at=?,detail_evidence_json=IF(?,NULL,detail_evidence_json) WHERE source_key='vilnius-events' AND source_id=?",[item.source_url,item.content_html,metadata,checked,changed,String(item.source_id)]);
           const sourceBefore={source_url:row.source_url,description:row.content_html,image_id:row.featured_media,source_title:priorMetadata.title??row.title,structured_details:priorMetadata.structured_details??null};
           const sourceAfter={source_url:item.source_url,description:item.content_html,image_id:item.featured_media||null,source_title:item.title,structured_details:jsonValue<Snapshot>(metadata).structured_details};
@@ -79,7 +95,7 @@ export async function importVilniusPage(pool: Pool, data: unknown) {
         }
       }
       if(input.advance_cursor)await conn.execute('UPDATE source_state SET next_offset=?,total_available=?,updated_at=? WHERE source_key=?',[input.next_offset,input.total_available,now,'vilnius-events']);
-      await conn.commit();return {added,updated,changedEventIds};
+      await conn.commit();return {added,updated,attached,changedEventIds};
     }catch(cause){await conn.rollback();throw cause;}
   }finally{conn.release();}
 }

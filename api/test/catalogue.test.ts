@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createCatalogue } from '../test-support/nest.ts';
+import { createCatalogue, addMergeTables } from '../test-support/nest.ts';
 import { createApp } from '../test-support/nest.ts';
 
 function fixture() {
@@ -28,6 +28,7 @@ function fixture() {
     ALTER TABLE events ADD COLUMN about_url_override TEXT;
     ALTER TABLE events ADD COLUMN description_override TEXT;
     UPDATE events SET publication_status='live' WHERE id IN (1,2,3)`);
+  addMergeTables(db);
   return { db, catalogue:createCatalogue({execute:async (sql: string,params: import('node:sqlite').SQLInputValue[]) => [db.prepare(sql).all(...params)]},'https://api.example.com') };
 }
 

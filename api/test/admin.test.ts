@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { editPublication } from '../dist/verification/verification.js';
 import { createAdmin } from '../dist/admin/admin.js';
-import { createApp } from '../test-support/nest.ts';
+import { createApp, addMergeTables } from '../test-support/nest.ts';
 import { createCatalogue } from '../test-support/nest.ts';
 
 const token = '0123456789abcdef0123456789abcdef';
@@ -37,6 +37,7 @@ function setup() {
     ALTER TABLE events ADD COLUMN description_override TEXT;
     CREATE TABLE verification_findings(id INTEGER,event_id INTEGER,status TEXT,finding TEXT);
     CREATE TABLE event_history(event_id INTEGER,action TEXT,actor TEXT,occurred_at TEXT,changes TEXT,context TEXT)`);
+  addMergeTables(db);
   db.function('IF',(condition, yes, no) => condition ? yes : no);
   db.function('JSON_UNQUOTE',value=>value);
   const connection = {

@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import {importAvilysPage} from '../dist/imports/avilys.js';
 import {editPublication} from '../dist/verification/verification.js';
 import {createAdmin} from '../dist/admin/admin.js';
-import {createCatalogue} from '../test-support/nest.ts';
+import {createCatalogue, addMergeTables } from '../test-support/nest.ts';
 
 test('Avilys imports are idempotent, reviewable, and preserve edits on refresh',async()=>{
   const db=new DatabaseSync(':memory:');
@@ -27,17 +27,17 @@ test('Avilys imports are idempotent, reviewable, and preserve edits on refresh',
     ALTER TABLE events ADD COLUMN about_url_override TEXT;
     ALTER TABLE events ADD COLUMN description_override TEXT;
     CREATE TABLE event_history(event_id INTEGER,action TEXT,actor TEXT,occurred_at TEXT,changes TEXT,context TEXT)`);
+  addMergeTables(db);
   db.function('IF',(condition, yes, no) => condition ? yes : no);
   const owner='a'.repeat(64),job={id:1,owner};
   db.prepare('INSERT INTO job_leases VALUES(?,?,?,?)').run('vilnius-events',1,createHash('sha256').update(owner).digest('hex'),Date.now()+60000);
   const connection={async beginTransaction(){db.exec('BEGIN');},async commit(){db.exec('COMMIT');},async rollback(){db.exec('ROLLBACK');},release(){},async execute(sql: string,params: import('node:sqlite').SQLInputValue[]){const q=sql.replace(/ FOR UPDATE$/,'').replaceAll('UTC_TIMESTAMP(3)','CURRENT_TIMESTAMP')
-      .replace('ON DUPLICATE KEY UPDATE price_text=IF(manual=0,VALUES(price_text),price_text),price_type=IF(manual=0,VALUES(price_type),price_type),checked_at=IF(manual=0,VALUES(checked_at),checked_at)',
-        'ON CONFLICT(event_id) DO UPDATE SET price_text=IF(manual=0,excluded.price_text,price_text),price_type=IF(manual=0,excluded.price_type,price_type),checked_at=IF(manual=0,excluded.checked_at,checked_at)');const stmt=db.prepare(q);if(/^SELECT/i.test(q))return [stmt.all(...params)];const result=stmt.run(...params);return [{insertId:Number(result.lastInsertRowid),affectedRows:Number(result.changes)}];}};
+      .replace(/ON DUPLICATE KEY UPDATE ([^`]*)$/,(_match: string,updates: string)=>`ON CONFLICT(event_id) DO UPDATE SET ${updates.replace(/VALUES\((\w+)\)/g,'excluded.$1')}`);const stmt=db.prepare(q);if(/^SELECT/i.test(q))return [stmt.all(...params)];const result=stmt.run(...params);return [{insertId:Number(result.lastInsertRowid),affectedRows:Number(result.changes)}];}};
   const pool={getConnection:async()=>connection,execute:(sql: string,params: import('node:sqlite').SQLInputValue[])=>connection.execute(sql,params)} as unknown as import('mysql2/promise').Pool;
   const admin=createAdmin(pool,'a'.repeat(32));const catalogue=createCatalogue(pool,'https://example.com');
   const event={id:10,title:'Concert',city:'vilnius',categories:[{id:1,name:'Music'}],description:'Music <script>',startTime:'2026-11-25T19:00:00Z',venueName:'Club',sourceUrl:'https://example.org/event',free:false};
   try {
-    assert.deepEqual(await importAvilysPage(pool,{verify_after_import:false,items:[event],job}),{added:1,updated:0});
+    assert.deepEqual(await importAvilysPage(pool,{verify_after_import:false,items:[event],job}),{added:1,updated:0,attached:0});
     assert.equal(db.prepare('SELECT city FROM events').get()!.city,'Vilnius');
     assert.equal(db.prepare('SELECT event_time FROM events').get()!.event_time,'19:00');
     db.exec("UPDATE event_prices SET price_text='16 €'");
@@ -62,7 +62,7 @@ test('Avilys imports are idempotent, reviewable, and preserve edits on refresh',
     await admin.price(1,{price_type:'paid',price_text:'5 €'});
     assert.equal((await catalogue.get(1,'2026-11-20')).price_text,'5 €');
     db.exec('UPDATE events SET city=NULL');
-    assert.deepEqual(await importAvilysPage(pool,{verify_after_import:false,items:[{...event,venueName:'Changed'}],job}),{added:0,updated:1});
+    assert.deepEqual(await importAvilysPage(pool,{verify_after_import:false,items:[{...event,venueName:'Changed'}],job}),{added:0,updated:1,attached:0});
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM events').get()!.n,1);
     const refreshed=db.prepare('SELECT city,venue FROM events').get()!;
     assert.equal(refreshed.city,'Vilnius');

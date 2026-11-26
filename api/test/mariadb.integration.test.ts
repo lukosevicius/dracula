@@ -134,8 +134,8 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     const job=await starts.find(r=>r.status===200)!.json();
     const avilysItem={id:987654,title:'Avilys music',city:'vilnius',categories:[{id:1}],description:'Concert',startTime:'2099-11-20T19:00:00Z',venueName:'Club'};
     const avilys= (body: Record<string,unknown>)=>fetch(`${root}/v1/admin/imports/avilys/page`,{method:'POST',headers,body:JSON.stringify({verify_after_import:false,...body})});
-    assert.deepEqual(await (await avilys({job:{id:job.id,owner:job.owner},items:[avilysItem]})).json(),{ok:true,added:1,updated:0});
-    assert.deepEqual(await (await avilys({job:{id:job.id,owner:job.owner},items:[avilysItem]})).json(),{ok:true,added:0,updated:1});
+    assert.deepEqual(await (await avilys({job:{id:job.id,owner:job.owner},items:[avilysItem]})).json(),{ok:true,added:1,updated:0,attached:0});
+    assert.deepEqual(await (await avilys({job:{id:job.id,owner:job.owner},items:[avilysItem]})).json(),{ok:true,added:0,updated:1,attached:0});
     const [[avilysEvent]]=await pool.execute<RowDataPacket[]>("SELECT e.id,e.review_status,e.city,e.event_time FROM events e JOIN event_sources s ON s.event_id=e.id WHERE s.source_key='avilys' AND s.source_id='987654'");
     assert.equal(avilysEvent.review_status,'unsure');
     assert.equal(avilysEvent.city,'Vilnius');
@@ -289,6 +289,8 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     assert.deepEqual(afterCleanup.log.map((entry:{action:string})=>entry.action),['verified','imported']);
 
     // Recreate the pre-city, pre-preferences and pre-score schema to exercise migrations.
+    await pool.query('DROP TABLE event_redirects,event_duplicate_dismissals');
+    await pool.query('ALTER TABLE event_sources DROP COLUMN is_secondary');
     await pool.query('DROP TABLE verification_provider_requests,verification_findings,event_verifications,verification_jobs,verification_rule_state,verification_rule_versions,verification_providers,event_history,seeker_agent_keys,seeker_import_requests');
     await pool.query('ALTER TABLE event_sources DROP COLUMN detail_evidence_json');
     await pool.query(`ALTER TABLE events DROP COLUMN city, DROP COLUMN interest_score,
@@ -402,6 +404,73 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
         await pool.execute("UPDATE auth_rate_limits SET window_start=DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 2 MINUTE) WHERE bucket='challenge'");
         await challenge();
       } finally {await authApp.close();}
+
+      // A listing from a second source joins the existing event; duplicates merge into one event with a redirect.
+      {
+        const { listDuplicates, dismissDuplicate } = await import('../dist/events/duplicates.js');
+        const { mergeEvents, mergeConfidentDuplicates } = await import('../dist/events/merge.js');
+        const { createCatalogue } = await import('../test-support/nest.ts');
+        const catalogue = createCatalogue(pool, 'https://api.example.com');
+        const addEvent = async (id: number, title: string, venue: string, sourceKey: string, publication = 'live') => {
+          await pool.execute(`INSERT INTO events(id,title,event_date,event_time,venue,city,review_status,publication_status,manual_fields,created_at,updated_at)
+            VALUES(?,?,'2099-12-03','20:00',?,'Vilnius','music',?,'[]','now','now')`, [id, title, venue, publication]);
+          await pool.execute("INSERT INTO event_sources(event_id,source_key,source_id,source_url,content_html,source_data_json) VALUES(?,?,?,'https://example.com','Listing','{}')", [id, sourceKey, String(id)]);
+        };
+        await addEvent(20001, 'Pavel Arakelian trio', 'Jazz Cellar 11', 'avilys');
+        await pool.execute("UPDATE events SET ticket_url=NULL,event_end_date=NULL WHERE id=20001");
+        await pool.query("DELETE FROM job_leases WHERE source_key='vilnius-events'");
+        const listing = { source_id: 7001, title: 'PAVEL ARAKELIAN TRIO (sold out)', source_url: 'https://www.vilnius-events.lt/renginiai/pavel', content_html: 'Vilnius Events listing', categories: [1],
+          details: { event_date: '2099-12-03', event_time: '20:00', venue: 'Aušros Vartų 11, Vilnius', ticket_url: 'https://tickets.example.com' } };
+        const page = (item: typeof listing) => importVilniusPage(pool, { verify_after_import: false, items: [item], advance_cursor: false, expected_offset: 0, next_offset: 0, total_available: null });
+        assert.deepEqual(await page(listing), { added: 0, updated: 0, attached: 1, changedEventIds: [20001] });
+        const [attachedSources] = await pool.execute<RowDataPacket[]>('SELECT source_key,is_secondary FROM event_sources WHERE event_id=20001 ORDER BY id');
+        assert.deepEqual(attachedSources.map(row => [row.source_key, Number(row.is_secondary)]), [['avilys', 0], ['vilnius-events', 1]]);
+        const [[joined]] = await pool.execute<RowDataPacket[]>('SELECT title,venue,ticket_url FROM events WHERE id=20001');
+        assert.deepEqual({ ...joined }, { title: 'Pavel Arakelian trio', venue: 'Jazz Cellar 11', ticket_url: 'https://tickets.example.com' });
+        // Refreshing the secondary listing never overwrites the event's own values.
+        assert.equal((await page({ ...listing, title: 'Changed title', content_html: 'Changed', details: { ...listing.details, venue: 'Elsewhere' } })).updated, 1);
+        const [[refreshed]] = await pool.execute<RowDataPacket[]>('SELECT title,venue FROM events WHERE id=20001');
+        assert.deepEqual({ ...refreshed }, { title: 'Pavel Arakelian trio', venue: 'Jazz Cellar 11' });
+        const [[attachLog]] = await pool.execute<RowDataPacket[]>("SELECT COUNT(*) AS n FROM event_history WHERE event_id=20001 AND action='source_attached'");
+        assert.equal(Number(attachLog.n), 1);
+
+        // Existing duplicates: the live, older event survives and receives everything from the other one.
+        await addEvent(20002, 'ROSEYE', 'Jazz Cellar 11', 'vilnius-events');
+        await addEvent(20003, 'Roseye', 'Aušros Vartų 11, Vilnius, Lithuania', 'avilys', 'draft');
+        await addEvent(20004, 'Roseye', 'Kablys', 'avilys', 'draft');
+        await pool.execute("UPDATE events SET event_time=NULL WHERE id=20004");
+        await pool.execute("UPDATE events SET venue=NULL WHERE id=20002");
+        await pool.execute("INSERT INTO event_prices(event_id,price_text,price_type,manual,checked_at) VALUES(20003,'15 €','paid',0,'now')");
+        await pool.execute("INSERT INTO event_artist_decisions(event_id,artist_mbid,decision) VALUES(20003,?,'accepted')", [mbid]);
+        await pool.execute('INSERT INTO user_saved_events(user_id,event_id) VALUES(?,20003)', [otherId]);
+        await pool.execute('INSERT INTO seeker_saved_events(event_id) VALUES(20003)');
+        const pairs = await listDuplicates(pool, '2099-12-01');
+        // Without a matching time or venue, the Kablys listing is a question for a person, not an automatic merge.
+        assert.deepEqual(pairs.map(pair => [pair.level, pair.mergeable, pair.event_ids]), [['confident', true, [20002, 20003]], ['likely', true, [20002, 20004]], ['likely', false, [20003, 20004]]]);
+        await dismissDuplicate(pool, [20003, 20002]);
+        assert.deepEqual((await listDuplicates(pool, '2099-12-01')).map(pair => pair.event_ids), [[20002, 20004], [20003, 20004]]);
+        await pool.query('DELETE FROM event_duplicate_dismissals');
+        await assert.rejects(mergeEvents(pool, 20001, 20004, 'Test'), { status: 409 });
+        assert.deepEqual(await mergeEvents(pool, 20003, 20002, 'Test'), { event_id: 20002, merged_event_id: 20003 });
+        const [[kept]] = await pool.execute<RowDataPacket[]>('SELECT event_time,venue,publication_status FROM events WHERE id=20002');
+        assert.deepEqual({ ...kept }, { event_time: '20:00', venue: 'Aušros Vartų 11, Vilnius, Lithuania', publication_status: 'live' });
+        const [[gone]] = await pool.execute<RowDataPacket[]>('SELECT COUNT(*) AS n FROM events WHERE id=20003');
+        assert.equal(Number(gone.n), 0);
+        const counts = async (table: string) => Number(((await pool.execute<RowDataPacket[]>(`SELECT COUNT(*) AS n FROM ${table} WHERE event_id=20002`))[0])[0].n);
+        assert.deepEqual(await Promise.all(['event_sources', 'event_prices', 'event_artist_decisions', 'user_saved_events', 'seeker_saved_events'].map(counts)), [2, 1, 1, 1, 1]);
+        assert.equal((await catalogue.get(20003, '2099-12-01')).id, 20002);
+        const [[mergeLog]] = await pool.execute<RowDataPacket[]>("SELECT COUNT(*) AS n FROM event_history WHERE event_id=20002 AND action='merged'");
+        assert.equal(Number(mergeLog.n), 1);
+        // Chained merges keep old links working, and bulk merging only takes confident pairs.
+        await addEvent(20005, 'Tribute to Erykah Badu', 'Jazz Cellar 11', 'avilys');
+        await addEvent(20006, 'Tribute to Erykah Badu', 'Jazz Cellar 11', 'vilnius-events', 'draft');
+        const bulk = await mergeConfidentDuplicates(pool, '2099-12-01', 'Test');
+        assert.deepEqual(bulk, { merged: [{ event_id: 20005, merged_event_id: 20006 }], skipped: [] });
+        assert.equal((await catalogue.get(20006, '2099-12-01')).id, 20005);
+        await pool.query('DELETE FROM user_saved_events'); await pool.query('DELETE FROM seeker_saved_events');
+        await pool.query('DELETE FROM event_artist_decisions WHERE event_id>=20001');
+        await pool.query('DELETE FROM event_sources WHERE event_id>=20001'); await pool.query('DELETE FROM events WHERE id>=20001');
+      }
 
       const migrations = await loadMigrations();
       for (const {name} of migrations) await copyFile(new URL(`../migrations/${name}`,import.meta.url),join(migrationDir,name));

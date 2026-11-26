@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { addMergeTables } from '../test-support/nest.ts';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import type { Pool } from 'mysql2/promise';
 import { canAutoFill, evidenceText, parseFindings, reconcileStructuredFields, sourceEvidence } from '../dist/verification/rules.js';
@@ -167,13 +168,14 @@ test('verification fills a missing time, publishes clean music, and records the 
     INSERT INTO verification_rule_versions(id,rules) VALUES(1,'{}');
     DELETE FROM verification_rule_versions WHERE id=1;
     INSERT INTO events(id,title,event_date,venue) VALUES(1,'Clean concert','2099-11-01','Music Club'),(2,'Conflicting concert','2099-11-02','Music Club'),(3,'Clay workshop','2099-11-03','Music Club');
-    INSERT INTO event_sources SELECT id,id,'avilys',id,'https://avilys.app/',NULL,
+    INSERT INTO event_sources(id,event_id,source_key,source_id,source_url,about_url,content_html,source_data_json) SELECT id,id,'avilys',id,'https://avilys.app/',NULL,
       CASE id WHEN 2 THEN 'Koncertas prasidės 20:00' WHEN 3 THEN 'Keramikos dirbtuvės 19:00' ELSE 'Koncertas' END,
       json_object('startTime',event_date||'T19:00:00Z','venueName',venue) FROM events;
     INSERT INTO verification_jobs(id,profile_id,provider,model,import_job_id,allow_publish,actor) VALUES(1,1,'gemini','gemini-3.5-flash-lite',42,1,'import');
     INSERT INTO job_leases VALUES(42,4102444800000);
     INSERT INTO event_verifications(id,event_id,job_id,event_revision,status) SELECT id,id,1,1,'queued' FROM events;
   `);
+  addMergeTables(db);
   const conn = {
     beginTransaction: async () => db.exec('BEGIN'), commit: async () => db.exec('COMMIT'), rollback: async () => db.exec('ROLLBACK'), release() {},
     async execute(sql: string, values: (SQLInputValue | boolean)[] = []) {
@@ -274,7 +276,7 @@ test('verification fills a missing time, publishes clean music, and records the 
 
     db.exec(`INSERT INTO artists VALUES ('pet','Petunija',NULL,'["Petunia"]'), ('duo-1','Duo','Lithuanian band','[]'), ('duo-2','Duo','DJ duo','[]');
       INSERT INTO events(id,title,event_date,venue,verification_status) VALUES(6,'Petunia ir Duo','2099-11-01','Music Club','not_verified');
-      INSERT INTO event_sources SELECT id,id,'avilys',id,'https://avilys.app/',NULL,
+      INSERT INTO event_sources(id,event_id,source_key,source_id,source_url,about_url,content_html,source_data_json) SELECT id,id,'avilys',id,'https://avilys.app/',NULL,
         'Koncertas · Petunia ir Duo, Unknown Act',json_object('startTime',event_date||'T19:00:00Z','venueName',venue) FROM events WHERE id=6;`);
     const previewInput = { event_id:6, profile_id:1, revision:saved.revision, request_key:'preview-rules' };
     const preview = await queueRulesPreview(pool,previewInput,actor);
@@ -302,7 +304,7 @@ test('verification fills a missing time, publishes clean music, and records the 
     db.exec(`INSERT INTO events(id,title,event_date,event_time,venue,verification_status) VALUES
         (7,'Concert with publication review','2099-12-05','19:00','Music Club','not_verified'),
         (8,'Conflicting concert keep','2099-11-02','19:00','Music Club','not_verified');
-      INSERT INTO event_sources SELECT id,id,'avilys',id,'https://avilys.app/',NULL,
+      INSERT INTO event_sources(id,event_id,source_key,source_id,source_url,about_url,content_html,source_data_json) SELECT id,id,'avilys',id,'https://avilys.app/',NULL,
         CASE WHEN id=8 THEN 'Koncertas prasidės 20:00' ELSE 'Koncertas' END,
         json_object('startTime',event_date||'T19:00:00Z','venueName',venue) FROM events WHERE id IN (7,8);
       UPDATE events SET title='Earlier concert' WHERE id=2;`);
@@ -353,7 +355,7 @@ test('verification fills a missing time, publishes clean music, and records the 
     db.exec(`INSERT INTO events(id,title,event_date,event_time,venue,review_status,publication_status,verification_status) VALUES
         (9,'PETUNIJOS AKUSTINIS', '2099-11-25','19:30','Tamsta Club','music','live','verified'),
         (10,'PETUNIJOS AKUSTINIS (manual price)', '2099-11-26','19:30','Tamsta Club','music','live','verified');
-      INSERT INTO event_sources SELECT id,id,'avilys',id,'https://avilys.app/',NULL,
+      INSERT INTO event_sources(id,event_id,source_key,source_id,source_url,about_url,content_html,source_data_json) SELECT id,id,'avilys',id,'https://avilys.app/',NULL,
         'Petunija. Kartu su Kęstučiu, kuris skambins gitara.<br>Staliukų rezervacija nemokama.<br>Vaikai iki 10 metų įleidžiami nemokamai.<br>BILIETAI: 16 € | Bilietai brangs!',
         json_object('startTime',event_date||'T19:30:00Z','venueName',venue,'free',false) FROM events WHERE id IN (9,10);
       INSERT INTO event_prices(event_id,price_type,manual) VALUES(9,'paid',0),(10,'paid',1);

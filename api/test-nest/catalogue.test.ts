@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { addMergeTables } from '../test-support/nest.ts';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtemp, rm, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -24,7 +25,7 @@ function fixture() {
     CREATE TABLE event_artist_decisions(event_id INTEGER,artist_mbid TEXT,decision TEXT);
     CREATE TABLE artists(mbid TEXT,name TEXT);
     INSERT INTO events VALUES(1,'Upcoming','2026-11-20',NULL,'19:00','Club',NULL,'music'),(2,'Undated',NULL,NULL,NULL,NULL,NULL,'music'),(3,'Past','2026-11-01',NULL,NULL,NULL,NULL,'music'),(4,'Private','2026-11-20',NULL,NULL,NULL,NULL,'unsure');
-    INSERT INTO event_sources SELECT id,id,'vilnius-events',CAST(id AS TEXT),'https://vilnius-events.lt/event',NULL,'<p>Hello &amp; welcome</p>',NULL FROM events;
+    INSERT INTO event_sources(id,event_id,source_key,source_id,source_url,about_url,content_html,source_data_json) SELECT id,id,'vilnius-events',CAST(id AS TEXT),'https://vilnius-events.lt/event',NULL,'<p>Hello &amp; welcome</p>',NULL FROM events;
     INSERT INTO vilnius_events VALUES(1,5); INSERT INTO vilnius_images VALUES(5,'5.jpg');
     INSERT INTO event_prices VALUES(1,'Nemokama','free'); INSERT INTO artists VALUES('artist-1','Artist');
     INSERT INTO event_artist_decisions VALUES(1,'artist-1','accepted');`);
@@ -35,6 +36,7 @@ function fixture() {
     ALTER TABLE events ADD COLUMN about_url_override TEXT;
     ALTER TABLE events ADD COLUMN description_override TEXT;
     UPDATE events SET publication_status='live' WHERE id IN (1,2,3)`);
+  addMergeTables(db);
   return { db, pool };
 }
 
@@ -48,7 +50,7 @@ test('ongoing events appear in the relevant day and are ranked by score across p
       (13,'Tomorrow high','2026-11-22',NULL,NULL,'music',5),
       (14,'Undated',NULL,NULL,NULL,'music',5);
     UPDATE events SET publication_status='live';
-    INSERT INTO event_sources SELECT id,id,'avilys',CAST(id AS TEXT),'https://example.com',NULL,'',NULL FROM events;`);
+    INSERT INTO event_sources(id,event_id,source_key,source_id,source_url,about_url,content_html,source_data_json) SELECT id,id,'avilys',CAST(id AS TEXT),'https://example.com',NULL,'',NULL FROM events;`);
   const catalogue=new CatalogueService({pool} as unknown as DatabaseService,loadConfig(env));
   try {
     const options={offset:0,limit:2,filter:'upcoming' as const,from:'',to:''};
@@ -115,7 +117,7 @@ test('Nest public endpoints preserve the existing API contract', async () => {
       INSERT INTO events(id,title,event_date,city,review_status,publication_status) VALUES
         (5,'Kaunas concert','2026-11-21','Kaunas','music','live'),
         (6,'Klaipėda concert','2026-11-21','Klaipėda','music','live');
-      INSERT INTO event_sources SELECT id,id,'avilys',CAST(id AS TEXT),'https://example.com',NULL,'',NULL FROM events WHERE id IN (5,6);`);
+      INSERT INTO event_sources(id,event_id,source_key,source_id,source_url,about_url,content_html,source_data_json) SELECT id,id,'avilys',CAST(id AS TEXT),'https://example.com',NULL,'',NULL FROM events WHERE id IN (5,6);`);
     const kaunasFirst=await (await fetch(current+'/v1/events?filter=all&city=kaunas&limit=1')).json();
     assert.deepEqual(kaunasFirst.items.map((event: { id: number; city: string })=>[event.id,event.city]),[[5,'Kaunas']]);
     assert.equal(kaunasFirst.total,2);

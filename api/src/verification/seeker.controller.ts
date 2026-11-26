@@ -10,6 +10,9 @@ import { fail, type Snapshot } from './history.js';
 import { listProviders, manageProvider } from './providers.js';
 import { listRules, updateRules } from './rule-settings.js';
 import { verificationUsage } from './usage.js';
+import { vilniusToday } from '../catalogue/catalogue.service.js';
+import { dismissDuplicate, listDuplicates } from '../events/duplicates.js';
+import { mergeConfidentDuplicates, mergeEvents } from '../events/merge.js';
 import { editPublication, manualVerification, proposeFinding, queueRulesPreview, recentVerificationJobs, resolveFinding, rulesPreview, verificationDetails, verificationJob } from './verification.js';
 
 async function readJson(request: Request): Promise<Snapshot> {
@@ -95,6 +98,10 @@ export class SeekerController {
           require('admin');
           return send(200, await rulesPreview(pool, Number(preview[1])));
         }
+        if (path === '/duplicates') {
+          require('admin');
+          return send(200, { pairs: await listDuplicates(pool, vilniusToday()) });
+        }
         if (path === '/verification/usage') {
           require('admin');
           return send(200, await verificationUsage(pool, url.searchParams));
@@ -142,6 +149,21 @@ export class SeekerController {
           require('imports:run');
           if (body.verify_after_import !== false) require('verification:run');
           return send(202, { ok: true, ...await queueImport(pool, body, access.actor, access.scopes.includes('publication:write')) });
+        }
+        if (path === '/duplicates/merge') {
+          require('admin');
+          const ids = body.event_ids;
+          if (!Array.isArray(ids) || ids.length !== 2) throw fail(400, 'Choose two different events.');
+          return send(200, { ok: true, ...await mergeEvents(pool, Number(ids[0]), Number(ids[1]), access.actor) });
+        }
+        if (path === '/duplicates/merge-confident') {
+          require('admin');
+          return send(200, { ok: true, ...await mergeConfidentDuplicates(pool, vilniusToday(), access.actor) });
+        }
+        if (path === '/duplicates/dismiss') {
+          require('admin');
+          await dismissDuplicate(pool, body.event_ids);
+          return send(200, { ok: true });
         }
         if (path === '/imports/claim') {
           require('admin');

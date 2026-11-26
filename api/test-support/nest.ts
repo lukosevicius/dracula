@@ -32,3 +32,10 @@ export function createApp(catalogue: Partial<Pick<CatalogueService, 'list' | 'pa
     close(callback: (error?: Error) => void) { app.close().then(()=>callback(),callback); },
   };
 }
+
+/** Adds the event merge schema (migration 018) to an SQLite fixture after its own tables and rows exist. */
+export function addMergeTables(db: { exec(sql: string): void }) {
+  try { db.exec('ALTER TABLE event_sources ADD COLUMN is_secondary INTEGER NOT NULL DEFAULT 0'); } catch { /* Fixture has no source table. */ }
+  db.exec(`CREATE TABLE IF NOT EXISTS event_redirects(old_event_id INTEGER PRIMARY KEY,event_id INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS event_duplicate_dismissals(first_event_id INTEGER,second_event_id INTEGER,PRIMARY KEY(first_event_id,second_event_id))`);
+}

@@ -14,6 +14,9 @@ export type CentralJob = {id:number;source:string;action:string;status:string;st
 export type CentralArtist = {id:string;name:string;country:'LT';sort_name:string|null;artist_type:string|null;area:string|null;begin_area:string|null;begin_date:string|null;end_date:string|null;disambiguation:string|null;aliases:string[]};
 
 /** Server-side client only. Do not pass the token to the dashboard or browser. */
+
+// Listings that joined an existing event count as updates to that event.
+function attachedCount(body:Record<string,unknown>):number{return Number.isSafeInteger(body.attached)&&Number(body.attached)>0?Number(body.attached):0;}
 export function createCentralApi(origin: string, token: string, timeoutMs = 15000) {
   const base = new URL(origin);
   if (base.username || base.password || base.pathname !== '/' || base.search || base.hash || !['http:', 'https:'].includes(base.protocol)) throw new Error('Central API URL must be an HTTP(S) origin.');
@@ -66,7 +69,7 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
     async aiDecision(id:number,decision:string):Promise<void>{validateId(id);await post(`/v1/admin/ai/results/${id}/decision`,{decision});},
     async aiSave(input:Record<string,unknown>):Promise<void>{await post('/v1/admin/ai/results',input);},
     async reserveMusicBrainz():Promise<number>{const body=await post('/v1/admin/imports/musicbrainz/reserve-request',{});if(!Number.isSafeInteger(body.waitMs)||Number(body.waitMs)<0||Number(body.waitMs)>2000)throw new Error('Invalid MusicBrainz request reservation.');return Number(body.waitMs);},
-    async importMusicBrainzPage(page:{artists:CentralArtist[];expected_offset:number;next_offset:number;total_available:number|null;job:{id:number;owner:string}}):Promise<{added:number;updated:number}>{const body=await post('/v1/admin/imports/musicbrainz/page',page);if(!Number.isSafeInteger(body.added)||!Number.isSafeInteger(body.updated))throw new Error('Invalid import response; check before retrying.');return {added:Number(body.added),updated:Number(body.updated)};},
+    async importMusicBrainzPage(page:{artists:CentralArtist[];expected_offset:number;next_offset:number;total_available:number|null;job:{id:number;owner:string}}):Promise<{added:number;updated:number}>{const body=await post('/v1/admin/imports/musicbrainz/page',page);if(!Number.isSafeInteger(body.added)||!Number.isSafeInteger(body.updated))throw new Error('Invalid import response; check before retrying.');return {added:Number(body.added),updated:Number(body.updated)+attachedCount(body)};},
     async enrichmentCandidates(mode:'missing'|'oldest'|'all'|'event',after:number,eventId?:number):Promise<{event_id:number;source_url:string;content_html:string}[]> {
       const params=new URLSearchParams({mode,after:String(after)});if(eventId!==undefined)params.set('eventId',String(eventId));
       let response:Response;try{response=await fetch(new URL(`/v1/admin/enrichment?${params}`,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch{throw new Error('Central API request failed.');}
@@ -135,11 +138,11 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
       if(!Number.isSafeInteger(body.waitMs) || Number(body.waitMs)<0 || Number(body.waitMs)>3000)throw new Error('Central API returned an invalid request reservation.');
       return Number(body.waitMs);
     },
-    async importAvilysPage(items:AvilysEvent[],job:{id:number;owner:string},verification?:ImportVerification):Promise<{added:number;updated:number}>{const body=await post('/v1/admin/imports/avilys/page',{items,job,...verification});if(!Number.isSafeInteger(body.added)||!Number.isSafeInteger(body.updated))throw new Error('Invalid import response; check before retrying.');return {added:Number(body.added),updated:Number(body.updated)};},
+    async importAvilysPage(items:AvilysEvent[],job:{id:number;owner:string},verification?:ImportVerification):Promise<{added:number;updated:number}>{const body=await post('/v1/admin/imports/avilys/page',{items,job,...verification});if(!Number.isSafeInteger(body.added)||!Number.isSafeInteger(body.updated))throw new Error('Invalid import response; check before retrying.');return {added:Number(body.added),updated:Number(body.updated)+attachedCount(body)};},
     async importVilniusPage(page:VilniusImportPage):Promise<{added:number;updated:number;changedEventIds?:number[]}> {
       const body=await post('/v1/admin/imports/vilnius-events/page',page);
       if(!Number.isSafeInteger(body.added) || !Number.isSafeInteger(body.updated)) throw new Error('Central API returned an invalid response; check the import before retrying.');
-      return {added:body.added as number,updated:body.updated as number,...(Array.isArray(body.changedEventIds) && body.changedEventIds.every(id=>Number.isSafeInteger(id) && id>0) ? {changedEventIds:body.changedEventIds as number[]} : {})};
+      return {added:body.added as number,updated:(body.updated as number)+attachedCount(body),...(Array.isArray(body.changedEventIds) && body.changedEventIds.every(id=>Number.isSafeInteger(id) && id>0) ? {changedEventIds:body.changedEventIds as number[]} : {})};
     },
     async listEvents(filters:URLSearchParams):Promise<CentralEventList> {
       let response:Response;

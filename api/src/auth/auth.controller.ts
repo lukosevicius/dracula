@@ -86,7 +86,9 @@ export class AuthController {
     const body=await jsonBody(req);
     if (!Array.isArray(body.ids) || body.ids.length>500 || !body.ids.every(id=>Number.isSafeInteger(id) && id>0 && id<=999999999999)) throw new BadRequestException('Invalid event IDs');
     const ids=[...new Set(body.ids as number[])];
-    if (ids.length) await this.db.pool.execute(`INSERT IGNORE INTO user_saved_events (user_id,event_id) SELECT ?,id FROM events WHERE publication_status='live' AND id IN (${ids.map(()=>'?').join(',')})`,[user.id,...ids]);
+    // IDs of merged events resolve to the event they were merged into.
+    const list=ids.map(()=>'?').join(',');
+    if (ids.length) await this.db.pool.execute(`INSERT IGNORE INTO user_saved_events (user_id,event_id) SELECT ?,id FROM events WHERE publication_status='live' AND (id IN (${list}) OR id IN (SELECT event_id FROM event_redirects WHERE old_event_id IN (${list})))`,[user.id,...ids,...ids]);
     return {ok:true};
   }
   @Delete('me/saved-events/:id') @HttpCode(200)
