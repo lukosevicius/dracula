@@ -68,7 +68,8 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          git fetch --no-tags --depth=1 origin main
+          # Keep the release history intact for the fast-forward push to api-deploy.
+          git fetch --no-tags origin main
           if ! git diff --quiet "$RELEASE_SHA" FETCH_HEAD -- api .github/workflows/checks.yml .github/workflows/deploy-api.yml .github/scripts/verify-api-deployment{,.test}.mjs; then
             echo "::error::main contains newer API or release workflow changes. Run Publish API release from the latest main revision."
             exit 1
