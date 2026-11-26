@@ -5,7 +5,7 @@ import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, useWindowDimen
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SaveButton } from '../../components/save-button';
 import { CalendarButton } from '../../components/calendar-button';
-import { displayDate, displayText, eventLocation, eventSource, sameDayTimes, showtimeLines } from '../../utils/event-format';
+import { displayDate, displayText, eventLocation, eventSource, sameDayTimes, showtimeLines, eventPrice } from '../../utils/event-format';
 import { fetchEvent, type DisplayEvent } from '../../utils/events-api';
 import { artistsEnabled } from '../../constants/features';
 
@@ -46,7 +46,7 @@ export default function EventPage() {
   const time = showings.length ? null : sameDay ?? (event.event_time
     ? `${event.event_time}${event.event_end_time ? ` iki ${event.event_end_time}` : ''}`
     : null);
-  const price = event.price_text?.trim() || (event.price_type === 'free' ? 'Nemokamai' : null);
+  const price = eventPrice(event);
 
   async function openLink(url: string) {
     try { await Linking.openURL(url); }

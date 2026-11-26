@@ -41,3 +41,10 @@ export function showtimeLines(times: Showtime[] | undefined) {
   for (const slot of times) days.set(slot.date, [...days.get(slot.date) ?? [], slot]);
   return [...days].map(([date, slots]) => `${displayDate(date)}${slots.some(slot => slot.time) ? ` · ${slots.map(timeRange).join(', ')}` : ''}`);
 }
+
+/** Short price label for cards and details: "Nemokamai", "Nuo 22 €", or null when unknown. */
+export function eventPrice(event: { price_type?: 'free' | 'paid' | 'unknown' | null; price_text?: string | null }) {
+  const text = event.price_text?.trim();
+  if (text && !/^nemokam/i.test(text)) return displayText(text);
+  return text || event.price_type === 'free' ? 'Nemokamai' : null;
+}

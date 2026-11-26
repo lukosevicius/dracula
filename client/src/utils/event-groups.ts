@@ -1,5 +1,5 @@
 type DatedEvent = { id: number; event_date: string | null; times?: { date: string }[] };
-export type EventListItem<T> = { type: 'heading'; date: string | null; key: string } | { type: 'row'; events: T[]; key: string } | { type: 'more'; date: string; remaining: number; key: string };
+export type EventListItem<T> = { type: 'heading'; date: string | null; key: string } | { type: 'row'; events: T[]; date: string | null; key: string } | { type: 'more'; date: string; remaining: number; key: string };
 
 // Ongoing events appear on the first day of the selected range, rather than under a past date.
 export function groupEventRows<T extends DatedEvent>(events: T[], columns: number, rangeStart: string, limits: Record<string, number> = {}): EventListItem<T>[] {
@@ -18,7 +18,7 @@ export function groupEventRows<T extends DatedEvent>(events: T[], columns: numbe
     const visible = group.slice(0, limits[date] ?? group.length);
     for (let i = 0; i < visible.length; i += columns) {
       const row = visible.slice(i, i + columns);
-      result.push({ type: 'row', events: row, key: `row-${row[0].id}` });
+      result.push({ type: 'row', events: row, date: date || null, key: `row-${row[0].id}` });
     }
     if (date && visible.length < group.length) result.push({ type: 'more', date, remaining: group.length - visible.length, key: `more-${date}` });
   }
