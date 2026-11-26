@@ -17,6 +17,9 @@ export type CentralArtist = {id:string;name:string;country:'LT';sort_name:string
 
 // Listings that joined an existing event count as updates to that event.
 function attachedCount(body:Record<string,unknown>):number{return Number.isSafeInteger(body.attached)&&Number(body.attached)>0?Number(body.attached):0;}
+/** Says whether a request that got no response timed out or could not connect, which helps tell a slow API from an unreachable one. */
+const unreachable=(error:unknown)=>error instanceof Error&&(error.name==='TimeoutError'||error.name==='AbortError')?'timed out':'failed';
+
 export function createCentralApi(origin: string, token: string, timeoutMs = 15000) {
   const base = new URL(origin);
   if (base.username || base.password || base.pathname !== '/' || base.search || base.hash || !['http:', 'https:'].includes(base.protocol)) throw new Error('Central API URL must be an HTTP(S) origin.');
@@ -34,7 +37,7 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
         method:'POST', headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},
         body:JSON.stringify(payload), redirect:'error', signal:AbortSignal.timeout(timeoutMs)
       });
-    } catch { throw new Error('Central API request failed; the update outcome is unknown. Check the event before retrying.'); }
+    } catch(error){throw new Error(`Central API request ${unreachable(error)}; the update outcome is unknown. Check the event before retrying.`);}
     if (!response.ok) {
       const uncertain = response.status >= 500 || response.status === 408;
       const detail = path.startsWith('/v1/seeker/') ? await response.json().catch(() => null) as {error?:unknown} | null : null;
@@ -49,7 +52,7 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
     validateId(id);
     await post(`/v1/admin/events/${id}/${action}`,payload);
   }
-  async function get(path:string):Promise<any>{let response:Response;try{response=await fetch(new URL(path,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch{throw new Error('Central API request failed.');}if(!response.ok)throw Object.assign(new Error(`Central API read failed (HTTP ${response.status}).`),{status:response.status});return response.json();}
+  async function get(path:string):Promise<any>{let response:Response;try{response=await fetch(new URL(path,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch(error){throw new Error(`Central API request ${unreachable(error)}.`);}if(!response.ok)throw Object.assign(new Error(`Central API read failed (HTTP ${response.status}).`),{status:response.status});return response.json();}
   return {
     seekerRead: (path: string) => get(`/v1/seeker${path}`),
     seekerWrite: (path: string, value: Record<string, unknown>) => post(`/v1/seeker${path}`, value),
@@ -59,7 +62,7 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
     },
     async savedEvents():Promise<Record<string,unknown>[]>{const value=await get('/v1/admin/seeker/saved-events');if(!Array.isArray(value.events))throw new Error('Central API returned an invalid saved event list.');return value.events;},
     async saveEvents(ids:number[]):Promise<void>{if(!Array.isArray(ids)||ids.length>500||!ids.every(id=>Number.isSafeInteger(id)&&id>0))throw new Error('Invalid saved event IDs.');await post('/v1/admin/seeker/saved-events',{ids});},
-    async removeSavedEvent(id:number):Promise<void>{validateId(id);let response:Response;try{response=await fetch(new URL(`/v1/admin/seeker/saved-events/${id}`,base),{method:'DELETE',headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch{throw new Error('Central API request failed; the update outcome is unknown.');}if(!response.ok)throw Object.assign(new Error(`Central API rejected the update (HTTP ${response.status}).`),{status:response.status});const value=await response.json().catch(()=>null);if(!value||value.ok!==true)throw new Error('Central API returned an invalid response.');},
+    async removeSavedEvent(id:number):Promise<void>{validateId(id);let response:Response;try{response=await fetch(new URL(`/v1/admin/seeker/saved-events/${id}`,base),{method:'DELETE',headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch(error){throw new Error(`Central API request ${unreachable(error)}; the update outcome is unknown.`);}if(!response.ok)throw Object.assign(new Error(`Central API rejected the update (HTTP ${response.status}).`),{status:response.status});const value=await response.json().catch(()=>null);if(!value||value.ok!==true)throw new Error('Central API returned an invalid response.');},
     async seekerSettings():Promise<Record<string,unknown>>{const value=await get('/v1/admin/seeker/settings');if(!value.settings||typeof value.settings!=='object'||Array.isArray(value.settings))throw new Error('Central API returned invalid Seeker settings.');return value.settings;},
     async saveSeekerSetting(key:string,value:unknown):Promise<void>{await post('/v1/admin/seeker/settings',{key,value});},
     async aiIds(limit:number):Promise<number[]>{const value=await get(`/v1/admin/ai/events?limit=${limit}`);if(!Array.isArray(value.ids)||!value.ids.every((id:unknown)=>Number.isSafeInteger(id)))throw new Error('Invalid AI event list.');return value.ids;},
@@ -72,17 +75,17 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
     async importMusicBrainzPage(page:{artists:CentralArtist[];expected_offset:number;next_offset:number;total_available:number|null;job:{id:number;owner:string}}):Promise<{added:number;updated:number}>{const body=await post('/v1/admin/imports/musicbrainz/page',page);if(!Number.isSafeInteger(body.added)||!Number.isSafeInteger(body.updated))throw new Error('Invalid import response; check before retrying.');return {added:Number(body.added),updated:Number(body.updated)+attachedCount(body)};},
     async enrichmentCandidates(mode:'missing'|'oldest'|'all'|'event'|'upcoming',after:number,eventId?:number):Promise<{event_id:number;source_id?:string;source_url:string;content_html:string}[]> {
       const params=new URLSearchParams({mode,after:String(after)});if(eventId!==undefined)params.set('eventId',String(eventId));
-      let response:Response;try{response=await fetch(new URL(`/v1/admin/enrichment?${params}`,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch{throw new Error('Central API request failed.');}
+      let response:Response;try{response=await fetch(new URL(`/v1/admin/enrichment?${params}`,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch(error){throw new Error(`Central API request ${unreachable(error)}.`);}
       if(!response.ok)throw new Error(`Central API read failed (HTTP ${response.status}).`);const body=await response.json();if(!Array.isArray(body.events))throw new Error('Central API returned invalid events.');return body.events;
     },
     async enrichEvent(id:number,input:{details:Partial<EventDetails>;about_url:string|null;price_text:string|null;price_type:'free'|'paid'|'unknown';expected_source_url:string;expected_content_html:string;job?:{id:number;owner:string}}):Promise<void>{validateId(id);await post(`/v1/admin/events/${id}/enrich`,input);},
     async listMedia(after:number):Promise<number[]>{
       if(!Number.isSafeInteger(after)||after<0)throw new Error('Invalid media cursor.');
-      let response:Response;try{response=await fetch(new URL(`/v1/admin/media?after=${after}&limit=100`,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch{throw new Error('Central API request failed.');}
+      let response:Response;try{response=await fetch(new URL(`/v1/admin/media?after=${after}&limit=100`,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch(error){throw new Error(`Central API request ${unreachable(error)}.`);}
       if(!response.ok)throw new Error(`Central API read failed (HTTP ${response.status}).`);const value=await response.json();if(!Array.isArray(value.ids)||!value.ids.every((id:unknown)=>Number.isSafeInteger(id)&&Number(id)>0))throw new Error('Central API returned invalid media.');return value.ids;
     },
     async artistsDashboard():Promise<ArtistsDashboard>{
-      let response:Response;try{response=await fetch(new URL('/v1/admin/artists',base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch{throw new Error('Central API request failed.');}
+      let response:Response;try{response=await fetch(new URL('/v1/admin/artists',base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch(error){throw new Error(`Central API request ${unreachable(error)}.`);}
       if(!response.ok)throw new Error(`Central API read failed (HTTP ${response.status}).`);const value=await response.json();if(!Array.isArray(value.artists)||!Array.isArray(value.recentRuns))throw new Error('Central API returned invalid artists.');return value;
     },
     async getArtist(mbid: string): Promise<SeekerArtistDetail | null> {
@@ -95,7 +98,7 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
     },
     async getImageInfo(id:number):Promise<{source_url:string;source_modified:string|null}|null> {
       validateId(id);let response:Response;
-      try{response=await fetch(new URL(`/v1/admin/images/${id}/info`,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch{throw new Error('Central API request failed.');}
+      try{response=await fetch(new URL(`/v1/admin/images/${id}/info`,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch(error){throw new Error(`Central API request ${unreachable(error)}.`);}
       if(response.status===404)return null;if(!response.ok)throw new Error(`Central API read failed (HTTP ${response.status}).`);
       const value=await response.json();if(typeof value.source_url!=='string'||(value.source_modified!==null&&typeof value.source_modified!=='string'))throw new Error('Central API returned invalid image metadata.');return value;
     },
@@ -114,14 +117,14 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
     },
     async getAvilysImage(sourceId:number):Promise<{bytes:Uint8Array;type:string}|null>{
       if(!Number.isSafeInteger(sourceId)||sourceId<1)throw new Error('Invalid Avilys image ID.');
-      let response:Response;try{response=await fetch(new URL(`/v1/admin/event-images/avilys/${sourceId}`,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch{throw new Error('Central API request failed.');}
+      let response:Response;try{response=await fetch(new URL(`/v1/admin/event-images/avilys/${sourceId}`,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch(error){throw new Error(`Central API request ${unreachable(error)}.`);}
       if(response.status===404)return null;if(!response.ok)throw Object.assign(new Error(`Central API image read failed (HTTP ${response.status}).`),{status:response.status});
       const type=response.headers.get('content-type')||'';if(!['image/jpeg','image/png','image/webp','image/gif'].includes(type))throw new Error('Central API returned an invalid image.');
       const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>12*1024*1024)throw new Error('Central API image is too large.');const bytes=new Uint8Array(await response.arrayBuffer());if(bytes.length>12*1024*1024)throw new Error('Central API image is too large.');return {bytes,type};
     },
     async listJobs():Promise<CentralJob[]> {
       let response:Response;
-      try {response=await fetch(new URL('/v1/admin/jobs',base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch{throw new Error('Central API request failed.');}
+      try {response=await fetch(new URL('/v1/admin/jobs',base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch(error){throw new Error(`Central API request ${unreachable(error)}.`);}
       if(!response.ok)throw new Error(`Central API read failed (HTTP ${response.status}).`);
       const body=await response.json() as {jobs?:CentralJob[]};if(!Array.isArray(body.jobs))throw new Error('Central API returned invalid jobs.');return body.jobs;
     },
@@ -147,7 +150,7 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
     async listEvents(filters:URLSearchParams):Promise<CentralEventList> {
       let response:Response;
       try {response=await fetch(new URL(`/v1/admin/events?${filters}`,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}
-      catch {throw new Error('Central API request failed.');}
+      catch(error){throw new Error(`Central API request ${unreachable(error)}.`);}
       if(!response.ok) throw Object.assign(new Error(`Central API read failed (HTTP ${response.status}).`),{status:response.status});
       const body=await response.json().catch(()=>null) as CentralEventList | null;
       if(!body || !Array.isArray(body.events) || !Number.isSafeInteger(body.total) || !body.counts || !Array.isArray(body.sources) || !Array.isArray(body.runs)) throw new Error('Central API returned an invalid response.');
@@ -157,7 +160,7 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
       validateId(id);
       let response:Response;
       try { response=await fetch(new URL(`/v1/admin/events/${id}`,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)}); }
-      catch {throw new Error('Central API request failed.');}
+      catch(error){throw new Error(`Central API request ${unreachable(error)}.`);}
       if(response.status===404) return null;
       if(!response.ok) throw Object.assign(new Error(`Central API read failed (HTTP ${response.status}).`),{status:response.status});
       const body=await response.json().catch(()=>null) as CentralEvent | null;
@@ -168,7 +171,7 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
       validateId(id);
       let response:Response;
       try {response=await fetch(new URL(`/v1/admin/images/${id}`,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}
-      catch {throw new Error('Central API request failed.');}
+      catch(error){throw new Error(`Central API request ${unreachable(error)}.`);}
       if(response.status===404)return null;
       if(!response.ok)throw Object.assign(new Error(`Central API read failed (HTTP ${response.status}).`),{status:response.status});
       const type=response.headers.get('content-type') || '';

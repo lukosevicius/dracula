@@ -1,19 +1,13 @@
 name: Scheduled import
 
-# Fetches Vilnius Events and Avilys into the production database, refreshes upcoming event details,
-# handles listings the sources took down and merges confident duplicates.
-# Times are UTC: 05:00 and 12:00 in Vilnius during winter, an hour later in summer.
+# Imports Avilys into the production database and merges confident duplicates.
+# Vilnius Events refuses requests from GitHub's servers (HTTP 403), so its import runs from a Mac instead:
+# see seeker/scripts/vn-import.sh. Times are UTC: 05:00 and 12:00 in Vilnius during winter, an hour later in summer.
 on:
   schedule:
     - cron: '0 3 * * *'
     - cron: '0 10 * * *'
   workflow_dispatch:
-    inputs:
-      mode:
-        description: 'nightly fetches every Vilnius Events page; midday only the newest'
-        type: choice
-        options: [nightly, midday]
-        default: midday
 
 permissions:
   contents: read
@@ -44,5 +38,4 @@ jobs:
         env:
           CENTRAL_API_URL: ${{ vars.CENTRAL_API_URL || 'https://api.dracula.lt' }}
           CENTRAL_API_TOKEN: ${{ secrets.CENTRAL_API_TOKEN }}
-          MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.schedule == '0 3 * * *' && 'nightly' || 'midday') }}
-        run: node dist/scheduled-import.js "$MODE"
+        run: node dist/scheduled-import.js nightly --sources=avilys
