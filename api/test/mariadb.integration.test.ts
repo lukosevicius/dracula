@@ -47,6 +47,15 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
       const nestRoot=`http://127.0.0.1:${nest.getHttpServer().address().port}`;
       assert.deepEqual(await (await fetch(`${nestRoot}/health`)).json(),{status:'ok'});
       assert.equal((await fetch(`${nestRoot}/v1/admin/events/1`)).status,401);
+      const settingsUrl=`${nestRoot}/v1/admin/seeker/settings`;
+      const saveSetting=(key: string,value: string | boolean)=>fetch(settingsUrl,{method:'POST',headers,body:JSON.stringify({key,value})});
+      assert.equal((await saveSetting('start_page','/avilys.html')).status,200);
+      for (const verifyAfterImport of [false,true]) {
+        assert.equal((await saveSetting('verify_after_import',verifyAfterImport)).status,200);
+        const preferences=await fetch(settingsUrl,{headers});
+        assert.equal(preferences.status,200);
+        assert.deepEqual(await preferences.json(),{settings:{start_page:'/avilys.html',verify_after_import:verifyAfterImport}});
+      }
       const nestPost=(action: string,body: unknown)=>fetch(`${nestRoot}/v1/admin/events/1/${action}`,{method:'POST',headers,body:JSON.stringify(body)});
       assert.equal((await nestPost('review',{review_status:'invalid'})).status,400);
       assert.equal((await nestPost('review',{review_status:'music'})).status,200);

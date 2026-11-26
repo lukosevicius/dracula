@@ -24,13 +24,12 @@ export function validStartPage(value: unknown): value is StartPage {
   return startPages.some(page => page.path === value);
 }
 
-function ImportDefaults({ checked, onChange }: { checked: boolean | null; onChange: (value: boolean) => void }) {
+function ImportDefaults({ checked, loading, loadFailed, onChange }: { checked: boolean; loading: boolean; loadFailed: boolean; onChange: (value: boolean) => void }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState(false);
 
   async function save() {
-    if (checked === null) return;
     setSaving(true);
     setMessage('');
     setError(false);
@@ -49,22 +48,23 @@ function ImportDefaults({ checked, onChange }: { checked: boolean | null; onChan
     <div className="panel-heading"><h2>Event imports</h2></div>
     <div className="panel-body settings-body">
       <label className="checkbox-label">
-        <input type="checkbox" checked={checked ?? false} disabled={checked === null || saving} onChange={event => {
+        <input type="checkbox" checked={checked} disabled={loading || saving} onChange={event => {
           onChange(event.target.checked);
           setMessage('');
         }} /> Verify with AI after import by default
       </label>
       <p className="muted">Sets the initial checkbox on the Avilys and Vilnius Events import pages.</p>
-      <button className="primary-button" type="button" disabled={checked === null || saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save import default'}</button>
-      <Feedback message={message} error={error} />
+      <button className="primary-button" type="button" disabled={loading || saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save import default'}</button>
+      <Feedback message={message || (loadFailed ? 'Could not load the saved import default. Choose a value and save it.' : '')} error={message ? error : loadFailed} />
     </div>
   </section>;
 }
 
 export default function SettingsPage() {
   const [startPage, setStartPage] = useState<StartPage>(defaultStartPage);
-  const [verifyAfterImport, setVerifyAfterImport] = useState<boolean | null>(null);
+  const [verifyAfterImport, setVerifyAfterImport] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState(false);
@@ -78,7 +78,7 @@ export default function SettingsPage() {
         setVerifyAfterImport(settings.verify_after_import !== false);
       })
       .catch(cause => {
-        if (active) { setError(true); setMessage(errorMessage(cause)); }
+        if (active) setLoadError(errorMessage(cause));
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -111,10 +111,10 @@ export default function SettingsPage() {
         </label>
         <p className="muted">The default startup page is Avilys.</p>
         <button className="primary-button" type="button" disabled={loading || saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save settings'}</button>
-        <Feedback message={message} error={error} />
+        <Feedback message={message || loadError} error={message ? error : Boolean(loadError)} />
       </div>
     </section>
-    <ImportDefaults checked={verifyAfterImport} onChange={setVerifyAfterImport} />
+    <ImportDefaults checked={verifyAfterImport} loading={loading} loadFailed={Boolean(loadError)} onChange={setVerifyAfterImport} />
     <ProviderSettings />
     <AgentSettings />
     <section className="panel settings-panel">

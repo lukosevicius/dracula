@@ -52,9 +52,10 @@ export function createAdmin(pool: Pool, token: string) {
       await pool.execute('DELETE FROM seeker_saved_events WHERE event_id=?',[id]);
     },
     async seekerSettings() {
-      const [rows]=await pool.execute<RowDataPacket[]>('SELECT setting_key,setting_value FROM seeker_settings ORDER BY setting_key');
+      // mysql2 can decode JSON columns before returning them. Select text so strings are parsed once.
+      const [rows]=await pool.execute<RowDataPacket[]>('SELECT setting_key,CAST(setting_value AS CHAR) AS setting_json FROM seeker_settings ORDER BY setting_key');
       const settings:Record<string,unknown>={};
-      for(const row of rows){try{settings[String(row.setting_key)]=typeof row.setting_value==='string'?JSON.parse(row.setting_value):row.setting_value;}catch{throw error(500,'A saved Seeker setting is invalid.');}}
+      for (const row of rows) settings[String(row.setting_key)] = JSON.parse(row.setting_json);
       return settings;
     },
     async saveSeekerSetting(key: string, value: unknown) {
