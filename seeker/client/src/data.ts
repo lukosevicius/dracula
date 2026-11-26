@@ -51,7 +51,7 @@ export type Job = {
   started_at: string;
 };
 
-export const labels: Record<ReviewStatus, string> = { music: 'Music', not_music: 'Not music', unsure: 'Unsure' };
+export const labels: Record<ReviewStatus, string> = { music: 'Music', festival: 'Festival', other: 'Other', unsure: 'Unsure' };
 
 export const sourceNames: Record<string, string> = { avilys: 'Avilys', 'vilnius-events': 'Vilnius Events', musicbrainz: 'MusicBrainz' };
 

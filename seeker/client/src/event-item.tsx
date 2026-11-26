@@ -23,7 +23,8 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, pendi
   const assistantPending = !!row.assistant_reviewed_at && !row.assistant_confirmed_at;
   const date = row.event_date ? formatDate(row.event_date) : 'Date unknown';
   const past = !!row.event_date && (row.event_end_date || row.event_date) < today;
-  const time = row.event_time?.trim().slice(0, 5);
+  const start = row.event_time?.trim().slice(0, 5), end = row.event_end_time?.trim().slice(0, 5);
+  const time = start && end ? `${start}–${end}` : start;
   const price = priceInfo(row);
   const scorePending = pendingEdit?.interest_score !== undefined;
   const reviewPending = pendingEdit?.review_status !== undefined;

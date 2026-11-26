@@ -209,6 +209,7 @@ test('verification fills a missing time, publishes clean music, and records the 
         date.endsWith('02')
           ? corrected ? result('event_time','20:00','20:00','confirmed') : result('event_time','20:00','Koncertas prasidės 20:00','attention')
           : result('event_time','','','unknown'),
+        // Older rules still say not_music; it is stored as the other event type.
         result('review_status',other?'not_music':'music',other?'Keramikos dirbtuvės':'Koncertas')];
       if (choice.includes('PETUNIJOS AKUSTINIS')) {
         findings.push(
@@ -232,7 +233,7 @@ test('verification fills a missing time, publishes clean music, and records the 
     for (let i=0;i<3;i++) assert.equal(await worker(),true);
     const rows = db.prepare('SELECT id,event_time,review_status,publication_status,verification_status,needs_attention FROM events ORDER BY id').all();
     assert.deepEqual(rows.map(row=>Object.values(row)), [
-      [1,'19:00','music','live','verified',0], [2,null,'music','draft','verified',1], [3,'19:00','not_music','draft','verified',0],
+      [1,'19:00','music','live','verified',0], [2,null,'music','draft','verified',1], [3,'19:00','other','draft','verified',0],
     ]);
     const finding = db.prepare("SELECT id FROM verification_findings WHERE event_id=2 AND status='open'").get()!;
     const conflictingTime = db.prepare('SELECT finding FROM verification_findings WHERE id=?').get(finding.id)!;

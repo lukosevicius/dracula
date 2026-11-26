@@ -1,4 +1,5 @@
-export type ReviewStatus = 'music' | 'not_music' | 'unsure';
+/** Event type. Music and festivals are shown in Dracula. */
+export type ReviewStatus = 'music' | 'festival' | 'other' | 'unsure';
 export type ArtistDecision = 'accepted' | 'dismissed' | 'remove';
 export type DateFilter = 'upcoming' | 'today' | 'tomorrow' | 'weekend' | 'custom' | 'all' | 'past' | 'unknown';
 
@@ -6,6 +7,7 @@ export interface EventDetails {
   event_date: string | null;
   event_end_date: string | null;
   event_time: string | null;
+  event_end_time?: string | null;
   venue: string | null;
   ticket_url: string | null;
 }

@@ -45,7 +45,7 @@ const navigation = [
     { path: '/all-events.html', name: 'All', icon: 'calendar' },
     { path: '/needs-attention.html', name: 'Needs attention', icon: 'filter' },
     { path: '/saved-events.html', name: 'Saved', icon: 'save' },
-    { path: '/not-music.html', name: 'Not music', icon: 'noMusic' },
+    { path: '/not-music.html', name: 'Other events', icon: 'noMusic' },
     { path: '/avilys.html', name: 'Avilys', icon: 'avilys' },
     { path: '/vilnius-events.html', name: 'Vilnius Events', icon: 'pin' },
     { path: '/possible-duplicates.html', name: 'Possible duplicates', icon: 'search' },

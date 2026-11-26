@@ -9,14 +9,14 @@ export const verificationLabels = {
 const fieldLabels: Record<string, string> = {
   title: 'Title', description: 'Description', event_date: 'Date', event_end_date: 'End date', event_time: 'Time', venue: 'Venue', city: 'City',
   ticket_url: 'Ticket link', about_url: 'Original event link', source_url: 'Source link', price_text: 'Price', price_type: 'Price type',
-  artists: 'Performers', publication_status: 'Publication', review_status: 'Music classification', duplicate: 'Possible duplicate', cancellation: 'Event status', image: 'Image', event: 'Event',
+  artists: 'Performers', publication_status: 'Publication', review_status: 'Event type', duplicate: 'Possible duplicate', cancellation: 'Event status', image: 'Image', event: 'Event',
 };
 const editable = new Set(['title', 'description', 'event_date', 'event_end_date', 'event_time', 'venue', 'city', 'ticket_url', 'about_url', 'price_type', 'price_text', 'artists', 'review_status']);
 const historyLabels: Record<string, string> = {
-  imported: 'Imported', source_refreshed: 'Source refreshed', source_attached: 'Another source listing added', merged: 'Merged duplicate event', details_refreshed: 'Source details refreshed', verified: 'AI verification completed',
+  imported: 'Imported', source_refreshed: 'Source refreshed', source_attached: 'Another source listing added', merged: 'Merged duplicate event', source_removed: 'Source listing removed', details_refreshed: 'Source details refreshed', verified: 'AI verification completed',
   verification_failed: 'Verification failed', verification_skipped: 'Verification skipped', published: 'Published in Dracula', unpublished: 'Unpublished from Dracula',
   publication_confirmed: 'Publication status confirmed', publication_migrated: 'Existing public event carried forward',
-  manual_edit: 'Event edited', price_changed: 'Price changed', artist_changed: 'Artist decision changed', classification_changed: 'Music classification changed',
+  manual_edit: 'Event edited', price_changed: 'Price changed', artist_changed: 'Artist decision changed', classification_changed: 'Event type changed',
   finding_approved: 'Finding approved', finding_dismissed: 'Finding dismissed', edit_proposed: 'Edit proposed', assistant_review_confirmed: 'Assistant review checked',
 };
 

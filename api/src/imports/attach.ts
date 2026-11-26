@@ -3,7 +3,7 @@ import { diff, history, jsonValue, snapshot, type Snapshot } from '../verificati
 import { findImportMatch } from '../events/duplicates.js';
 import { mergeEventsIn } from '../events/merge.js';
 
-export type SourceField = 'event_date' | 'event_end_date' | 'event_time' | 'venue' | 'ticket_url' | 'city';
+export type SourceField = 'event_date' | 'event_end_date' | 'event_time' | 'event_end_time' | 'venue' | 'ticket_url' | 'city';
 
 function manualFields(event: RowDataPacket): string[] {
   try {
@@ -11,7 +11,7 @@ function manualFields(event: RowDataPacket): string[] {
     return Array.isArray(value) ? value.filter((field): field is string => typeof field === 'string') : [];
   } catch {
     // Unreadable protection data must not unlock any field.
-    return ['event_date', 'event_end_date', 'event_time', 'venue', 'ticket_url', 'city', 'title'];
+    return ['event_date', 'event_end_date', 'event_time', 'event_end_time', 'venue', 'ticket_url', 'city', 'title'];
   }
 }
 

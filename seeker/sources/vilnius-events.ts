@@ -89,7 +89,7 @@ export function createVilniusEvents(db: DatabaseSync, userAgent: string, dataDir
   function updateEvent(id: number, input: Partial<EventDetails> & {review_status: ReviewStatus}) {
     const existing=Number.isSafeInteger(id) ? db.prepare('SELECT * FROM vilnius_events WHERE source_id=?').get(id) : null;
     if (!existing) throw Object.assign(new Error('Event not found.'),{status:404});
-    if (!['music','not_music','unsure'].includes(input.review_status)) throw Object.assign(new Error('Invalid review status.'),{status:400});
+    if (!['music','festival','other','unsure'].includes(input.review_status)) throw Object.assign(new Error('Invalid review status.'),{status:400});
     const date=input.event_date || null, end=input.event_end_date || null, time=input.event_time || null, venue=input.venue?.trim() || null, ticket=input.ticket_url?.trim() || null;
     if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`)) || new Date(`${date}T00:00:00Z`).toISOString().slice(0,10)!==date)) throw Object.assign(new Error('Invalid date.'),{status:400});
     if (end && (!date || !/^\d{4}-\d{2}-\d{2}$/.test(end) || Number.isNaN(Date.parse(`${end}T00:00:00Z`)) || new Date(`${end}T00:00:00Z`).toISOString().slice(0,10)!==end || end<date)) throw Object.assign(new Error('Invalid end date.'),{status:400});
@@ -101,7 +101,7 @@ export function createVilniusEvents(db: DatabaseSync, userAgent: string, dataDir
     db.prepare('UPDATE vilnius_events SET event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=?,review_status=?,manual_fields=?,details_manual=? WHERE source_id=?').run(...values,input.review_status,JSON.stringify([...locked]),locked.size?1:0,id);
   }
   function reviewEvent(id: number, status: ReviewStatus) {
-    if (!Number.isSafeInteger(id) || !['music','not_music','unsure'].includes(status)) throw Object.assign(new Error('Invalid event or review status.'),{status:400});
+    if (!Number.isSafeInteger(id) || !['music','festival','other','unsure'].includes(status)) throw Object.assign(new Error('Invalid event or review status.'),{status:400});
     if (!db.prepare('UPDATE vilnius_events SET review_status=? WHERE source_id=?').run(status,id).changes) throw Object.assign(new Error('Event not found.'),{status:404});
   }
   function reviewArtist(id: number, mbid: string, decision: ArtistDecision) {

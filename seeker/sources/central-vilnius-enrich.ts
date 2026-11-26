@@ -24,7 +24,7 @@ export async function runCentralEnrichment(api:Api,action:'details'|'refresh-det
         const date=page.ambiguous_dates?null:page.event_date||content.event_date;
         const time=page.event_time||(!page.ambiguous_dates&&(!page.event_date||page.event_date===content.event_date)?content.event_time:null);
         const price=extractEventPrice(html);
-        await api.enrichEvent(event.event_id,{details:{event_date:date,event_end_date:page.event_end_date,event_time:time,venue:page.venue||content.venue,ticket_url:page.ticket_url||content.ticket_url},about_url:page.about_url,...price,expected_source_url:event.source_url,expected_content_html:event.content_html});
+        await api.enrichEvent(event.event_id,{details:{event_date:date,event_end_date:page.event_end_date,event_time:time,event_end_time:page.event_end_time,venue:page.venue||content.venue,ticket_url:page.ticket_url||content.ticket_url},about_url:page.about_url,...price,expected_source_url:event.source_url,expected_content_html:event.content_html});
         checked++;if(page.event_date||page.venue||page.ticket_url||page.about_url)enriched++;
       }
       after=event.event_id;progress({fetched:checked+failed,added:enriched,updated:failed});

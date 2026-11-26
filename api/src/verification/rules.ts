@@ -1,4 +1,5 @@
 import { descriptionText } from '../catalogue/description.js';
+import { eventTypes } from '../events/types.js';
 import { fail, jsonValue, type Snapshot } from './history.js';
 
 const fields = ['title', 'event_date', 'event_end_date', 'event_time', 'venue', 'city', 'price_type', 'price_text', 'ticket_url', 'about_url', 'source_url', 'artists', 'image', 'review_status', 'cancellation', 'duplicate'] as const;
@@ -80,7 +81,8 @@ export function parseFindings(value: unknown, evidence: string): Finding[] {
     if (!item || !fields.includes(item.field) || !dispositions.includes(item.disposition) ||
         typeof item.proposed !== 'string' || typeof item.evidence !== 'string' || typeof item.reason !== 'string' ||
         item.proposed.length > 2048 || item.evidence.length > 500 || !item.reason.trim() || item.reason.length > 500) throw fail(502, 'The model returned an invalid field result.');
-    const finding: Finding = { field: item.field, disposition: item.disposition, proposed: item.proposed.trim(), evidence: item.evidence.trim(), reason: item.reason.trim() };
+    const proposed = item.field === 'review_status' && item.proposed.trim() === 'not_music' ? 'other' : item.proposed.trim();
+    const finding: Finding = { field: item.field, disposition: item.disposition, proposed, evidence: item.evidence.trim(), reason: item.reason.trim() };
     if (finding.disposition === 'unknown') return { ...finding, proposed: '', evidence: '' };
     if (!finding.evidence || !normalizeEvidence(evidence).includes(normalizeEvidence(finding.evidence))) {
       return { ...finding, disposition: 'unknown', proposed: '', evidence: '', reason: 'The finding lacked a supporting quote.' };
@@ -133,7 +135,7 @@ export function validField(field: Field | Editable, value: string) {
     return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(+day) && day.toISOString().slice(0, 10) === value;
   }
   if (field === 'event_time') return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
-  if (field === 'review_status') return ['music', 'not_music', 'unsure'].includes(value);
+  if (field === 'review_status') return (eventTypes as readonly string[]).includes(value);
   if (field === 'price_type') return ['free', 'paid', 'unknown'].includes(value);
   if (field === 'ticket_url' || field === 'about_url') {
     try {

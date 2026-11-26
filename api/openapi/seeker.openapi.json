@@ -98,9 +98,11 @@
               "type": "string",
               "enum": [
                 "music",
-                "not_music",
+                "festival",
+                "other",
                 "unsure"
-              ]
+              ],
+              "description": "Event type. not_music is accepted as other."
             }
           },
           {
@@ -874,9 +876,11 @@
           },
           "review_status": {
             "type": "string",
+            "description": "Event type. Music and festival events can be published in Dracula.",
             "enum": [
               "music",
-              "not_music",
+              "festival",
+              "other",
               "unsure"
             ]
           },

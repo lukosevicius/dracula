@@ -4,7 +4,7 @@ import {createHash,timingSafeEqual} from 'node:crypto';
 import type {Pool, ResultSetHeader, RowDataPacket} from 'mysql2/promise';
 type DetailField = 'event_date' | 'event_end_date' | 'event_time' | 'venue' | 'ticket_url';
 type Details = Partial<Record<DetailField, string | null>>;
-interface EnrichmentInput { details: Details; price_type: string; price_text?: string | null; about_url?: string | null; expected_source_url: string; expected_content_html: string; job?: { id: number; owner: string } }
+interface EnrichmentInput { details: Details & { event_end_time?: string | null }; price_type: string; price_text?: string | null; about_url?: string | null; expected_source_url: string; expected_content_html: string; job?: { id: number; owner: string } }
 interface Lease extends RowDataPacket { job_id: number; owner_hash: string; expires_at: number | string }
 const fail=(status: number,message: string)=>Object.assign(new Error(message),{status});
 const fields: DetailField[]=['event_date','event_end_date','event_time','venue','ticket_url'];
@@ -13,7 +13,7 @@ const validDate=(value: string)=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&!Number.isNa
 export async function enrichEvent(pool: Pool,id: number,data: unknown){
   const input=data as EnrichmentInput;
   if(!Number.isSafeInteger(id)||id<1||!input||!input.details||fields.some(k=>input.details[k]!=null&&typeof input.details[k]!=='string')||!['free','paid','unknown'].includes(input.price_type)||(input.price_text!=null&&(typeof input.price_text!=='string'||input.price_text.length>300)))throw fail(400,'Invalid enrichment.');
-  const d=input.details;if((d.event_date&&!validDate(d.event_date))||(d.event_end_date&&(!d.event_date||!validDate(d.event_end_date)||d.event_end_date<d.event_date))||(d.event_time&&!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(d.event_time))||(d.venue?.length||0)>300||(d.ticket_url?.length||0)>2048)throw fail(400,'Invalid event details.');
+  const d=input.details;if(d.event_end_time!=null&&(typeof d.event_end_time!=='string'||!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(d.event_end_time)))throw fail(400,'Invalid end time.');if((d.event_date&&!validDate(d.event_date))||(d.event_end_date&&(!d.event_date||!validDate(d.event_end_date)||d.event_end_date<d.event_date))||(d.event_time&&!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(d.event_time))||(d.venue?.length||0)>300||(d.ticket_url?.length||0)>2048)throw fail(400,'Invalid event details.');
   for(const value of [d.ticket_url,input.about_url])if(value){try{if(typeof value!=='string'||value.length>2048||!['http:','https:'].includes(new URL(value).protocol))throw Error();}catch{throw fail(400,'Invalid URL.');}}
   if(typeof input.expected_source_url!=='string'||typeof input.expected_content_html!=='string')throw fail(400,'Missing source version.');
   const conn=await pool.getConnection();try{await conn.beginTransaction();try{
@@ -30,8 +30,13 @@ export async function enrichEvent(pool: Pool,id: number,data: unknown){
     await conn.execute('UPDATE vilnius_events SET event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=?,details_checked_at=?,details_version=1 WHERE source_id=?',[...values,now,sourceId]);
     const secondary=Boolean(Number(links[0].is_secondary));
     // A listing that joined an event from another source only fills missing values.
-    if(secondary)await fillFromSource(conn,event,Object.fromEntries(fields.map((field,index)=>[field,values[index]])),now);
-    else await conn.execute('UPDATE events SET event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=?,updated_at=? WHERE id=?',[...values,now,id]);
+    if(secondary)await fillFromSource(conn,event,{...Object.fromEntries(fields.map((field,index)=>[field,values[index]])),event_end_time:d.event_end_time??null},now);
+    else {
+      await conn.execute('UPDATE events SET event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=?,updated_at=? WHERE id=?',[...values,now,id]);
+      // End time lives only on the event; the page value replaces it unless an editor set it.
+      let eventManual: unknown=[];try{eventManual=JSON.parse(event.manual_fields);}catch{eventManual=['event_end_time'];}
+      if(d.event_end_time&&Array.isArray(eventManual)&&!eventManual.includes('event_end_time'))await conn.execute('UPDATE events SET event_end_time=? WHERE id=?',[d.event_end_time,id]);
+    }
     const detailEvidence=JSON.stringify({...d,price_type:input.price_type,price_text:input.price_text??null});
     await conn.execute("UPDATE event_sources SET about_url=?,about_checked_at=?,last_checked_at=?,detail_evidence_json=? WHERE event_id=? AND source_key='vilnius-events'",[input.about_url||null,now,now,detailEvidence,id]);
     const replace=secondary?"manual=0 AND price_type='unknown'":'manual=0';

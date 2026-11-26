@@ -7,7 +7,7 @@ export const startPages = [
   { path: '/avilys.html', label: 'Avilys' },
   { path: '/all-events.html', label: 'All events' },
   { path: '/needs-attention.html', label: 'Needs attention' },
-  { path: '/not-music.html', label: 'Not music' },
+  { path: '/not-music.html', label: 'Other events' },
   { path: '/possible-duplicates.html', label: 'Possible duplicates' },
   { path: '/artists.html', label: 'Artists' },
   { path: '/saved-events.html', label: 'Saved' },

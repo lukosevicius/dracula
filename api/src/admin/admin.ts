@@ -1,11 +1,12 @@
 import type {Pool, PoolConnection, RowDataPacket, ResultSetHeader} from 'mysql2/promise';
+import { eventTypes, normalizeEventType } from '../events/types.js';
 type Field = 'event_date' | 'event_end_date' | 'event_time' | 'venue' | 'ticket_url';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { normalizeEventSearch } from './event-search.js';
 import { vilniusToday } from '../catalogue/catalogue.service.js';
 import { history, recordChange, snapshot } from '../verification/history.js';
 
-const statuses = new Set(['music', 'not_music', 'unsure']);
+const statuses = new Set<string>(eventTypes);
 const decisions = new Set(['accepted', 'dismissed', 'remove']);
 const priceTypes = new Set(['free', 'paid', 'unknown']);
 const detailFields: Field[] = ['event_date','event_end_date','event_time','venue','ticket_url'];
@@ -134,12 +135,12 @@ export function createAdmin(pool: Pool, token: string) {
     },
     async listEvents(query: URLSearchParams) {
       const page=Number(query.get('page') || 1), limit=Number(query.get('limit') || 25), sort=query.get('sort') || 'date';
-      const review=query.get('review') || 'all', when=query.get('when') || 'upcoming', source=query.get('source') || 'all';
+      const review=query.get('review')==='not_music'?'other':query.get('review') || 'all', when=query.get('when') || 'upcoming', source=query.get('source') || 'all';
       const readiness=query.get('readiness') || 'all', assistantReview=query.get('assistantReview') || 'all', price=query.get('price') || 'all', time=query.get('time') || 'all';
       const publication=query.get('publication') || 'all', verification=query.get('verification') || 'all', needsAttention=query.get('needs_attention') || 'all';
       if(!['all','draft','live'].includes(publication) || !['all','not_verified','queued','verifying','verified','stale','failed'].includes(verification) || !['all','yes','no'].includes(needsAttention)) throw error(400,'Invalid verification or publication filter.');
       const from=query.get('from'),to=query.get('to'),today=vilniusToday(),search=normalizeEventSearch((query.get('search') || '').slice(0,200));
-      if(!Number.isSafeInteger(page)||page<1||page>1000000||!Number.isSafeInteger(limit)||limit<1||limit>100 || !['all','music','not_music','unsure'].includes(review) || !['all','upcoming','past','unknown','today','tomorrow','weekend','custom'].includes(when) || !['all','ready','attention'].includes(readiness) || !['all','pending'].includes(assistantReview) || !['all','free','paid','unknown'].includes(price) || !['all','known','unknown'].includes(time) || !['date','score-asc','score-desc'].includes(sort) || source.length>191) throw error(400,'Invalid filters.');
+      if(!Number.isSafeInteger(page)||page<1||page>1000000||!Number.isSafeInteger(limit)||limit<1||limit>100 || !['all',...eventTypes].includes(review) || !['all','upcoming','past','unknown','today','tomorrow','weekend','custom'].includes(when) || !['all','ready','attention'].includes(readiness) || !['all','pending'].includes(assistantReview) || !['all','free','paid','unknown'].includes(price) || !['all','known','unknown'].includes(time) || !['date','score-asc','score-desc'].includes(sort) || source.length>191) throw error(400,'Invalid filters.');
       if(['today','tomorrow','weekend','custom'].includes(when) && (!from || !to || !validDate(from) || !validDate(to) || to<from)) throw error(400,'Choose a valid date range.');
       const clauses: string[]=[],params: (string | number)[]=[];
       const ready="e.publication_status='live' AND (NULLIF(e.event_date,'') IS NULL OR COALESCE(NULLIF(e.event_end_date,''),e.event_date)>=?)";
@@ -173,7 +174,7 @@ export function createAdmin(pool: Pool, token: string) {
           }
           const [totals]=await conn.execute<RowDataPacket[]>(`SELECT COUNT(*) AS count FROM events e ${where}`,params);
           const [events]=await conn.execute<RowDataPacket[]>(`SELECT e.*,(SELECT JSON_UNQUOTE(JSON_EXTRACT(f.finding,'$.reason')) FROM verification_findings f WHERE f.event_id=e.id AND f.status='open' ORDER BY f.id LIMIT 1) AS attention_reason,s.source_id,s.source_key,s.source_url,COALESCE(e.about_url_override,s.about_url) AS about_url,s.last_checked_at AS details_checked_at,ar.reviewed_at AS assistant_reviewed_at,ar.confirmed_at AS assistant_confirmed_at,ar.notes AS assistant_notes,ep.price_text,COALESCE(ep.price_type,'unknown') AS price_type FROM events e LEFT JOIN event_prices ep ON ep.event_id=e.id LEFT JOIN assistant_event_reviews ar ON ar.event_id=e.id JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY id LIMIT 1) ${where} ORDER BY ${scoreOrder}e.event_date IS NULL,e.event_date ${order},e.event_time IS NULL,e.event_time ${order},e.id LIMIT ? OFFSET ?`,[...params,limit,search?0:(page-1)*limit]);
-          const [counts]=await conn.execute<RowDataPacket[]>("SELECT COUNT(*) AS total, COALESCE(SUM(review_status='music'),0) AS music, COALESCE(SUM(review_status='not_music'),0) AS not_music, COALESCE(SUM(review_status='unsure'),0) AS unsure, COALESCE(SUM(event_date IS NULL),0) AS unknown, COALESCE(SUM(needs_attention=1),0) AS attention FROM events",[]);
+          const [counts]=await conn.execute<RowDataPacket[]>("SELECT COUNT(*) AS total, COALESCE(SUM(review_status='music'),0) AS music, COALESCE(SUM(review_status='festival'),0) AS festival, COALESCE(SUM(review_status='other'),0) AS other, COALESCE(SUM(review_status='unsure'),0) AS unsure, COALESCE(SUM(event_date IS NULL),0) AS unknown, COALESCE(SUM(needs_attention=1),0) AS attention FROM events",[]);
           const [readyRows]=await conn.execute<RowDataPacket[]>(`SELECT COUNT(*) AS count FROM events e WHERE ${ready}`,[today]);
           const [states]=await conn.execute<RowDataPacket[]>('SELECT next_offset FROM source_state WHERE source_key=?',['vilnius-events']);
           const [sources]=await conn.execute<RowDataPacket[]>('SELECT DISTINCT source_key FROM event_sources ORDER BY source_key',[]);
@@ -207,7 +208,8 @@ export function createAdmin(pool: Pool, token: string) {
       } finally {conn.release();}
     },
     async review(id: number, data: unknown, actor = 'Seeker editor') {
-      const body = data as Record<string, string>;
+      const body = { ...(data as Record<string, string>) };
+      body.review_status = normalizeEventType(body.review_status) ?? body.review_status;
       if (!statuses.has(body?.review_status)) throw error(400, 'Invalid review status.');
       await withEvent(id, async (conn, sourceId) => {
         if(sourceId) await conn.execute('UPDATE vilnius_events SET review_status=? WHERE source_id=?', [body.review_status, sourceId]);
@@ -215,12 +217,17 @@ export function createAdmin(pool: Pool, token: string) {
       }, actor, 'classification_changed');
     },
     async details(id: number, data: unknown, actor = 'Seeker editor') {
-      const body = data as Record<string, string>;
+      const body = { ...(data as Record<string, string>) };
+      if (body && typeof body === 'object') body.review_status = normalizeEventType(body.review_status) ?? body.review_status;
       if (!body || typeof body !== 'object' || !statuses.has(body.review_status) || detailFields.some(field => body[field] != null && typeof body[field] !== 'string')) throw error(400, 'Invalid event details.');
       const [date,end,time,venue,ticket] = detailFields.map(field => body[field]?.trim() || null);
       if (date && !validDate(date)) throw error(400, 'Invalid date.');
       if (end && (!date || !validDate(end) || end < date)) throw error(400, 'Invalid end date.');
       if (time && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) throw error(400, 'Invalid time.');
+      // Callers that do not send an end time leave it unchanged.
+      if (body.event_end_time != null && typeof body.event_end_time !== 'string') throw error(400, 'Invalid end time.');
+      const endTime = 'event_end_time' in body ? body.event_end_time?.trim() || null : undefined;
+      if (endTime && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(endTime)) throw error(400, 'Invalid end time.');
       if ((venue?.length || 0) > 300 || (ticket?.length || 0) > 2048) throw error(400, 'Field is too long.');
       if (ticket) { try { if (!['http:','https:'].includes(new URL(ticket).protocol)) throw new Error(); } catch { throw error(400,'Invalid ticket URL.'); } }
       await withEvent(id, async (conn, sourceId, existing) => {
@@ -228,6 +235,10 @@ export function createAdmin(pool: Pool, token: string) {
         if (!Array.isArray(parsed) || !parsed.every((value: unknown)=>typeof value==='string')) throw error(409, 'Event manual fields are inconsistent.');
         const locked=new Set(parsed); const values=[date,end,time,venue,ticket];
         detailFields.forEach((field,index)=>{ if (values[index] !== existing[field]) locked.add(field); });
+        if (endTime !== undefined) {
+          const [[current]] = await conn.execute<RowDataPacket[]>('SELECT event_end_time FROM events WHERE id=?', [id]);
+          if ((current?.event_end_time ?? null) !== endTime) { locked.add('event_end_time'); await conn.execute('UPDATE events SET event_end_time=? WHERE id=?', [endTime, id]); }
+        }
         const fields=JSON.stringify([...locked]);
         if(sourceId) await conn.execute('UPDATE vilnius_events SET event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=?,review_status=?,manual_fields=?,details_manual=? WHERE source_id=?', [...values,body.review_status,fields,locked.size?1:0,sourceId]);
         await conn.execute('UPDATE events SET event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=?,classification_manual=IF(review_status<>?,1,classification_manual),review_status=?,manual_fields=? WHERE id=?', [...values,body.review_status,body.review_status,fields,id]);

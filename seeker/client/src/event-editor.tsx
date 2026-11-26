@@ -16,6 +16,7 @@ const detailsFields = [
   ['event_date', 'Event date', 'date'],
   ['event_end_date', 'Calendar end date', 'date'],
   ['event_time', 'Time', 'time'],
+  ['event_end_time', 'End time', 'time'],
   ['venue', 'Venue', 'text'],
   ['ticket_url', 'Ticket URL', 'url'],
 ] as const;

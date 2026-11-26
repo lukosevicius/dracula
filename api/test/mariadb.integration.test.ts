@@ -239,7 +239,7 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     assert.equal((await fetch(`${root}/v1/events/${flagged}`)).status,404);
     assert.equal((await (await workflow(`/events/${flagged}/verification`)).json()).log[0].action,'unpublished');
     const notMusic=await (await workflow(`/events/${workshop}`)).json();
-    assert.equal(notMusic.event.review_status,'not_music');
+    assert.equal(notMusic.event.review_status,'other');
     assert.equal(notMusic.event.publication_status,'draft');
     const usageResponse = await workflow('/verification/usage?period=month');
     assert.equal(usageResponse.status,200);
@@ -291,6 +291,7 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     // Recreate the pre-city, pre-preferences and pre-score schema to exercise migrations.
     await pool.query('DROP TABLE event_redirects,event_duplicate_dismissals');
     await pool.query('ALTER TABLE event_sources DROP COLUMN is_secondary');
+    await pool.query('ALTER TABLE events DROP COLUMN event_end_time');
     await pool.query('DROP TABLE verification_provider_requests,verification_findings,event_verifications,verification_jobs,verification_rule_state,verification_rule_versions,verification_providers,event_history,seeker_agent_keys,seeker_import_requests');
     await pool.query('ALTER TABLE event_sources DROP COLUMN detail_evidence_json');
     await pool.query(`ALTER TABLE events DROP COLUMN city, DROP COLUMN interest_score,
@@ -300,9 +301,10 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
       DROP COLUMN revision, DROP COLUMN verification_status, DROP COLUMN needs_attention`);
     await pool.query('DROP TABLE event_images, seeker_saved_events, seeker_settings');
     await pool.query(`INSERT INTO events(id,title,review_status,manual_fields,created_at,updated_at)
-      VALUES(10001,'Kaunas fixture','unsure','[]','now','now'),(10002,'Unknown city fixture','unsure','[]','now','now');
+      VALUES(10001,'Kaunas fixture','unsure','[]','now','now'),(10002,'Unknown city fixture','unsure','[]','now','now'),(10003,'Workshop fixture','not_music','[]','now','now');
       INSERT INTO event_sources(event_id,source_key,source_id,source_url,content_html,source_data_json)
-      VALUES(10001,'avilys','10001','https://example.com','','{"city":" Kaunas "}'),(10002,'avilys','10002','https://example.com','','{broken');`);
+      VALUES(10001,'avilys','10001','https://example.com','','{"city":" Kaunas "}'),(10002,'avilys','10002','https://example.com','','{broken'),
+        (10003,'avilys','10003','https://example.com','','{"city":"Vilnius","startTime":"2099-12-01T18:00:00Z","endTime":"2099-12-01T21:30:00Z"}');`);
 
     // Exercise the backfill, baseline, idempotence, checksum protection, and a partial DDL failure.
     const migrationDir=await mkdtemp(join(tmpdir(),'dracula-migrations-'));
@@ -316,8 +318,12 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
       await migrate(migrationDb,'check');
       await migrate(migrationDb,'up');
       const rules = await (await workflow('/verification/rules')).json();
-      assert.equal(rules.active.id,2);
+      // Migration 019 rewrites the default classification paragraph as a new version (16 activated version 2).
+      assert.equal(rules.active.id,3);
       assert.match(rules.active.markdown,/Use the advertised general admission price/);
+      assert.match(rules.active.markdown,/# Event type[\s\S]*Use festival for a festival programme/);
+      assert.doesNotMatch(rules.active.markdown,/not_music/);
+      assert.ok(['music','festival','other','unsure'].every(key => rules.actions.some((action: { key: string }) => action.key === key)));
       assert.ok(!rules.actions.some((action: { key: string }) => action.key === 'description'));
       const [[scoreColumn]]=await migrationDb.query<RowDataPacket[]>('SELECT interest_score FROM events WHERE id=1');
       assert.equal(scoreColumn.interest_score,1);
@@ -325,6 +331,9 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
       assert.deepEqual(migrated.map(row=>row.publication_status),['live','draft']);
       const [cities]=await migrationDb.query<RowDataPacket[]>('SELECT city FROM events WHERE id IN (?) ORDER BY id',[[1,avilysEvent.id,10001,10002]]);
       assert.deepEqual(cities.map(row=>row.city),['Vilnius','Vilnius','Kaunas',null]);
+      // Migration 019: Avilys end times are backfilled and "not music" becomes the "other" event type.
+      const [[typed]]=await migrationDb.query<RowDataPacket[]>('SELECT review_status,event_end_time FROM events WHERE id=10003');
+      assert.deepEqual({...typed},{review_status:'other',event_end_time:'21:30'});
 
       // Account identifiers and session hashes must be unique, and account deletion cascades.
       await migrationDb.execute("INSERT INTO users (display_name) VALUES ('Test user'), ('Second user')");
@@ -490,6 +499,37 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
         assert.deepEqual([Number(joinedLater.event_id), Number(joinedLater.is_secondary)], [20009, 1]);
         const [[redirected]] = await pool.execute<RowDataPacket[]>('SELECT event_id FROM event_redirects WHERE old_event_id=?', [created.event_id]);
         assert.equal(Number(redirected.event_id), 20009);
+        // Event types: festival is publishable like music, and the former not_music value is stored as other.
+        const { createAdmin } = await import('../dist/admin/admin.js');
+        const typesAdmin = createAdmin(pool, token);
+        await typesAdmin.review(20001, { review_status: 'festival' });
+        await typesAdmin.review(20005, { review_status: 'not_music' });
+        const [types] = await pool.execute<RowDataPacket[]>('SELECT id,review_status FROM events WHERE id IN (20001,20005) ORDER BY id');
+        assert.deepEqual(types.map(row => row.review_status), ['festival', 'other']);
+        await assert.rejects(typesAdmin.review(20001, { review_status: 'concert' }), { status: 400 });
+        await typesAdmin.details(20005, { review_status: 'music', event_date: '2099-12-12', event_time: '20:30', event_end_time: '22:45', venue: 'Jazz Cellar 11' });
+        const [[ended]] = await pool.execute<RowDataPacket[]>('SELECT event_end_time,manual_fields FROM events WHERE id=20005');
+        assert.equal(ended.event_end_time, '22:45');
+        assert.ok(JSON.parse(ended.manual_fields).includes('event_end_time'));
+        assert.equal((await catalogue.get(20005, '2099-12-01')).event_end_time, '22:45');
+
+        // Removing a listing the source took down: an event with another listing stays, a single-listing event is deleted.
+        const { removeListing } = await import('../dist/events/remove.js');
+        assert.deepEqual(await removeListing(pool, 20001, 'vilnius-events', 'Test'), { event_deleted: false });
+        const [[kept1]] = await pool.execute<RowDataPacket[]>("SELECT COUNT(*) AS n FROM events WHERE id=20001");
+        const [left] = await pool.execute<RowDataPacket[]>('SELECT source_key,is_secondary FROM event_sources WHERE event_id=20001');
+        assert.equal(Number(kept1.n), 1);
+        assert.deepEqual(left.map(row => [row.source_key, Number(row.is_secondary)]), [['avilys', 0]]);
+        const [[legacyGone]] = await pool.execute<RowDataPacket[]>('SELECT COUNT(*) AS n FROM vilnius_events WHERE source_id=7001');
+        assert.equal(Number(legacyGone.n), 0);
+        await addEvent(20010, 'Removed listing', 'Kablys', 'vilnius-events');
+        await pool.execute("INSERT INTO vilnius_events(source_id,title,source_url,content_html,categories_json,first_seen_at,updated_at,details_manual,review_status,details_version,manual_fields) VALUES(20010,'Removed listing','https://example.com','x','[]','now','now',0,'unsure',0,'[]')");
+        await pool.execute("INSERT INTO event_artist_decisions(event_id,artist_mbid,decision) VALUES(20010,?,'accepted')", [mbid]);
+        await pool.execute('INSERT INTO user_saved_events(user_id,event_id) VALUES(?,20010)', [otherId]);
+        assert.deepEqual(await removeListing(pool, 20010, 'vilnius-events', 'Test'), { event_deleted: true });
+        const [[deleted]] = await pool.execute<RowDataPacket[]>('SELECT (SELECT COUNT(*) FROM events WHERE id=20010)+(SELECT COUNT(*) FROM vilnius_events WHERE source_id=20010)+(SELECT COUNT(*) FROM user_saved_events WHERE event_id=20010) AS n');
+        assert.equal(Number(deleted.n), 0);
+        await assert.rejects(removeListing(pool, 20004, 'vilnius-events', 'Test'), { status: 404 });
         await pool.query('DELETE FROM user_saved_events'); await pool.query('DELETE FROM seeker_saved_events'); await pool.query('DELETE FROM event_prices WHERE event_id>=20001');
         await pool.query('DELETE FROM event_artist_decisions WHERE event_id>=20001');
         await pool.query('DELETE FROM event_redirects'); await pool.query('DELETE FROM event_sources WHERE event_id>=20001'); await pool.query('DELETE FROM vilnius_events WHERE source_id IN (7001,7002)'); await pool.query('DELETE FROM events WHERE id>=20001');

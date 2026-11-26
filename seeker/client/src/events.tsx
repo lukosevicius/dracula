@@ -49,7 +49,7 @@ function dateRange(filter: DateFilter, from: string, to: string, today: string) 
 }
 
 export default function EventsPage({ avilys = false, all = false, queue }: { avilys?: boolean; all?: boolean; queue?: 'attention' | 'not-music' }) {
-  const name = queue === 'attention' ? 'Needs attention' : queue === 'not-music' ? 'Not music' : all ? 'All events' : avilys ? 'Avilys' : 'Vilnius Events';
+  const name = queue === 'attention' ? 'Needs attention' : queue === 'not-music' ? 'Other events' : all ? 'All events' : avilys ? 'Avilys' : 'Vilnius Events';
   const source = all ? 'all' : avilys ? 'avilys' : 'vilnius-events';
   const defaultSource = source;
   const [data, setData] = useState<EventPage | null>(null);
@@ -59,7 +59,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
   const [sort, setSort] = useState<'date' | 'score-asc' | 'score-desc'>('date');
   const defaultWhen = queue ? 'all' : 'newest';
   const [when, setWhen] = useState<EventDateFilter>(defaultWhen);
-  const [review, setReview] = useState(queue === 'not-music' ? 'not_music' : 'all');
+  const [review, setReview] = useState(queue === 'not-music' ? 'other' : 'all');
   const [publication, setPublication] = useState('all');
   const [verification, setVerification] = useState('all');
   const [verifyAfterImport, setVerifyAfterImport] = useState<boolean | null>(null);
@@ -174,7 +174,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
     setPrice('all');
     setTime('all');
     setSort('date');
-    setReview(queue === 'not-music' ? 'not_music' : 'all');
+    setReview(queue === 'not-music' ? 'other' : 'all');
     setPublication('all');
     setVerification('all');
     setReadiness('all');
@@ -320,7 +320,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
   return (
     <>
       {rowEdits.feedback}
-      <PageHeading title={name} description={queue === 'attention' ? 'Review findings before publishing drafts.' : queue === 'not-music' ? 'Browse events classified as Not music.' : all ? 'Review events from all sources.' : avilys ? 'Import and review Vilnius music events from Avilys.' : 'Review imported events and manage the Go Vilnius feed.'} icon={avilys ? 'avilys' : 'calendar'} href={all ? undefined : avilys ? 'https://avilys.app/paieska' : 'https://www.vilnius-events.lt/'} linkLabel={`Open ${name}`} tools={!all} />
+      <PageHeading title={name} description={queue === 'attention' ? 'Review findings before publishing drafts.' : queue === 'not-music' ? 'Browse events whose type is Other.' : all ? 'Review events from all sources.' : avilys ? 'Import and review Vilnius music events from Avilys.' : 'Review imported events and manage the Go Vilnius feed.'} icon={avilys ? 'avilys' : 'calendar'} href={all ? undefined : avilys ? 'https://avilys.app/paieska' : 'https://www.vilnius-events.lt/'} linkLabel={`Open ${name}`} tools={!all} />
       {all && !queue && <Metrics items={[
         { label: 'Events across all sources', value: data?.counts.total.toLocaleString() ?? '—', icon: 'calendar' },
         { label: 'Live and eligible for the feed', value: data?.readyCount.toLocaleString() ?? '—', icon: 'check' },
@@ -342,8 +342,8 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
                 <label className="field">Time <select value={time} onChange={event => updateFilters(setTime, event.target.value)}>
                   <option value="all">All times</option><option value="known">Time known</option><option value="unknown">Time unknown</option>
                 </select></label>
-                {queue !== 'not-music' && <label className="field">Music classification <select value={review} onChange={event => updateFilters(setReview, event.target.value)}>
-                  <option value="all">All statuses</option>{reviews.map(status => <option key={status} value={status}>{labels[status]}</option>)}
+                {queue !== 'not-music' && <label className="field">Type <select value={review} onChange={event => updateFilters(setReview, event.target.value)}>
+                  <option value="all">All types</option>{reviews.map(status => <option key={status} value={status}>{labels[status]}</option>)}
                 </select></label>}
                 <label className="field">Sort by <select value={sort} onChange={event => {
                   const value = event.target.value as typeof sort;

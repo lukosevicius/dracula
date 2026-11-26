@@ -1,4 +1,5 @@
 import { vilniusToday } from '../catalogue/catalogue.service.js';
+import { publishableTypes } from '../events/types.js';
 import { normalizeArtist, quotedArtistName, type ArtistCandidate } from './artists.js';
 import { canAutoFill, editable, normalizeEvidence, validField, type Editable, type Finding } from './rules.js';
 import type { RuleAction, Rules } from './rule-settings.js';
@@ -178,7 +179,7 @@ export function planVerification(input: VerificationInput, findings: Finding[], 
       normalizeEvidence(proposed) !== normalizeEvidence(other.proposed) && (other.disposition === 'suggestion' || other.disposition === 'confirmed'));
     const draft = input.publication.status === 'draft';
     const classify = field === 'review_status' && !input.classificationManual &&
-      (missing || current === 'unsure' ? ['music', 'not_music'].includes(proposed) : draft && proposed === 'unsure');
+      (missing || current === 'unsure' ? ['music', 'festival', 'other'].includes(proposed) : draft && proposed === 'unsure');
     const pricing = field === 'price_text' || field === 'price_type';
     if (missing && (manual.has(field) || (pricing && input.priceManual))) {
       outcome('kept', { ...entry, reason: 'This field is locked by a manual edit.' });
@@ -211,15 +212,15 @@ export function planVerification(input: VerificationInput, findings: Finding[], 
   }
   if (!updated.event_date && !fields.event_date) flag({ field: 'event_date', disposition: 'attention', current: null, proposed: '', evidence: '', reason: 'The event date is missing.' });
   if (updated.review_status === 'unsure' && !attention.some(finding => finding.field === 'review_status') && fields.review_status !== 'disabled') {
-    flag({ field: 'review_status', disposition: 'attention', current: 'unsure', proposed: '', evidence: '', reason: 'Music classification is unclear.' });
+    flag({ field: 'review_status', disposition: 'attention', current: 'unsure', proposed: '', evidence: '', reason: 'The event type is unclear.' });
   }
 
   let publish = false;
   if (allowPublish && !blockedPublication && !attention.length && !input.publication.manual &&
-      !input.publication.reviewRequired && input.publication.status === 'draft' && updated.review_status === 'music' &&
+      !input.publication.reviewRequired && input.publication.status === 'draft' && publishableTypes.includes(String(updated.review_status)) &&
       typeof updated.event_date === 'string' && String(updated.event_end_date ?? updated.event_date) >= vilniusToday()) {
     const entry: FindingDetails = { field: 'publication_status', disposition: 'suggestion', current: 'draft', proposed: 'live',
-      evidence: '', reason: 'The event is upcoming, classified as music and has no open findings.' };
+      evidence: '', reason: `The event is upcoming, its type is ${String(updated.review_status)} and it has no open findings.` };
     publish = rules.permissions.publication_status === 'auto' && !input.dismissed.some(old => replacedFinding(old, entry));
     if (publish) outcome('applied', entry);
     else flag(entry);

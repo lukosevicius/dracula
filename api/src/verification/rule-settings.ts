@@ -15,9 +15,10 @@ const actions = {
   price_type: ['Set price type', 'auto'],
   price_text: ['Set price', 'auto'],
   artists: ['Link a catalogue artist', 'auto'],
-  music: ['Mark as Music', 'auto'],
-  not_music: ['Mark as Not music', 'auto'],
-  unsure: ['Set music classification to Unsure', 'review'],
+  music: ['Set type to Music', 'auto'],
+  festival: ['Set type to Festival', 'auto'],
+  other: ['Set type to Other', 'auto'],
+  unsure: ['Set type to Unsure', 'review'],
   publication_status: ['Publish in Dracula', 'auto'],
 } satisfies Record<string, [string, Permission]>;
 
@@ -30,7 +31,9 @@ function storedRules(value: unknown): Rules {
   const { markdown, permissions: selection } = jsonValue<Rules>(value);
   return {
     markdown,
-    permissions: Object.fromEntries(actionEntries.map(([key, [, fallback]]) => [key, selection[key] ?? fallback])) as Rules['permissions'],
+    // Versions saved before event types used not_music; festival follows music until it is set.
+    permissions: Object.fromEntries(actionEntries.map(([key, [, fallback]]) => [key,
+      selection[key] ?? (key === 'other' ? (selection as Record<string, Permission>).not_music : key === 'festival' ? selection.music : undefined) ?? fallback])) as Rules['permissions'],
   };
 }
 

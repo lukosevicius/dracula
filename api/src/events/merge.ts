@@ -1,4 +1,5 @@
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
+import { eventTypeLabels } from './types.js';
 import { fail, jsonValue, recordChange, snapshot, transaction } from '../verification/history.js';
 import { duplicateTitle, isAddress, listDuplicates, venuesMatch } from './duplicates.js';
 
@@ -6,13 +7,13 @@ type Value = string | number | null;
 const blank = (value: unknown) => value == null || (typeof value === 'string' && !value.trim());
 const sourceNames: Record<string, string> = { 'vilnius-events': 'Vilnius Events', avilys: 'Avilys' };
 const priceLabels: Record<string, string> = { free: 'Free', paid: 'Paid', unknown: 'Unknown' };
-const classificationLabels: Record<string, string> = { music: 'Music', not_music: 'Not music', unsure: 'Unsure' };
+const classificationLabels: Record<string, string> = eventTypeLabels;
 
-export type MergeField = 'title' | 'event_time' | 'event_end_date' | 'venue' | 'city' | 'ticket_url' | 'price' | 'review_status';
+export type MergeField = 'title' | 'event_time' | 'event_end_time' | 'event_end_date' | 'venue' | 'city' | 'ticket_url' | 'price' | 'review_status';
 export type Choices = Partial<Record<MergeField, number>>;
-const mergeFields: MergeField[] = ['title', 'event_time', 'event_end_date', 'venue', 'city', 'ticket_url', 'price', 'review_status'];
+const mergeFields: MergeField[] = ['title', 'event_time', 'event_end_time', 'event_end_date', 'venue', 'city', 'ticket_url', 'price', 'review_status'];
 const labels: Record<MergeField, string> = {
-  title: 'Title', event_time: 'Time', event_end_date: 'End date', venue: 'Venue', city: 'City', ticket_url: 'Tickets', price: 'Price', review_status: 'Classification',
+  title: 'Title', event_time: 'Time', event_end_time: 'End time', event_end_date: 'End date', venue: 'Venue', city: 'City', ticket_url: 'Tickets', price: 'Price', review_status: 'Type',
 };
 
 export interface PreviewField { field: MergeField; label: string; kept: string | null; other: string | null; choice: number; conflict: boolean }

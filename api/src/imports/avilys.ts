@@ -55,7 +55,7 @@ export async function importAvilysPage(pool: Pool, data: unknown){
         if(match){
           const event=await lockEvent(conn,match),before=await snapshot(conn,match,event);
           await conn.execute('INSERT INTO event_sources(event_id,source_key,source_id,source_url,content_html,source_data_json,last_checked_at,about_url,is_secondary) VALUES(?,?,?,?,?,?,?,?,TRUE)',[match,'avilys',String(e.id),sourceUrl,description,metadata,now,original]);
-          await fillFromSource(conn,event,{event_time:time(e.startTime),venue,ticket_url:url(e.ticketUrl),city},now);
+          await fillFromSource(conn,event,{event_time:time(e.startTime),event_end_time:time(e.endTime),venue,ticket_url:url(e.ticketUrl),city},now);
           // Only a missing or unknown automatic price takes the Avilys value.
           if(pricing.available)await conn.execute(`INSERT INTO event_prices(event_id,price_text,price_type,manual,checked_at) VALUES(?,?,?,0,?)
             ON DUPLICATE KEY UPDATE price_text=IF(manual=0 AND price_type='unknown',VALUES(price_text),price_text),price_type=IF(manual=0 AND price_type='unknown',VALUES(price_type),price_type)`,[match,pricing.priceText,pricing.priceType,now]);
@@ -64,7 +64,7 @@ export async function importAvilysPage(pool: Pool, data: unknown){
           attached++;
           continue;
         }
-        const [insert]=await conn.execute<ResultSetHeader>('INSERT INTO events(title,event_date,event_end_date,event_time,venue,ticket_url,city,review_status,manual_fields,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[e.title.trim(),date(e.startTime),null,time(e.startTime),typeof e.venueName==='string'?e.venueName.slice(0,300):null,url(e.ticketUrl),city,'unsure','[]',now,now]);
+        const [insert]=await conn.execute<ResultSetHeader>('INSERT INTO events(title,event_date,event_end_date,event_time,event_end_time,venue,ticket_url,city,review_status,manual_fields,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',[e.title.trim(),date(e.startTime),null,time(e.startTime),time(e.endTime),typeof e.venueName==='string'?e.venueName.slice(0,300):null,url(e.ticketUrl),city,'unsure','[]',now,now]);
         await conn.execute('INSERT INTO event_sources(event_id,source_key,source_id,source_url,content_html,source_data_json,last_checked_at,about_url) VALUES(?,?,?,?,?,?,?,?)',[insert.insertId,'avilys',String(e.id),sourceUrl,description,metadata,now,original]);
 
         if(pricing.available)await conn.execute('INSERT INTO event_prices(event_id,price_text,price_type,manual,checked_at) VALUES(?,?,?,?,?)',[insert.insertId,pricing.priceText,pricing.priceType,0,now]);
@@ -82,6 +82,8 @@ export async function importAvilysPage(pool: Pool, data: unknown){
           let manual:unknown;
           try{manual=JSON.parse(event.manual_fields);}catch{/* Invalid metadata must not unlock a field. */}
           if(event.event_time==null && Array.isArray(manual) && !manual.includes('event_time'))await conn.execute('UPDATE events SET event_time=?,updated_at=? WHERE id=? AND event_time IS NULL AND event_date=?',[sourceTime,now,links[0].event_id,sourceDate]);
+          const endTime=time(e.endTime);
+          if(endTime && event.event_end_time==null && Array.isArray(manual) && !manual.includes('event_end_time'))await conn.execute('UPDATE events SET event_end_time=?,updated_at=? WHERE id=? AND event_end_time IS NULL AND event_date=?',[endTime,now,links[0].event_id,sourceDate]);
         }
         const pricing=price(e);
         // A refresh without a structured amount can retain the price extracted from the same description.

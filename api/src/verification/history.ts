@@ -1,7 +1,7 @@
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 
 export const fail = (status: number, message: string) => Object.assign(new Error(message), { status });
-export const eventFields = ['title', 'event_date', 'event_end_date', 'event_time', 'venue', 'city', 'ticket_url', 'review_status', 'publication_status', 'interest_score'] as const;
+export const eventFields = ['title', 'event_date', 'event_end_date', 'event_time', 'event_end_time', 'venue', 'city', 'ticket_url', 'review_status', 'publication_status', 'interest_score'] as const;
 export type Snapshot = Record<string, unknown>;
 
 export function jsonValue<T>(value: unknown): T {

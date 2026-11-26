@@ -8,7 +8,7 @@ import { suggestEventMatches } from '../database/event-matching.js';
 
 test('date fallback reads the event card and ignores other page dates', () => {
   const html='<div class="se-date-card"><div>Trečiadienis, lapkričio 11, 2026</div><div class="se-date-card__time">20:00</div></div><div>lapkričio 12, 2026</div>';
-  assert.deepEqual(extractPageDetails(html), {event_date:'2026-11-11',event_end_date:null,event_time:'20:00',venue:null,ticket_url:null,about_url:null,ambiguous_dates:false});
+  assert.deepEqual(extractPageDetails(html), {event_date:'2026-11-11',event_end_date:null,event_time:'20:00',event_end_time:null,venue:null,ticket_url:null,about_url:null,ambiguous_dates:false});
   assert.equal(extractPageDetails('<div>lapkričio 11, 2026</div>').event_date,null);
   assert.equal(extractPageDetails(html+html).ambiguous_dates,true);
   assert.equal(extractPageDetails('<div class="se-date-card">vasario 31, 2026</div>').event_date,null);
@@ -109,9 +109,9 @@ test('imports overlap safely and refresh unlocked fields without changing review
     assert.equal(source.state().nextPage,3);
     await source.run(1,false,false,true);
     assert.equal(source.state().nextPage,3);
-    source.reviewEvent(1,'not_music');
-    assert.equal(db.prepare('SELECT review_status FROM vilnius_events WHERE source_id=1').get().review_status,'not_music');
-    assert.equal(db.prepare('SELECT review_status FROM events WHERE id=?').get(canonical.id).review_status,'not_music');
+    source.reviewEvent(1,'other');
+    assert.equal(db.prepare('SELECT review_status FROM vilnius_events WHERE source_id=1').get().review_status,'other');
+    assert.equal(db.prepare('SELECT review_status FROM events WHERE id=?').get(canonical.id).review_status,'other');
     db.prepare("INSERT INTO event_sources(event_id,source_key,source_id,source_url) VALUES(?,'another-source','one','https://example.com/event')").run(canonical.id);
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM event_sources WHERE event_id=?').get(canonical.id).count,2);
   } finally { globalThis.fetch=originalFetch; Date.now=originalNow; db.close(); }

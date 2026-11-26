@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { publishableTypes } from '../events/types.js';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { similarEvents } from '../events/duplicates.js';
 import { descriptionText } from '../catalogue/description.js';
@@ -324,7 +325,7 @@ export function createVerificationWorker(pool: Pool, secret?: string, request = 
         'Each listing has structured_fields extracted from its source data. A matching structured field is enough to confirm the saved value even if the description omits it. Quote the structured value directly.',
         'Use confirmed when evidence supports a saved value. When a blank field has one clear value in the description or structured source data, return suggestion with the value and the exact evidence. Use attention for ambiguity or conflicts, and unknown when the sources lack evidence. Report cancellations only when explicitly stated by the listing.',
         'Dates must be YYYY-MM-DD. Times are HH:MM in Europe/Vilnius. Avilys local_start is Vilnius wall time, even when source_start ends in Z.',
-        'For review_status return music, not_music, or unsure with evidence. For an identified performer return one suggestion with their exact listed name per performer and quote the source title or description, including the name. Use attention if their performance is ambiguous. Catalogue candidates are hints and are never evidence.',
+        'For review_status (the event type) return music, festival, other, or unsure with evidence. Use festival for a festival programme where music is a main part, and other when the main activity is not music. For an identified performer return one suggestion with their exact listed name per performer and quote the source title or description, including the name. Use attention if their performance is ambiguous. Catalogue candidates are hints and are never evidence.',
         'Check the general ticket price and distinguish it from reservation fees, age exemptions, and optional extras. An explicit positive ticket price means paid admission. Return attention only for a material pricing conflict or ambiguity supported by the listing.',
         '',
         'ADDITIONAL RULES FROM THE SEEKER EDITOR',
@@ -420,7 +421,7 @@ export async function resolveFinding(pool: Pool, eventId: number, findingId: num
     if (finding.field === 'publication_status') {
       if (!mayPublish) throw fail(403, 'This credential lacks the publication permission.');
       if (approved) {
-        if (event.publication_status !== finding.current || event.review_status !== 'music') throw fail(409, 'The event changed. Review it before publishing.');
+        if (event.publication_status !== finding.current || !publishableTypes.includes(event.review_status)) throw fail(409, 'The event changed. Review it before publishing.');
         await setPublication(conn, event, 'live', actor, true, context);
       }
     } else if (approved || input.keep_current) {
