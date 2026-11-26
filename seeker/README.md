@@ -72,7 +72,7 @@ The experimental `sources/central-vilnius-run.ts` combines source-page fetching 
 
 ## AI verification and publication
 
-New events enter Seeker as **Draft** and **Unsure**. Both event import forms enable **Verify with AI after import** by default. Verification runs in the central API when the source job releases its lease. It covers new events and meaningful source changes. The import itself still succeeds if verification is unavailable. The Vilnius Events worker attempts the usual detail lookup for each changed event before releasing the import lease.
+New events enter Seeker as **Draft** and **Unsure**. Both event import forms start with **Verify with AI after import** checked unless you save a different default under **Settings → Event imports**. You can override the default on either import form. Verification runs in the central API when the source job releases its lease. It covers new events and meaningful source changes. The import itself still succeeds if verification is unavailable. The Vilnius Events worker attempts the usual detail lookup for each changed event before releasing the import lease.
 
 Under **Settings → AI providers**, add one or more Gemini or OpenAI connections with a model ID and API key. Use **Test** to check each connection and select a default for imports. Set `SEEKER_AI_ENCRYPTION_KEY` on the API server before adding connections. The API encrypts saved keys using this server secret. Keep the environment secret available across releases and backups so existing provider profiles can still be decrypted.
 

@@ -78,7 +78,7 @@ export function VilniusNotes() {
   );
 }
 
-function ImportVerificationOption({ checked, onChange }: { checked: boolean; onChange: (value: boolean) => void }) {
+function ImportVerificationOption({ checked, onChange }: { checked: boolean | null; onChange: (value: boolean) => void }) {
   const [unconfigured, setUnconfigured] = useState(false);
   useEffect(() => {
     let disposed = false;
@@ -88,17 +88,19 @@ function ImportVerificationOption({ checked, onChange }: { checked: boolean; onC
     return () => { disposed = true; };
   }, []);
   return <>
-    <label className="checkbox-label"><input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} /> Verify with AI after import</label>
+    <label className="checkbox-label"><input type="checkbox" checked={checked ?? false} disabled={checked === null} onChange={event => onChange(event.target.checked)} /> Verify with AI after import</label>
+    {checked === null && <p className="muted" role="status">Loading import default…</p>}
     {checked && unconfigured && <p className="muted">Set a default provider in <a href="/settings.html">Settings</a> to verify this import.</p>}
   </>;
 }
 
 export function VilniusImport({ pages, setPages, includeImages, setIncludeImages, verifyAfterImport, setVerifyAfterImport, nextPage, jobs, busy, run, runs }: {
   pages: number; setPages: (value: number) => void; includeImages: boolean; setIncludeImages: (value: boolean) => void;
-  verifyAfterImport: boolean; setVerifyAfterImport: (value: boolean) => void;
+  verifyAfterImport: boolean | null; setVerifyAfterImport: (value: boolean) => void;
   nextPage?: number; jobs: Job[]; busy: boolean; run: (action: string) => void; runs: ImportRun[];
 }) {
   const disabled = busy || !Number.isInteger(pages) || pages < 1 || pages > 10;
+  const importDisabled = disabled || verifyAfterImport === null;
   return (
     <section className="panel import-panel">
       <PanelHeading icon="download" title="Import events" description={nextPage ? `Next source page · ${nextPage}` : 'Import concerts and festivals'} />
@@ -106,14 +108,14 @@ export function VilniusImport({ pages, setPages, includeImages, setIncludeImages
         <label className="field">Pages per import <input type="number" min="1" max="10" value={pages || ''} onChange={event => setPages(Number(event.target.value))} /></label>
         <label className="checkbox-label"><input type="checkbox" checked={includeImages} onChange={event => setIncludeImages(event.target.checked)} /> Download event images</label>
         <ImportVerificationOption checked={verifyAfterImport} onChange={setVerifyAfterImport} />
-        <button className="primary-button" disabled={disabled} onClick={() => run('next')}><Icon name="download" />{busy ? 'Source job running…' : 'Get next pages'}</button>
+        <button className="primary-button" disabled={importDisabled} onClick={() => run('next')}><Icon name="download" />{busy ? 'Source job running…' : 'Get next pages'}</button>
       </div>
       <Disclosure title="More import actions">
         <div className="stack">
           <p>Continuing also refreshes the newest and previous pages.</p>
-          <button className="secondary-button" disabled={disabled} onClick={() => run('refresh')}>Refresh newest page</button>
-          <button className="secondary-button" disabled={disabled} onClick={() => run('sample')}>Get 10 events</button>
-          <button className="secondary-button" disabled={disabled} onClick={() => run('start')}>Start from beginning</button>
+          <button className="secondary-button" disabled={importDisabled} onClick={() => run('refresh')}>Refresh newest page</button>
+          <button className="secondary-button" disabled={importDisabled} onClick={() => run('sample')}>Get 10 events</button>
+          <button className="secondary-button" disabled={importDisabled} onClick={() => run('start')}>Start from beginning</button>
         </div>
       </Disclosure>
       <Disclosure title="Images and event details">
@@ -134,12 +136,12 @@ type Preview = {
   total: number;
 };
 
-export function AvilysImport({ jobs, busy, start }: {
+export function AvilysImport({ jobs, busy, start, verifyAfterImport, setVerifyAfterImport }: {
   jobs: Job[]; busy: boolean;
   start: (source: string, action: string, params: Record<string, unknown>) => Promise<void>;
+  verifyAfterImport: boolean | null; setVerifyAfterImport: (value: boolean) => void;
 }) {
   const [limit, setLimit] = useState(20);
-  const [verifyAfterImport, setVerifyAfterImport] = useState(true);
   const [startPage, setStartPage] = useState(1);
   const [page, setPage] = useState(1);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -163,7 +165,7 @@ export function AvilysImport({ jobs, busy, start }: {
   async function run() {
     setError('');
     try {
-      await start('avilys', 'import', { limit, start_page: startPage, verify_after_import: verifyAfterImport });
+      await start('avilys', 'import', { limit, start_page: startPage, verify_after_import: verifyAfterImport === true });
     } catch (error) {
       setError(errorMessage(error));
     }
@@ -178,7 +180,7 @@ export function AvilysImport({ jobs, busy, start }: {
           <label className="field">Start page <input type="number" min="1" max="10000" value={startPage || ''} onChange={event => setStartPage(Number(event.target.value))} /></label>
         </div>
         <ImportVerificationOption checked={verifyAfterImport} onChange={setVerifyAfterImport} />
-        <button className="primary-button" disabled={busy || !valid} onClick={() => void run()}><Icon name="download" />{busy ? 'Source job running…' : 'Import events'}</button>
+        <button className="primary-button" disabled={busy || !valid || verifyAfterImport === null} onClick={() => void run()}><Icon name="download" />{busy ? 'Source job running…' : 'Import events'}</button>
         <button className="secondary-button" disabled={loading} onClick={() => void load(1)}>{loading ? 'Loading preview…' : 'Preview source events'}</button>
         <Feedback message={error} error />
         {preview && (

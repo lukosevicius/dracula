@@ -1,7 +1,7 @@
 import { VerificationJobs, VerificationRequest, useVerificationJobs, verificationLabels } from './verification';
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import type { DateFilter, ReviewStatus } from '../../types';
-import { api, errorMessage, isActive, labels, plainText, priceInfo, publicationLabels, reviews, sourceNames, useJobs, type EventPage, type EventRow } from './data';
+import { api, errorMessage, isActive, labels, plainText, priceInfo, publicationLabels, reviews, seekerSettingsPath, sourceNames, useJobs, type EventPage, type EventRow, type SeekerSettingsResponse } from './data';
 import { groupNewestEvents, shiftDate } from './event-groups';
 import { useSavedEvents } from './saved-events';
 import EventItem from './event-item';
@@ -62,7 +62,8 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
   const [review, setReview] = useState(queue === 'not-music' ? 'not_music' : 'all');
   const [publication, setPublication] = useState('all');
   const [verification, setVerification] = useState('all');
-  const [verifyAfterImport, setVerifyAfterImport] = useState(true);
+  const [verifyAfterImport, setVerifyAfterImport] = useState<boolean | null>(null);
+  const [importDefaultError, setImportDefaultError] = useState('');
   const [readiness, setReadiness] = useState('all');
   const [assistantReview, setAssistantReview] = useState('all');
   const [sourceFilter, setSourceFilter] = useState(defaultSource);
@@ -91,6 +92,19 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
   const extraCount = Number(readiness !== 'all') + Number(assistantReview !== 'all') + Number(sourceFilter !== defaultSource) + Number(publication !== 'all') + Number(verification !== 'all');
   const isFiltered = Boolean(query || when !== defaultWhen || price !== 'all' || time !== 'all' || (review !== 'all' && queue !== 'not-music') || extraCount || savedOnly || sort !== 'date');
   const sourceSavedEvents = savedEvents.filter(event => all || event.source_key === source);
+
+  useEffect(() => {
+    if (all) return;
+    let active = true;
+    void api<SeekerSettingsResponse>(seekerSettingsPath).then(({ settings }) => {
+      if (active) setVerifyAfterImport(settings.verify_after_import !== false);
+    }).catch(() => {
+      if (!active) return;
+      setVerifyAfterImport(false);
+      setImportDefaultError('Could not load the saved AI verification default. Choose whether to verify before importing.');
+    });
+    return () => { active = false; };
+  }, [all]);
 
   const load = useCallback(async (silent = false) => {
     const id = ++requestId.current;
@@ -177,7 +191,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
     setJobError('');
     try {
       const jobPages = eventId ? 1 : pages;
-      await start('vilnius-events', action, { pages: jobPages, event_id: eventId, include_images: includeImages, verify_after_import: verifyAfterImport });
+      await start('vilnius-events', action, { pages: jobPages, event_id: eventId, include_images: includeImages, verify_after_import: verifyAfterImport === true });
     } catch (error) {
       setJobError(errorMessage(error));
     }
@@ -434,8 +448,9 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
         </div>
         {!all && <aside className="context-column" id="import-tools" tabIndex={-1} aria-label="Event source tools">
           {avilys
-            ? <AvilysImport jobs={jobs} busy={busy} start={start} />
+            ? <AvilysImport jobs={jobs} busy={busy} start={start} verifyAfterImport={verifyAfterImport} setVerifyAfterImport={setVerifyAfterImport} />
             : <VilniusImport pages={pages} setPages={setPages} includeImages={includeImages} setIncludeImages={setIncludeImages} verifyAfterImport={verifyAfterImport} setVerifyAfterImport={setVerifyAfterImport} nextPage={data?.nextPage} jobs={jobs} busy={busy} run={action => void startVilnius(action)} runs={data?.runs ?? []} />}
+          <Feedback message={importDefaultError} error />
           <VerificationJobs jobs={verificationJobs.jobs} />
           <Feedback message={jobError} error />
           <Disclosure className="standalone" title="Bulk review by source">

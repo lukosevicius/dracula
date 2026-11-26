@@ -1,6 +1,6 @@
 import { AgentSettings, ProviderSettings } from './workflow-settings';
 import { useEffect, useState } from 'react';
-import { api, errorMessage } from './data';
+import { api, errorMessage, seekerSettingsPath, type SeekerSettingsResponse } from './data';
 import { Feedback, PageHeading } from './workspace';
 
 export const startPages = [
@@ -24,8 +24,46 @@ export function validStartPage(value: unknown): value is StartPage {
   return startPages.some(page => page.path === value);
 }
 
+function ImportDefaults({ checked, onChange }: { checked: boolean | null; onChange: (value: boolean) => void }) {
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState(false);
+
+  async function save() {
+    if (checked === null) return;
+    setSaving(true);
+    setMessage('');
+    setError(false);
+    try {
+      await api(seekerSettingsPath, { key: 'verify_after_import', value: checked });
+      setMessage('Import default saved.');
+    } catch (cause) {
+      setError(true);
+      setMessage(errorMessage(cause));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return <section className="panel settings-panel">
+    <div className="panel-heading"><h2>Event imports</h2></div>
+    <div className="panel-body settings-body">
+      <label className="checkbox-label">
+        <input type="checkbox" checked={checked ?? false} disabled={checked === null || saving} onChange={event => {
+          onChange(event.target.checked);
+          setMessage('');
+        }} /> Verify with AI after import by default
+      </label>
+      <p className="muted">Sets the initial checkbox on the Avilys and Vilnius Events import pages.</p>
+      <button className="primary-button" type="button" disabled={checked === null || saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save import default'}</button>
+      <Feedback message={message} error={error} />
+    </div>
+  </section>;
+}
+
 export default function SettingsPage() {
   const [startPage, setStartPage] = useState<StartPage>(defaultStartPage);
+  const [verifyAfterImport, setVerifyAfterImport] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -33,9 +71,11 @@ export default function SettingsPage() {
 
   useEffect(() => {
     let active = true;
-    void api<{ settings: Record<string, unknown> }>('/api/seeker/settings')
-      .then(result => {
-        if (active && validStartPage(result.settings.start_page)) setStartPage(result.settings.start_page);
+    void api<SeekerSettingsResponse>(seekerSettingsPath)
+      .then(({ settings }) => {
+        if (!active) return;
+        if (validStartPage(settings.start_page)) setStartPage(settings.start_page);
+        setVerifyAfterImport(settings.verify_after_import !== false);
       })
       .catch(cause => {
         if (active) { setError(true); setMessage(errorMessage(cause)); }
@@ -49,7 +89,7 @@ export default function SettingsPage() {
     setError(false);
     setMessage('');
     try {
-      await api('/api/seeker/settings', { key: 'start_page', value: startPage });
+      await api(seekerSettingsPath, { key: 'start_page', value: startPage });
       setMessage('Startup page saved.');
     } catch (cause) {
       setError(true);
@@ -74,6 +114,7 @@ export default function SettingsPage() {
         <Feedback message={message} error={error} />
       </div>
     </section>
+    <ImportDefaults checked={verifyAfterImport} onChange={setVerifyAfterImport} />
     <ProviderSettings />
     <AgentSettings />
     <section className="panel settings-panel">

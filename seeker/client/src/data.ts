@@ -96,6 +96,9 @@ export const plainText = (html: string) => new DOMParser().parseFromString(html,
 export const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 export const artistHref = (mbid: string) => `/artist.html?id=${encodeURIComponent(mbid)}`;
 
+export const seekerSettingsPath = '/api/seeker/settings';
+export type SeekerSettingsResponse = { settings: Record<string, unknown> };
+
 export async function api<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, body === undefined ? undefined : {
     method: 'POST',
