@@ -294,6 +294,7 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
 .event-tools { display: grid; gap: 9px; padding-bottom: 9px; }
 .filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .date-quick-filters { display: flex; align-items: end; flex-wrap: wrap; gap: 7px; }
+.duplicate-filters { margin-bottom: 12px; }
 .date-filter-button { min-height: 37px; }
 .date-filter-button.active { border-color: var(--accent-strong); background: #342334; color: var(--text); }
 .specific-date-field { width: min(100%, 190px); }

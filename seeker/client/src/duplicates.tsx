@@ -9,6 +9,8 @@ import { MergePreview, type Preview } from './merge-preview';
 
 type ServerPair = { level: 'confident' | 'likely'; mergeable: boolean; conflicts: boolean; event_ids: [number, number]; preview: Preview | null };
 type Pair = ServerPair & { events: [EventRow, EventRow] };
+type LevelFilter = 'all' | ServerPair['level'];
+const levelFilters: [LevelFilter, string][] = [['all', 'All matches'], ['confident', 'Confident'], ['likely', 'Likely']];
 const workflow = '/api/workflow/duplicates';
 const todayFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Vilnius', year: 'numeric', month: '2-digit', day: '2-digit' });
 
@@ -23,6 +25,7 @@ export default function DuplicatesPage() {
   const [error, setError] = useState('');
   const [pendingId, setPendingId] = useState<number | null>(null);
   const [openKey, setOpenKey] = useState('');
+  const [level, setLevel] = useState<LevelFilter>('all');
   const editsDuringLoad = useRef<Map<number, EventRowEdits> | null>(null);
   const { isSaved, toggle, update, refresh, pendingIds, loading: savedLoading } = useSavedEvents();
   const { jobs, start, startingSource } = useJobs(() => {});
@@ -95,11 +98,13 @@ export default function DuplicatesPage() {
   }
 
   const byId = new Map(events.map(event => [event.id, event]));
-  const pairs: Pair[] = serverPairs.flatMap(pair => {
+  const allPairs: Pair[] = serverPairs.flatMap(pair => {
     const [first, second] = pair.event_ids.map(id => byId.get(id));
     return first && second ? [{ ...pair, events: [first, second] as [EventRow, EventRow] }] : [];
   });
-  const ready = pairs.filter(pair => pair.level === 'confident' && pair.mergeable && !pair.conflicts).length;
+  const pairs = level === 'all' ? allPairs : allPairs.filter(pair => pair.level === level);
+  const levelCount = (filter: LevelFilter) => filter === 'all' ? allPairs.length : allPairs.filter(pair => pair.level === filter).length;
+  const ready = allPairs.filter(pair => pair.level === 'confident' && pair.mergeable && !pair.conflicts).length;
   const pairKey = (pair: Pair) => pair.event_ids.join('-');
   const withPreview = pairs.filter(pair => pair.preview);
   const anyOpen = withPreview.some(pair => !hidden.has(pairKey(pair)));
@@ -118,14 +123,19 @@ export default function DuplicatesPage() {
           <Icon name={anyOpen ? 'up' : 'down'} size={15} /> {anyOpen ? 'Hide previews' : 'Show previews'}
         </button>}
         <span className="count-label">{pairs.length} {pairs.length === 1 ? 'pair' : 'pairs'}</span>
-        {ready > 0 && <button className="primary-button" type="button" disabled={Boolean(merging)} title="Confident pairs whose values agree. Pairs with differing values need a preview."
+        <button className="primary-button" type="button" disabled={Boolean(merging) || ready === 0}
+          title={ready ? 'Merges confident matches whose values agree. Pairs marked "Values differ" stay for review.' : 'No confident matches without differences to merge.'}
           onClick={() => void act('all', 'merge-confident', {}, result => `Merged ${(result.merged as unknown[]).length} events.${(result.skipped as unknown[]).length ? ` ${(result.skipped as unknown[]).length} need review.` : ''}`)}>
-          {merging === 'all' ? 'Merging…' : `Merge ${ready} without differences`}
-        </button>}
+          {merging === 'all' ? 'Merging…' : ready ? `Merge ${ready} confident ${ready === 1 ? 'match' : 'matches'}` : 'Merge confident matches'}
+        </button>
       </span>} />
+      {!loading && allPairs.length > 0 && <div className="date-quick-filters duplicate-filters" role="group" aria-label="Match type">
+        {levelFilters.map(([filter, label]) => <button key={filter} type="button" className={`secondary-button date-filter-button ${level === filter ? 'active' : ''}`}
+          aria-pressed={level === filter} onClick={() => setLevel(filter)}>{label} · {levelCount(filter)}</button>)}
+      </div>}
       <div className="catalogue-feedback"><Feedback message={error} error /><Feedback message={notice} /></div>
       {loading && <p className="empty-state" role="status">Looking for possible duplicates…</p>}
-      {!loading && !error && !pairs.length && <p className="empty-state">No possible duplicates found.</p>}
+      {!loading && !error && !pairs.length && <p className="empty-state">{allPairs.length ? `No ${level} matches.` : 'No possible duplicates found.'}</p>}
       {!loading && pairs.map(pair => {
         const [first, second] = pair.events, key = `${first.id}-${second.id}`;
         return <section className="duplicate-pair" key={key}>
