@@ -57,4 +57,14 @@ test('a merge plan prefers venue names and known prices, and flags real disagree
   const venue = swapped.fields.find((entry: { field: string }) => entry.field === 'venue')!;
   const known = swapped.fields.find((entry: { field: string }) => entry.field === 'price')!;
   assert.deepEqual([venue.choice, known.choice, swapped.conflicts], [28, 28, false]);
+  // A stated price beats a plain "paid", and ticket links differing by a trailing slash are the same.
+  const url = 'https://www.bilietai.lt/renginiai/EHCCEJKOC3/mkc26';
+  const stated = planMerge({ ...pair, survivor: { ...pair.survivor, ticket_url: url + '/' }, removed: { ...pair.removed, ticket_url: url },
+    keptPrice: price(28, 'paid', null), removedPrice: price(184, 'paid', 'Nuo 12.90 €') });
+  const pick = (name: string) => stated.fields.find((entry: { field: string }) => entry.field === name)!;
+  assert.deepEqual([pick('price').choice, pick('price').conflict], [184, false]);
+  assert.deepEqual([pick('ticket_url').other, pick('ticket_url').choice, pick('ticket_url').conflict], [url + '/', 28, false]);
+  const kept = planMerge({ ...pair, keptPrice: price(28, 'paid', 'Nuo 12.90 €'), removedPrice: price(184, 'paid', null) });
+  const keptPrice = kept.fields.find((entry: { field: string }) => entry.field === 'price')!;
+  assert.deepEqual([keptPrice.choice, keptPrice.conflict], [28, false]);
 });

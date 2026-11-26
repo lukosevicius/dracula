@@ -39,10 +39,16 @@ export function chooseSurvivor(a: RowDataPacket, b: RowDataPacket): [RowDataPack
 const priceText = (price?: RowDataPacket) => !price || price.price_type === 'unknown' && blank(price.price_text) ? null
   : String(price.price_text || priceLabels[price.price_type] || price.price_type);
 const knownPrice = (price?: RowDataPacket) => Boolean(price && (price.price_type !== 'unknown' || !blank(price.price_text)));
+/** A plain "paid" price with no amount says less than a listing that states the price. */
+const barePaid = (price?: RowDataPacket) => price?.price_type === 'paid' && blank(price.price_text);
+const statedPrice = (price?: RowDataPacket) => Boolean(price && price.price_type !== 'free' && !blank(price.price_text));
+/** Ticket links that differ only by surrounding spaces or a trailing slash point to the same page. */
+const sameUrl = (a: string, b: string) => a.trim().replace(/\/+$/, '') === b.trim().replace(/\/+$/, '');
 
 /**
  * Decides each field of the merged event. Equal values need no decision. When only one event has a value it is used.
- * A venue name beats a street address and a known price beats an unknown one. Other disagreements are conflicts that
+ * A venue name beats a street address, a known price beats an unknown one and a stated price beats a plain "paid".
+ * Ticket links that differ only by a trailing slash count as equal. Other disagreements are conflicts that
  * keep the kept event's value unless a choice (an event ID per field) says otherwise.
  */
 export function planMerge({ survivor, removed, keptPrice, removedPrice }: Pair, choices: Choices = {}) {
@@ -54,11 +60,13 @@ export function planMerge({ survivor, removed, keptPrice, removedPrice }: Pair, 
       kept = priceText(keptPrice); other = priceText(removedPrice);
       if (kept !== other) {
         if (!knownPrice(keptPrice)) preferOther = knownPrice(removedPrice);
-        else conflict = knownPrice(removedPrice);
+        else if (barePaid(keptPrice) && statedPrice(removedPrice)) preferOther = true;
+        else conflict = knownPrice(removedPrice) && !(barePaid(removedPrice) && statedPrice(keptPrice));
       }
     } else {
       kept = blank(survivor[field]) ? null : String(survivor[field]);
       other = blank(removed[field]) ? null : String(removed[field]);
+      if (field === 'ticket_url' && kept !== null && other !== null && sameUrl(kept, other)) other = kept;
       if (field === 'review_status') {
         kept = classificationLabels[kept ?? ''] ?? kept; other = classificationLabels[other ?? ''] ?? other;
         if (kept !== other) {
