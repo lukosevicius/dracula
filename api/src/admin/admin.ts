@@ -143,11 +143,11 @@ export function createAdmin(pool: Pool, token: string) {
     async listEvents(query: URLSearchParams) {
       const page=Number(query.get('page') || 1), limit=Number(query.get('limit') || 25), sort=query.get('sort') || 'date';
       const review=query.get('review')==='not_music'?'other':query.get('review') || 'all', when=query.get('when') || 'upcoming', source=query.get('source') || 'all';
-      const readiness=query.get('readiness') || 'all', assistantReview=query.get('assistantReview') || 'all', price=query.get('price') || 'all', time=query.get('time') || 'all';
+      const assistantReview=query.get('assistantReview') || 'all', price=query.get('price') || 'all', time=query.get('time') || 'all';
       const publication=query.get('publication') || 'all', verification=query.get('verification') || 'all', needsAttention=query.get('needs_attention') || 'all';
       if(!['all','draft','live'].includes(publication) || !['all','not_verified','queued','verifying','verified','stale','failed'].includes(verification) || !['all','yes','no'].includes(needsAttention)) throw error(400,'Invalid verification or publication filter.');
       const from=query.get('from'),to=query.get('to'),today=vilniusToday(),search=normalizeEventSearch((query.get('search') || '').slice(0,200));
-      if(!Number.isSafeInteger(page)||page<1||page>1000000||!Number.isSafeInteger(limit)||limit<1||limit>100 || !['all',...eventTypes].includes(review) || !['all','upcoming','past','unknown','today','tomorrow','weekend','custom'].includes(when) || !['all','ready','attention'].includes(readiness) || !['all','pending'].includes(assistantReview) || !['all','free','paid','unknown'].includes(price) || !['all','known','unknown'].includes(time) || !['date','score-asc','score-desc'].includes(sort) || source.length>191) throw error(400,'Invalid filters.');
+      if(!Number.isSafeInteger(page)||page<1||page>1000000||!Number.isSafeInteger(limit)||limit<1||limit>100 || !['all',...eventTypes].includes(review) || !['all','upcoming','past','unknown','today','tomorrow','weekend','custom'].includes(when) || !['all','pending'].includes(assistantReview) || !['all','free','paid','unknown'].includes(price) || !['all','known','unknown'].includes(time) || !['date','score-asc','score-desc'].includes(sort) || source.length>191) throw error(400,'Invalid filters.');
       if(['today','tomorrow','weekend','custom'].includes(when) && (!from || !to || !validDate(from) || !validDate(to) || to<from)) throw error(400,'Choose a valid date range.');
       const clauses: string[]=[],params: (string | number)[]=[];
       const ready="e.publication_status='live' AND (NULLIF(e.event_date,'') IS NULL OR COALESCE(NULLIF(e.event_end_date,''),e.event_date)>=?)";
@@ -157,7 +157,6 @@ export function createAdmin(pool: Pool, token: string) {
       if(price!=='all'){clauses.push("COALESCE((SELECT CASE WHEN p.price_type='unknown' AND (SELECT ps.source_key FROM event_sources ps WHERE ps.event_id=e.id ORDER BY CASE WHEN ps.source_key='vilnius-events' THEN 0 ELSE 1 END,ps.id LIMIT 1)='avilys' AND p.price_text='Avilys: free (verify)' THEN 'free' WHEN p.price_type='unknown' AND (SELECT ps.source_key FROM event_sources ps WHERE ps.event_id=e.id ORDER BY CASE WHEN ps.source_key='vilnius-events' THEN 0 ELSE 1 END,ps.id LIMIT 1)='avilys' AND p.price_text='Avilys: paid (verify)' THEN 'paid' ELSE p.price_type END FROM event_prices p WHERE p.event_id=e.id),'unknown')=?");params.push(price);}
       if(time!=='all') clauses.push(`NULLIF(TRIM(e.event_time),'') IS ${time==='known'?'NOT ':''}NULL`);
       if(assistantReview==='pending') clauses.push('EXISTS (SELECT 1 FROM assistant_event_reviews ar WHERE ar.event_id=e.id AND ar.confirmed_at IS NULL)');
-      if(readiness!=='all'){clauses.push(`${readiness==='attention'?'NOT ':''}(${ready})`);params.push(today);}
       if(review!=='all'){clauses.push('e.review_status=?');params.push(review);}
       if(source!=='all'){clauses.push('EXISTS (SELECT 1 FROM event_sources sf WHERE sf.event_id=e.id AND sf.source_key=?)');params.push(source);}
       if(when==='upcoming'||when==='past'){clauses.push(`e.event_date IS NOT NULL AND COALESCE(e.event_end_date,e.event_date)${when==='past'?'<':'>='}?`);params.push(today);}

@@ -1,7 +1,7 @@
 import { VerificationJobs, VerificationRequest, useVerificationJobs, verificationLabels } from './verification';
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import type { DateFilter, ReviewStatus } from '../../types';
-import { api, errorMessage, isActive, labels, plainText, priceInfo, publicationLabels, reviews, seekerSettingsPath, sourceNames, useJobs, type EventPage, type EventRow, type SeekerSettingsResponse } from './data';
+import { api, errorMessage, isActive, labels, plainText, priceInfo, reviews, seekerSettingsPath, sourceNames, useJobs, type EventPage, type EventRow, type SeekerSettingsResponse } from './data';
 import { groupNewestEvents, shiftDate } from './event-groups';
 import { useSavedEvents } from './saved-events';
 import EventItem from './event-item';
@@ -64,7 +64,6 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
   const [verification, setVerification] = useState('all');
   const [verifyAfterImport, setVerifyAfterImport] = useState<boolean | null>(null);
   const [importDefaultError, setImportDefaultError] = useState('');
-  const [readiness, setReadiness] = useState('all');
   const [assistantReview, setAssistantReview] = useState('all');
   const [sourceFilter, setSourceFilter] = useState(defaultSource);
   const [from, setFrom] = useState('');
@@ -89,7 +88,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
   const today = dateFormatter.format(new Date());
   const apiWhen = when === 'newest' ? 'upcoming' : when;
   const invalid = when === 'custom' && (!from || (!!to && to < from));
-  const extraCount = Number(readiness !== 'all') + Number(assistantReview !== 'all') + Number(sourceFilter !== defaultSource) + Number(verification !== 'all');
+  const extraCount = Number(assistantReview !== 'all') + Number(sourceFilter !== defaultSource) + Number(verification !== 'all');
   const isFiltered = Boolean(query || when !== defaultWhen || price !== 'all' || time !== 'all' || publication !== 'all' || (review !== 'all' && queue !== 'not-music') || extraCount || savedOnly || sort !== 'date');
   const sourceSavedEvents = savedEvents.filter(event => all || event.source_key === source);
 
@@ -114,7 +113,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
       return;
     }
     if (!silent) setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: String(pageSize), review, readiness, assistantReview, search: query, price, time, source: sourceFilter, when: apiWhen, today, sort, publication, verification, needs_attention: queue === 'attention' ? 'yes' : 'all' });
+    const params = new URLSearchParams({ page: String(page), limit: String(pageSize), review, assistantReview, search: query, price, time, source: sourceFilter, when: apiWhen, today, sort, publication, verification, needs_attention: queue === 'attention' ? 'yes' : 'all' });
     const range = dateRange(apiWhen, from, to, today);
     if (range) {
       params.set('from', range.from);
@@ -131,7 +130,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
     } finally {
       if (id === requestId.current) setLoading(false);
     }
-  }, [page, review, readiness, assistantReview, query, price, time, sourceFilter, when, apiWhen, from, to, today, invalid, sort, publication, verification, queue]);
+  }, [page, review, assistantReview, query, price, time, sourceFilter, when, apiWhen, from, to, today, invalid, sort, publication, verification, queue]);
   const loadCurrent = useRef(load);
   const rowEdits = useEventRowEdits((id, patch) => {
     setData(current => current ? { ...current, events: current.events.map(event => event.id === id ? { ...event, ...patch } : event) } : current);
@@ -177,7 +176,6 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
     setReview(queue === 'not-music' ? 'other' : 'all');
     setPublication('all');
     setVerification('all');
-    setReadiness('all');
     setAssistantReview('all');
     setSourceFilter(defaultSource);
     setFrom('');
@@ -275,7 +273,6 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
       || (apiWhen === 'unknown' && !eventDate)
       || (!!dateWindow && !!eventDate && !!eventEnd && eventDate <= dateWindow.to && eventEnd >= dateWindow.from);
     const savedPrice = priceInfo(row);
-    const ready = row.publication_status === 'live' && (!eventDate || !eventEnd || eventEnd >= today);
     return matchesWhen
       && (!query || plainText(row.title).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
       && (price === 'all' || savedPrice.type === price)
@@ -284,7 +281,6 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
       && (publication === 'all' || row.publication_status === publication)
       && (verification === 'all' || (row.verification_status ?? 'not_verified') === verification)
       && (review === 'all' || row.review_status === review)
-      && (readiness === 'all' || (readiness === 'ready' ? ready : !ready))
       && (assistantReview !== 'pending' || (!!row.assistant_reviewed_at && !row.assistant_confirmed_at))
       && (sourceFilter === 'all' || row.source_key === sourceFilter);
   }).sort((a, b) => {
@@ -345,8 +341,8 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
                 {queue !== 'not-music' && <label className="field">Type <select value={review} onChange={event => updateFilters(setReview, event.target.value)}>
                   <option value="all">All types</option>{reviews.map(status => <option key={status} value={status}>{labels[status]}</option>)}
                 </select></label>}
-                <label className="field">Publication <select value={publication} onChange={event => updateFilters(setPublication, event.target.value)}>
-                  <option value="all">Draft and live</option><option value="draft">{publicationLabels.draft}</option><option value="live">{publicationLabels.live}</option>
+                <label className="field">Visibility <select value={publication} onChange={event => updateFilters(setPublication, event.target.value)}>
+                  <option value="all">All</option><option value="draft">Draft (hidden)</option><option value="live">Live (in app)</option>
                 </select></label>
                 <label className="field">Sort by <select value={sort} onChange={event => {
                   const value = event.target.value as typeof sort;
@@ -394,9 +390,6 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
                   <div className="filter-grid">
                     <label className="field">AI verification <select value={verification} onChange={event => updateFilters(setVerification, event.target.value)}>
                       <option value="all">All verification statuses</option>{Object.entries(verificationLabels).map(([key, label]) => <option value={key} key={key}>{label}</option>)}
-                    </select></label>
-                    <label className="field">Dracula feed <select value={readiness} onChange={event => updateFilters(setReadiness, event.target.value)}>
-                      <option value="all">All events</option><option value="ready">Eligible for feed</option><option value="attention">Outside the feed</option>
                     </select></label>
                     <label className="field">Assistant review <select value={assistantReview} onChange={event => updateFilters(setAssistantReview, event.target.value)}>
                       <option value="all">All events</option><option value="pending">Needs my check</option>
