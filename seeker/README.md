@@ -75,9 +75,9 @@ The experimental `sources/central-vilnius-run.ts` combines source-page fetching 
 Imports run twice a day without anyone opening Seeker. Vilnius Events refuses requests from GitHub's servers (HTTP 403), so the work is split:
 
 - **GitHub** — the **Scheduled import** workflow imports every upcoming Avilys event and merges confident duplicates at 05:00 and 12:00 Vilnius winter time (03:00 and 10:00 UTC). It uses the `production-imports` environment with the `CENTRAL_API_TOKEN` secret and the optional `CENTRAL_API_URL` variable (default `https://api.dracula.lt`). Start a run by hand from **Actions → Scheduled import → Run workflow**.
-- **Your Mac** — a launchd agent runs `scripts/vn-import.sh` at 05:30 and 12:30. It fetches the Vilnius Events list (every page once a day, otherwise the newest page), refreshes the details of upcoming listings not checked in the last 20 hours, handles removed listings and merges confident duplicates. A run missed while the Mac slept runs when it wakes; nothing runs while it is off. It uses the checked-out code and `.env.central`, logs to `~/Library/Logs/dracula-vn-import.log` and shows a macOS notification when a run fails.
+- **Your Mac** — a launchd agent runs `scripts/vn-import.sh` at 12:00 and 18:00, never at night. It fetches the Vilnius Events list (the two newest pages on the first run of the day, otherwise the newest page), refreshes the details of upcoming listings not checked in the last 20 hours, handles removed listings and merges confident duplicates. A run missed while the Mac was closed runs when it next wakes; nothing runs while it is off. It uses the checked-out code and `.env.central`, logs to `~/Library/Logs/dracula-vn-import.log` and shows a macOS notification when a run fails.
 
-A Vilnius Events listing that now redirects to the site's home page was taken down. A draft is deleted, a listing that shares its event with another source is detached, and a live event is unpublished and placed in **Needs attention** for you to decide. If more than 10% of the checked listings (at least 3) look removed, nothing is removed and the run fails.
+A Vilnius Events listing that now redirects to the site's home page was taken down. A draft is deleted, a listing that shares its event with another source is detached, and a live event is unpublished and placed in **Needs attention** for you to decide. If more than 10% of the checked listings (at least 3) look removed, nothing is removed and the run fails. A removed listing is remembered, so an import does not add it back while the source's list still shows it. Vilnius Events listings in the Festivaliai category stay **Draft** even with a date, because that category also holds festivals that are not music. An image larger than 3 MB is replaced by a smaller size, because the API host rejects larger uploads, and an image that still fails does not stop the import.
 
 Each step is retried once after a minute if the API was briefly unreachable. Jobs share Seeker's leases, so a run fails instead of overlapping a job started from Seeker.
 
@@ -85,7 +85,8 @@ Each step is retried once after a minute if the API was briefly unreachable. Job
 scripts/install-vn-schedule.sh               # install or update the Mac schedule
 launchctl kickstart gui/$(id -u)/lt.dracula.vn-import   # run it now
 scripts/install-vn-schedule.sh --uninstall   # remove it
-node dist/scheduled-import.js midday         # both sources by hand (after npm run build:server)
+scripts/vn-import.sh full                    # one-off catch-up: ten Vilnius Events list pages
+node dist/scheduled-import.js quick          # both sources by hand (after npm run build:server)
 ```
 
 ## AI verification and publication

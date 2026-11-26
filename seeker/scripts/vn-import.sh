@@ -2,19 +2,19 @@
 # Runs the Vilnius Events part of the scheduled import from this Mac. Vilnius Events refuses requests from GitHub's
 # servers, so the GitHub workflow imports only Avilys. Installed as a launchd agent by install-vn-schedule.sh.
 #
-# Without an argument it runs "nightly" (every list page) when the last successful nightly run is more than
-# 20 hours old, otherwise "midday" (newest page only). A run missed while the Mac slept runs when it wakes.
+# Without an argument the first run of the day is "daily" (the two newest list pages), later runs "quick"
+# (the newest page). Runs are at 12:00 and 18:00; one missed while the Mac was closed runs when it next wakes.
 # Uses the checked-out code and seeker/.env.central. Output goes to ~/Library/Logs/dracula-vn-import.log.
 set -uo pipefail
 
 seeker="$(cd "$(dirname "$0")/.." && pwd)"
 state="$HOME/Library/Application Support/Dracula"
-stamp="$state/vn-import-last-nightly"
+stamp="$state/vn-import-last-daily"
 mkdir -p "$state"
 
 mode="${1:-}"
 if [ -z "$mode" ]; then
-  if [ -f "$stamp" ] && [ -z "$(find "$stamp" -mmin +1200)" ]; then mode=midday; else mode=nightly; fi
+  if [ -f "$stamp" ] && [ -z "$(find "$stamp" -mmin +1200)" ]; then mode=quick; else mode=daily; fi
 fi
 
 node="${NODE_BIN:-$(command -v node || true)}"
@@ -32,7 +32,7 @@ if ! "$node" node_modules/typescript/bin/tsc -p tsconfig.json; then
   exit 1
 fi
 if "$node" dist/scheduled-import.js "$mode" --sources=vilnius-events; then
-  [ "$mode" = nightly ] && touch "$stamp"
+  [ "$mode" = daily ] && touch "$stamp"
   echo "=== $(date '+%F %T') done"
 else
   notify "Vilnius Events import failed. See ~/Library/Logs/dracula-vn-import.log"

@@ -269,3 +269,10 @@ CREATE TABLE event_times (
   INDEX idx_event_times_date (event_date, event_id),
   CONSTRAINT fk_event_times_event FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE removed_listings (
+  source_key VARCHAR(191) NOT NULL,
+  source_id VARCHAR(191) NOT NULL,
+  removed_at VARCHAR(30) NOT NULL,
+  PRIMARY KEY (source_key, source_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

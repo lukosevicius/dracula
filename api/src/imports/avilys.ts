@@ -36,7 +36,7 @@ export async function importAvilysPage(pool: Pool, data: unknown){
     if(!e||!Number.isSafeInteger(e.id)||e.id<1||ids.has(e.id)||typeof e.title!=='string'||!e.title.trim()||e.title.length>2000||typeof e.city!=='string'||e.city.toLowerCase()!==city.toLowerCase()||!Array.isArray(e.categories)||!e.categories.some(c=>c?.id===1)||typeof (e.description??'')!=='string'||(e.description?.length||0)>100000)throw fail(400,'Invalid Avilys event.');
     ids.add(e.id);
   }
-  const conn=await pool.getConnection();let added=0,updated=0,attached=0;
+  const conn=await pool.getConnection();let added=0,updated=0,attached=0,skipped=0;
   try{await conn.beginTransaction();try{
     const [leases]=await conn.execute<Lease[]>('SELECT job_id,owner_hash,expires_at FROM job_leases WHERE source_key=? FOR UPDATE',['vilnius-events']);
     const lease=leases[0],hash=createHash('sha256').update(input.job.owner).digest('hex');
@@ -51,6 +51,8 @@ export async function importAvilysPage(pool: Pool, data: unknown){
       const [links]=await conn.execute<RowDataPacket[]>("SELECT * FROM event_sources WHERE source_key='avilys' AND source_id=? FOR UPDATE",[String(e.id)]);
       const sourceUrl=`https://avilys.app/event/${e.id}`, description=esc(e.description), metadata=JSON.stringify(e), original=url(e.sourceUrl);
       if(!links.length){
+        const [removed]=await conn.execute<RowDataPacket[]>("SELECT 1 FROM removed_listings WHERE source_key='avilys' AND source_id=?",[String(e.id)]);
+        if(removed.length){skipped++;continue;}
         const venue=typeof e.venueName==='string'?e.venueName.slice(0,300):null,pricing=price(e);
         const match=await findImportMatch(conn,{title:e.title.trim(),event_date:date(e.startTime),event_time:time(e.startTime),venue,city},'avilys');
         if(match){
@@ -104,6 +106,6 @@ export async function importAvilysPage(pool: Pool, data: unknown){
         updated++;
       }
     }
-    await conn.commit();return {added,updated,attached};
+    await conn.commit();return {added,updated,attached,skipped};
   }catch(cause){await conn.rollback();throw cause;}}finally{conn.release();}
 }

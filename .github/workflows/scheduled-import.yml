@@ -38,4 +38,4 @@ jobs:
         env:
           CENTRAL_API_URL: ${{ vars.CENTRAL_API_URL || 'https://api.dracula.lt' }}
           CENTRAL_API_TOKEN: ${{ secrets.CENTRAL_API_TOKEN }}
-        run: node dist/scheduled-import.js nightly --sources=avilys
+        run: node dist/scheduled-import.js daily --sources=avilys

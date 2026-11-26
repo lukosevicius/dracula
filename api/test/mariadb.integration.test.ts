@@ -134,8 +134,8 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     const job=await starts.find(r=>r.status===200)!.json();
     const avilysItem={id:987654,title:'Avilys music',city:'vilnius',categories:[{id:1}],description:'Concert',startTime:'2099-11-20T19:00:00Z',venueName:'Club'};
     const avilys= (body: Record<string,unknown>)=>fetch(`${root}/v1/admin/imports/avilys/page`,{method:'POST',headers,body:JSON.stringify({verify_after_import:false,...body})});
-    assert.deepEqual(await (await avilys({job:{id:job.id,owner:job.owner},items:[avilysItem]})).json(),{ok:true,added:1,updated:0,attached:0});
-    assert.deepEqual(await (await avilys({job:{id:job.id,owner:job.owner},items:[avilysItem]})).json(),{ok:true,added:0,updated:1,attached:0});
+    assert.deepEqual(await (await avilys({job:{id:job.id,owner:job.owner},items:[avilysItem]})).json(),{ok:true,added:1,updated:0,attached:0,skipped:0});
+    assert.deepEqual(await (await avilys({job:{id:job.id,owner:job.owner},items:[avilysItem]})).json(),{ok:true,added:0,updated:1,attached:0,skipped:0});
     const [[avilysEvent]]=await pool.execute<RowDataPacket[]>("SELECT e.id,e.review_status,e.city,e.event_time FROM events e JOIN event_sources s ON s.event_id=e.id WHERE s.source_key='avilys' AND s.source_id='987654'");
     assert.equal(avilysEvent.review_status,'unsure');
     assert.equal(avilysEvent.city,'Vilnius');
@@ -293,7 +293,7 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     assert.deepEqual(afterCleanup.log.map((entry:{action:string})=>entry.action),['verified','published','imported']);
 
     // Recreate the pre-city, pre-preferences and pre-score schema to exercise migrations.
-    await pool.query('DROP TABLE event_times,event_redirects,event_duplicate_dismissals');
+    await pool.query('DROP TABLE removed_listings,event_times,event_redirects,event_duplicate_dismissals');
     await pool.query('ALTER TABLE event_sources DROP COLUMN is_secondary');
     await pool.query('ALTER TABLE events DROP COLUMN event_end_time');
     await pool.query('DROP TABLE verification_provider_requests,verification_findings,event_verifications,verification_jobs,verification_rule_state,verification_rule_versions,verification_providers,event_history,seeker_agent_keys,seeker_import_requests');
@@ -435,7 +435,7 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
         const listing = { source_id: 7001, title: 'PAVEL ARAKELIAN TRIO (sold out)', source_url: 'https://www.vilnius-events.lt/renginiai/pavel', content_html: 'Vilnius Events listing', categories: [1],
           details: { event_date: '2099-12-03', event_time: '20:00', venue: 'Aušros Vartų 11, Vilnius', ticket_url: 'https://tickets.example.com' } };
         const page = (item: typeof listing) => importVilniusPage(pool, { verify_after_import: false, items: [item], advance_cursor: false, expected_offset: 0, next_offset: 0, total_available: null });
-        assert.deepEqual(await page(listing), { added: 0, updated: 0, attached: 1, changedEventIds: [20001] });
+        assert.deepEqual(await page(listing), { added: 0, updated: 0, attached: 1, skipped: 0, changedEventIds: [20001] });
         const [attachedSources] = await pool.execute<RowDataPacket[]>('SELECT source_key,is_secondary FROM event_sources WHERE event_id=20001 ORDER BY id');
         assert.deepEqual(attachedSources.map(row => [row.source_key, Number(row.is_secondary)]), [['avilys', 0], ['vilnius-events', 1]]);
         const [[joined]] = await pool.execute<RowDataPacket[]>('SELECT title,venue,ticket_url FROM events WHERE id=20001');
@@ -555,6 +555,9 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
         assert.deepEqual(await listingGone(pool, 20031, 'vilnius-events', 20031, 'Scheduled import'), { outcome: 'deleted' });
         const [[goneDraft]] = await pool.execute<RowDataPacket[]>('SELECT COUNT(*) AS n FROM events WHERE id=20031');
         assert.equal(Number(goneDraft.n), 0);
+        // The source still lists it, but the import remembers the removal and does not add it back.
+        const relisted = await page({ ...listing, source_id: 20031, title: 'Gone draft', source_url: 'https://www.vilnius-events.lt/renginiai/gone' });
+        assert.deepEqual([relisted.added, relisted.skipped], [0, 1]);
         await addEvent(20032, 'Gone twice', 'Kablys', 'vilnius-events');
         await pool.execute("INSERT INTO event_sources(event_id,source_key,source_id,source_url,content_html,source_data_json,is_secondary) VALUES(20032,'avilys','20032','https://example.com','Listing','{}',TRUE)");
         assert.deepEqual(await listingGone(pool, 20032, 'vilnius-events', '20032', 'Scheduled import'), { outcome: 'detached' });
@@ -566,13 +569,16 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
         await pool.execute('UPDATE events SET publication_manual=1 WHERE id=20034');
         await addEvent(20035, 'Undated', 'Kablys', 'vilnius-events', 'draft');
         await pool.execute('UPDATE events SET event_date=NULL WHERE id=20035');
+        await addEvent(20036, 'Pirties festivalis', 'Kablys', 'vilnius-events', 'draft');
+        await pool.execute("INSERT INTO vilnius_events(source_id,title,source_url,content_html,categories_json,first_seen_at,updated_at,details_manual,review_status,details_version,manual_fields) VALUES(20036,'Pirties festivalis','https://example.com','x','[81,12]','now','now',0,'unsure',0,'[]')");
         const publishConn = await pool.getConnection();
         try {
-          for (const id of [20033, 20034, 20035]) await publishIfDated(publishConn, id, null, 'Vilnius Events');
+          for (const id of [20033, 20034, 20035, 20036]) await publishIfDated(publishConn, id, null, 'Vilnius Events');
           await publishIfDated(publishConn, 20033, '2099-12-01', 'Vilnius Events');
         } finally { publishConn.release(); }
-        const [published] = await pool.execute<RowDataPacket[]>('SELECT id,publication_status FROM events WHERE id BETWEEN 20033 AND 20035 ORDER BY id');
-        assert.deepEqual(published.map(row => row.publication_status), ['live', 'draft', 'draft']);
+        // A Vilnius Events festival listing waits for an editor even with a date.
+        const [published] = await pool.execute<RowDataPacket[]>('SELECT id,publication_status FROM events WHERE id BETWEEN 20033 AND 20036 ORDER BY id');
+        assert.deepEqual(published.map(row => row.publication_status), ['live', 'draft', 'draft', 'draft']);
         const [[publishedHistory]] = await pool.execute<RowDataPacket[]>("SELECT actor FROM event_history WHERE event_id=20033 AND action='published'");
         assert.equal(publishedHistory.actor, 'Vilnius Events');
         // Several showings stay one event, listed only on days that have a showing.
@@ -589,7 +595,7 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
         assert.throws(() => parseShowtimes([{ date: '2099-02-30', time: '16:00' }]), { status: 400 });
         await pool.query('DELETE FROM user_saved_events'); await pool.query('DELETE FROM seeker_saved_events'); await pool.query('DELETE FROM event_prices WHERE event_id>=20001');
         await pool.query('DELETE FROM event_artist_decisions WHERE event_id>=20001');
-        await pool.query('DELETE FROM event_redirects'); await pool.query('DELETE FROM event_sources WHERE event_id>=20001'); await pool.query('DELETE FROM vilnius_events WHERE source_id IN (7001,7002)'); await pool.query('DELETE FROM events WHERE id>=20001');
+        await pool.query('DELETE FROM event_redirects'); await pool.query('DELETE FROM event_sources WHERE event_id>=20001'); await pool.query('DELETE FROM vilnius_events WHERE source_id IN (7001,7002,20036)'); await pool.query('DELETE FROM events WHERE id>=20001');
       }
 
       const migrations = await loadMigrations();

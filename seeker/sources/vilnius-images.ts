@@ -16,6 +16,14 @@ export function selectImage(media:Media):{url:string;width:number|null;height:nu
  if(!chosen.source_url)throw new Error('Media record has no image URL.');
  return {url:chosen.source_url,width:chosen.width||null,height:chosen.height||null};
 }
+/** The preferred image from selectImage, followed by the smaller sizes of the same shape, largest first. */
+export function imageChoices(media:Media):{url:string;width:number|null;height:number|null}[] {
+ const chosen=selectImage(media), detail=media.media_details||{}, ratio=detail.width&&detail.height?detail.width/detail.height:0;
+ const smaller=Object.values(detail.sizes||{})
+  .filter(s=>s.source_url&&s.width&&s.height&&s.width<(chosen.width||0)&&(!ratio||Math.abs(s.width/s.height-ratio)<0.02))
+  .sort((a,b)=>(b.width||0)-(a.width||0));
+ return [chosen,...smaller.map(s=>({url:s.source_url!,width:s.width||null,height:s.height||null}))];
+}
 export function createVilniusImages(db:DatabaseSync,dataDir:string,userAgent:string) {
  db.exec(`CREATE TABLE IF NOT EXISTS vilnius_images (media_id INTEGER PRIMARY KEY,source_url TEXT NOT NULL,local_name TEXT NOT NULL,mime_type TEXT NOT NULL,width INTEGER,height INTEGER,source_modified TEXT,downloaded_at TEXT NOT NULL);`);
  const dir=join(dataDir,'images','vilnius-events');

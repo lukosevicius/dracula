@@ -29,7 +29,7 @@ export async function importVilniusPage(pool: Pool, data: unknown) {
     if((d.event_date&&!dateOk(d.event_date))||(d.event_end_date&&(!d.event_date||!dateOk(d.event_end_date)||d.event_end_date<d.event_date))||(d.event_time&&!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(d.event_time))||(d.venue?.length||0)>300||(d.ticket_url?.length||0)>2048) throw problem(400,'Invalid event details.');
     if(d.ticket_url){try{if(!['http:','https:'].includes(new URL(d.ticket_url).protocol))throw Error();}catch{throw problem(400,'Invalid ticket URL.');}}
   }
-  const conn=await pool.getConnection();let added=0,updated=0,attached=0;
+  const conn=await pool.getConnection();let added=0,updated=0,attached=0,skipped=0;
   const changedEventIds: number[]=[];
   try {
     await conn.beginTransaction();
@@ -46,6 +46,8 @@ export async function importVilniusPage(pool: Pool, data: unknown) {
         const [existing]=await conn.execute<RowDataPacket[]>('SELECT * FROM vilnius_events WHERE source_id=?',[item.source_id]);
         const categories=JSON.stringify(item.categories), metadata=JSON.stringify({title:item.title,published_at:item.published_at||null,modified_at:item.modified_at||null,categories_json:categories,structured_details:Object.fromEntries(fields.map(field=>[field,item.details[field]??null])),featured_media:item.featured_media||null});
         if(!existing.length){
+          const [removed]=await conn.execute<RowDataPacket[]>("SELECT 1 FROM removed_listings WHERE source_key='vilnius-events' AND source_id=?",[String(item.source_id)]);
+          if(removed.length){skipped++;continue;}
           const values=fields.map(field=>item.details[field]||null);
           await conn.execute('INSERT INTO vilnius_events(source_id,title,source_url,content_html,categories_json,featured_media,published_at,modified_at,first_seen_at,updated_at,event_date,event_end_date,event_time,venue,ticket_url,details_manual,review_status,details_checked_at,details_version,manual_fields) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',[item.source_id,item.title,item.source_url,item.content_html,categories,item.featured_media||null,item.published_at||null,item.modified_at||null,now,now,...values,0,'unsure',null,0,'[]']);
           const match=await findImportMatch(conn,{title:item.title,event_date:item.details.event_date||null,event_time:item.details.event_time||null,venue:item.details.venue||null,city},'vilnius-events');
@@ -98,7 +100,7 @@ export async function importVilniusPage(pool: Pool, data: unknown) {
         }
       }
       if(input.advance_cursor)await conn.execute('UPDATE source_state SET next_offset=?,total_available=?,updated_at=? WHERE source_key=?',[input.next_offset,input.total_available,now,'vilnius-events']);
-      await conn.commit();return {added,updated,attached,changedEventIds};
+      await conn.commit();return {added,updated,attached,skipped,changedEventIds};
     }catch(cause){await conn.rollback();throw cause;}
   }finally{conn.release();}
 }

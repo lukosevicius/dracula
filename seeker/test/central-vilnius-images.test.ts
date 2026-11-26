@@ -40,3 +40,18 @@ test('rejects content that is not a supported image',async()=>{
   const request=async()=>++calls===1?new Response(JSON.stringify({id:42,source_url:'https://www.vilnius-events.lt/wp-content/uploads/a.png',media_details:{width:1,height:1}})):new Response('not an image',{headers:{'content-type':'image/png'}});
   await assert.rejects(createCentralVilniusImages(api,'Test/1',request as typeof fetch)(42),/Unsupported image content/);
 });
+
+test('an image too large for the API host is replaced by the next smaller size',async()=>{
+  let uploaded:Record<string,unknown>|undefined;const fetched:string[]=[];
+  const api={reserveVilniusRequest:async()=>0,getImageInfo:async()=>null,uploadImage:async(value:Record<string,unknown>)=>{uploaded=value;}} as unknown as ReturnType<typeof createCentralApi>;
+  const base='https://www.vilnius-events.lt/wp-content/uploads/';
+  const media={id:42,source_url:`${base}full.png`,modified:'now',media_details:{width:3000,height:2000,sizes:{
+    big:{source_url:`${base}big.jpg`,width:1536,height:1024},large:{source_url:`${base}large.jpg`,width:1024,height:683},thumb:{source_url:`${base}thumb.jpg`,width:150,height:150}}}};
+  const jpeg=(size:number)=>Buffer.concat([Buffer.from([0xff,0xd8,0xff]),Buffer.alloc(size)]);
+  const request=async(url:string|URL)=>{const href=String(url);fetched.push(href);
+    if(href.includes('/wp-json/'))return new Response(JSON.stringify(media));
+    return new Response(href.endsWith('big.jpg')?jpeg(3.5*1024*1024):jpeg(1000));};
+  assert.equal(await createCentralVilniusImages(api,'Test/1',request as typeof fetch,async()=>{})(42),'downloaded');
+  assert.deepEqual(fetched.slice(1),[`${base}big.jpg`,`${base}large.jpg`]);
+  assert.equal(uploaded?.source_url,`${base}large.jpg`);assert.equal(uploaded?.width,1024);
+});

@@ -37,7 +37,7 @@ test('Avilys imports are idempotent, reviewable, and preserve edits on refresh',
   const admin=createAdmin(pool,'a'.repeat(32));const catalogue=createCatalogue(pool,'https://example.com');
   const event={id:10,title:'Concert',city:'vilnius',categories:[{id:1,name:'Music'}],description:'Music <script>',startTime:'2026-11-25T19:00:00Z',venueName:'Club',sourceUrl:'https://example.org/event',free:false};
   try {
-    assert.deepEqual(await importAvilysPage(pool,{verify_after_import:false,items:[event],job}),{added:1,updated:0,attached:0});
+    assert.deepEqual(await importAvilysPage(pool,{verify_after_import:false,items:[event],job}),{added:1,updated:0,attached:0,skipped:0});
     assert.equal(db.prepare('SELECT city FROM events').get()!.city,'Vilnius');
     assert.equal(db.prepare('SELECT event_time FROM events').get()!.event_time,'19:00');
     db.exec("UPDATE event_prices SET price_text='16 €'");
@@ -64,7 +64,7 @@ test('Avilys imports are idempotent, reviewable, and preserve edits on refresh',
     await admin.price(1,{price_type:'paid',price_text:'5 €'});
     assert.equal((await catalogue.get(1,'2026-11-20')).price_text,'5 €');
     db.exec('UPDATE events SET city=NULL');
-    assert.deepEqual(await importAvilysPage(pool,{verify_after_import:false,items:[{...event,venueName:'Changed'}],job}),{added:0,updated:1,attached:0});
+    assert.deepEqual(await importAvilysPage(pool,{verify_after_import:false,items:[{...event,venueName:'Changed'}],job}),{added:0,updated:1,attached:0,skipped:0});
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM events').get()!.n,1);
     const refreshed=db.prepare('SELECT city,venue FROM events').get()!;
     assert.equal(refreshed.city,'Vilnius');

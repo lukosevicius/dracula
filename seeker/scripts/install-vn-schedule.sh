@@ -1,6 +1,6 @@
 #!/bin/bash
 # Installs (or with --uninstall removes) the launchd agent that runs scripts/vn-import.sh on this Mac
-# at 05:30 and 12:30 local time. Run it again after moving the project or changing the Node.js version.
+# at 12:00 and 18:00 local time, never at night. Run it again after moving the project or changing the Node.js version.
 set -euo pipefail
 
 label="lt.dracula.vn-import"
@@ -34,8 +34,8 @@ cat > "$plist" <<EOF
   <dict><key>NODE_BIN</key><string>$(xml "$node")</string></dict>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict>
+    <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+    <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
   </array>
   <key>StandardOutPath</key><string>$(xml "$log")</string>
   <key>StandardErrorPath</key><string>$(xml "$log")</string>
@@ -44,6 +44,6 @@ cat > "$plist" <<EOF
 EOF
 plutil -lint "$plist" >/dev/null
 launchctl bootstrap "$domain" "$plist"
-echo "Installed: Vilnius Events imports run at 05:30 and 12:30 with $node."
+echo "Installed: Vilnius Events imports run at 12:00 and 18:00 with $node."
 echo "Log: $log"
 echo "Run now: launchctl kickstart $domain/$label"

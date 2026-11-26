@@ -7,9 +7,11 @@ import { createCentralJobs } from './central-jobs.js';
 
 /**
  * Runs the source imports without the Seeker UI:
- *   node dist/scheduled-import.js nightly [--sources=vilnius-events,avilys]
- *   node dist/scheduled-import.js midday  [--sources=vilnius-events,avilys]
- * nightly reads every Vilnius Events list page, midday only the newest. Both refresh upcoming VN details, handle
+ *   node dist/scheduled-import.js daily [--sources=vilnius-events,avilys]
+ *   node dist/scheduled-import.js quick [--sources=vilnius-events,avilys]
+ *   node dist/scheduled-import.js full  [--sources=vilnius-events,avilys]   (one-off catch-up: ten VN list pages)
+ * daily reads the two newest Vilnius Events list pages (100 listings), quick only the newest. VN lists new events
+ * first, so older pages hold only past listings; upcoming ones are re-checked by the details step every run. Both refresh upcoming VN details, handle
  * removed VN listings, import Avilys and merge confident duplicates. Vilnius Events refuses GitHub's servers, so
  * the GitHub workflow runs Avilys and a Mac schedule runs Vilnius Events (scripts/vn-import.sh).
  * Jobs use the same leases as Seeker, so a run never overlaps a job started from Seeker.
@@ -26,8 +28,8 @@ for (const name of ['.env.central', '.env']) {
 const mode = process.argv[2];
 const sourceArg = process.argv.slice(3).find(arg => arg.startsWith('--sources='))?.slice('--sources='.length);
 const sources = new Set((sourceArg ?? 'vilnius-events,avilys').split(',').filter(Boolean));
-if ((mode !== 'nightly' && mode !== 'midday') || !sources.size || [...sources].some(source => source !== 'vilnius-events' && source !== 'avilys')) {
-  console.error('Usage: node dist/scheduled-import.js nightly|midday [--sources=vilnius-events,avilys]');
+if ((mode !== 'daily' && mode !== 'quick' && mode !== 'full') || !sources.size || [...sources].some(source => source !== 'vilnius-events' && source !== 'avilys')) {
+  console.error('Usage: node dist/scheduled-import.js daily|quick|full [--sources=vilnius-events,avilys]');
   process.exit(2);
 }
 const { CENTRAL_API_URL, CENTRAL_API_TOKEN } = process.env;
@@ -84,8 +86,8 @@ async function step(name: string, work: () => Promise<string>) {
   }
 }
 
-if (sources.has('vilnius-events')) await step('Vilnius Events list', async () => describe(await runJob(mode === 'nightly'
-  ? { source: 'vilnius-events', action: 'start', pages: 10, include_images: true, verify_after_import: false }
+if (sources.has('vilnius-events')) await step('Vilnius Events list', async () => describe(await runJob(mode !== 'quick'
+  ? { source: 'vilnius-events', action: 'start', pages: mode === 'full' ? 10 : 2, include_images: true, verify_after_import: false }
   : { source: 'vilnius-events', action: 'refresh', pages: 1, include_images: true, verify_after_import: false })));
 
 if (sources.has('avilys')) await step('Avilys', async () => {

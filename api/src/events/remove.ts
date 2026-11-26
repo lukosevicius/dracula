@@ -22,6 +22,8 @@ export function removeListing(pool: Pool, eventId: number, sourceKey: unknown, a
     if (sourceKey === 'vilnius-events') await conn.execute('DELETE FROM vilnius_events WHERE source_id=?', [Number(listing.source_id)]);
     await conn.execute('DELETE FROM event_images WHERE event_id=? AND source_key=? AND source_id=?', [eventId, sourceKey, String(listing.source_id)]);
     await conn.execute('DELETE FROM event_sources WHERE id=?', [listing.id]);
+    // Remembered so a later import does not add it back while the source still lists it.
+    await conn.execute('INSERT IGNORE INTO removed_listings(source_key,source_id,removed_at) VALUES(?,?,?)', [sourceKey, String(listing.source_id), new Date().toISOString()]);
     if (!remaining.length) {
       // Tables without cascading keys; the rest (history, findings, prices, saves, redirects) cascade.
       await conn.execute('DELETE FROM event_artist_decisions WHERE event_id=?', [eventId]);
