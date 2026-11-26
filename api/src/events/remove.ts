@@ -1,5 +1,5 @@
 import type { Pool, RowDataPacket } from 'mysql2/promise';
-import { fail, history, lockEvent, transaction } from '../verification/history.js';
+import { fail, history, lockEvent, setPublication, transaction } from '../verification/history.js';
 
 const sourceNames: Record<string, string> = { 'vilnius-events': 'Vilnius Events', avilys: 'Avilys' };
 
@@ -33,4 +33,33 @@ export function removeListing(pool: Pool, eventId: number, sourceKey: unknown, a
     await history(conn, eventId, 'source_removed', actor, {}, { source_key: sourceKey, source_id: listing.source_id });
     return { event_deleted: false };
   });
+}
+
+export type GoneOutcome = 'deleted' | 'detached' | 'unpublished' | 'kept';
+
+/**
+ * Handles a listing its source has taken down, as found by a scheduled import.
+ * A draft is removed. A live event is never deleted automatically: it is unpublished and flagged for an editor once,
+ * and later runs keep it. A listing that shares its event with other sources is detached.
+ */
+export async function listingGone(pool: Pool, eventId: number, sourceKey: unknown, sourceId: unknown, actor: string): Promise<{ outcome: GoneOutcome }> {
+  if (!Number.isSafeInteger(eventId) || eventId < 1 || typeof sourceKey !== 'string' || !(sourceKey in sourceNames)) throw fail(400, 'Choose an event and a source.');
+  if ((typeof sourceId !== 'string' && typeof sourceId !== 'number') || !String(sourceId) || String(sourceId).length > 191) throw fail(400, 'Invalid source listing.');
+  const decision = await transaction(pool, async conn => {
+    const event = await lockEvent(conn, eventId);
+    const [sources] = await conn.execute<RowDataPacket[]>('SELECT source_key,source_id FROM event_sources WHERE event_id=? FOR UPDATE', [eventId]);
+    if (!sources.some(source => source.source_key === sourceKey && String(source.source_id) === String(sourceId))) throw fail(404, `This event has no such ${sourceNames[sourceKey]} listing.`);
+    if (sources.length > 1) return 'detach' as const;
+    const [flagged] = await conn.execute<RowDataPacket[]>(`SELECT id FROM event_history WHERE event_id=? AND action='source_gone'
+      AND JSON_UNQUOTE(JSON_EXTRACT(context,'$.source_id'))=? LIMIT 1`, [eventId, String(sourceId)]);
+    if (flagged.length) return 'kept' as const;
+    if (event.publication_status !== 'live') return 'delete' as const;
+    await setPublication(conn, event, 'draft', actor, false, { reason: 'source_gone' });
+    await conn.execute('UPDATE events SET needs_attention=1 WHERE id=?', [eventId]);
+    await history(conn, eventId, 'source_gone', actor, {}, { source_key: sourceKey, source_id: String(sourceId) });
+    return 'unpublished' as const;
+  });
+  if (decision === 'kept' || decision === 'unpublished') return { outcome: decision };
+  await removeListing(pool, eventId, sourceKey, actor, sourceId);
+  return { outcome: decision === 'delete' ? 'deleted' : 'detached' };
 }

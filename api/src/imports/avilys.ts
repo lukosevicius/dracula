@@ -5,6 +5,7 @@ import { findImportMatch } from '../events/duplicates.js';
 import { fillFromSource, recordAttach } from './attach.js';
 import {createHash,timingSafeEqual} from 'node:crypto';
 import type { Pool, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
+import {publishIfDated} from '../events/auto-publish.js';
 interface AvilysEvent { id: number; title: string; city: string; categories: {id: number}[]; description?: string; startTime?: string; endTime?: string; venueName?: string; ticketUrl?: string; sourceUrl?: string; priceFrom?: number | string; priceTo?: number | string; free?: boolean }
 interface ImportInput { verify_after_import?: boolean; publish_after_verification?: boolean; items: AvilysEvent[]; job: {id: number; owner: string} }
 interface Lease extends RowDataPacket { job_id: number; owner_hash: string; expires_at: number | string }
@@ -69,6 +70,7 @@ export async function importAvilysPage(pool: Pool, data: unknown){
 
         if(pricing.available)await conn.execute('INSERT INTO event_prices(event_id,price_text,price_type,manual,checked_at) VALUES(?,?,?,?,?)',[insert.insertId,pricing.priceText,pricing.priceType,0,now]);
         await history(conn,insert.insertId,'imported','Avilys',diff({},await snapshot(conn,insert.insertId)),{source_id:e.id,job_id:input.job.id});
+        await publishIfDated(conn,insert.insertId,null,'Avilys');
         await queueAfterImport(conn,insert.insertId,input.job.id,input.verify_after_import!==false,input.publish_after_verification!==false);
         added++;
       }else{

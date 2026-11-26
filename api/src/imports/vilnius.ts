@@ -62,6 +62,7 @@ export async function importVilniusPage(pool: Pool, data: unknown) {
           const [result]=await conn.execute<ResultSetHeader>('INSERT INTO events(title,event_date,event_end_date,event_time,venue,ticket_url,city,review_status,manual_fields,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[item.title,...values,city,'unsure','[]',now,now]);
           await conn.execute('INSERT INTO event_sources(event_id,source_key,source_id,source_url,content_html,source_data_json,last_checked_at) VALUES(?,?,?,?,?,?,?)',[result.insertId,'vilnius-events',String(item.source_id),item.source_url,item.content_html,metadata,null]);
           await history(conn,result.insertId,'imported','Vilnius Events',diff({},await snapshot(conn,result.insertId)),{source_id:item.source_id,job_id:input.job?.id});
+          await publishIfDated(conn,result.insertId,null,'Vilnius Events');
           await queueAfterImport(conn,result.insertId,input.job?.id,input.verify_after_import!==false,input.publish_after_verification!==false);
           changedEventIds.push(result.insertId);
           added++;
@@ -89,6 +90,7 @@ export async function importVilniusPage(pool: Pool, data: unknown) {
           const sourceAfter={source_url:item.source_url,description:item.content_html,image_id:item.featured_media||null,source_title:item.title,structured_details:jsonValue<Snapshot>(metadata).structured_details};
           if(await recordChange(conn,id,'source_refreshed','Vilnius Events',{...before,...sourceBefore},{...await snapshot(conn,id),...sourceAfter},{source_id:item.source_id,job_id:input.job?.id})){
             await queueAfterImport(conn,id,input.job?.id,input.verify_after_import!==false,input.publish_after_verification!==false);
+            if(!Number(links[0].is_secondary))await publishIfDated(conn,id,event.event_date,'Vilnius Events');
             // A listing that now states its date may match an event from another source.
             changedEventIds.push(Number(links[0].is_secondary)?id:await mergeIfMatched(conn,id,event.event_date,'Vilnius Events'));
           }
@@ -101,3 +103,4 @@ export async function importVilniusPage(pool: Pool, data: unknown) {
   }finally{conn.release();}
 }
 import {createHash, timingSafeEqual} from 'node:crypto';
+import {publishIfDated} from '../events/auto-publish.js';

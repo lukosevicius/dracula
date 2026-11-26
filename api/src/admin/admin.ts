@@ -74,12 +74,17 @@ export function createAdmin(pool: Pool, token: string) {
       await pool.execute('INSERT INTO seeker_settings(setting_key,setting_value) VALUES(?,?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)',[key,serialized]);
     },
     async enrichmentCandidates(mode: string | null,after: number,eventId: number){
-      if(mode===null||!['missing','oldest','all','event'].includes(mode)||!Number.isSafeInteger(after)||after<0||(mode==='event'&&(!Number.isSafeInteger(eventId)||eventId<1)))throw error(400,'Invalid detail selection.');
+      if(mode===null||!['missing','oldest','all','event','upcoming'].includes(mode)||!Number.isSafeInteger(after)||after<0||(mode==='event'&&(!Number.isSafeInteger(eventId)||eventId<1)))throw error(400,'Invalid detail selection.');
       const clauses=["s.source_key='vilnius-events'"],params: (string | number)[]=[];
       if(mode==='missing')clauses.push('(v.details_checked_at IS NULL OR s.about_checked_at IS NULL)');
       if(mode==='event'){clauses.push('s.event_id=?');params.push(eventId);}else if(mode==='all'){clauses.push('s.event_id>?');params.push(after);}
+      else if(mode==='upcoming'){
+        // Upcoming or undated listings not checked in the last 20 hours; scheduled imports page through them by event ID.
+        clauses.push('s.event_id>?',"(NULLIF(e.event_date,'') IS NULL OR COALESCE(NULLIF(e.event_end_date,''),e.event_date)>=?)",'(v.details_checked_at IS NULL OR v.details_checked_at<?)');
+        params.push(after,vilniusToday(),new Date(Date.now()-20*3600_000).toISOString());
+      }
       const order=mode==='oldest'?'v.details_checked_at ASC,v.published_at DESC':'s.event_id ASC';
-      const [rows]=await pool.execute(`SELECT s.event_id,s.source_url,s.content_html FROM event_sources s JOIN vilnius_events v ON v.source_id=CAST(s.source_id AS UNSIGNED) WHERE ${clauses.join(' AND ')} ORDER BY ${order} LIMIT 10`,params);return rows;
+      const [rows]=await pool.execute(`SELECT s.event_id,s.source_id,s.source_url,s.content_html FROM event_sources s JOIN vilnius_events v ON v.source_id=CAST(s.source_id AS UNSIGNED) JOIN events e ON e.id=s.event_id WHERE ${clauses.join(' AND ')} ORDER BY ${order} LIMIT 10`,params);return rows;
     },
     async listMedia(after: number,limit: number){
       if(!Number.isSafeInteger(after)||after<0||!Number.isSafeInteger(limit)||limit<1||limit>100)throw error(400,'Invalid media pagination.');

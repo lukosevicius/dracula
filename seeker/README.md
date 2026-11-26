@@ -70,9 +70,26 @@ For a recovery drill, download the intended database backup from Hostinger and v
 
 The experimental `sources/central-vilnius-run.ts` combines source-page fetching with transactional API imports and optional image uploads. It coordinates the minimum interval between requests through MariaDB and honors retry delays. Dashboard jobs use a lease and save progress centrally; an expired lease is marked interrupted when another job starts. If an image fails, the job fails visibly while already imported pages remain saved. The normal dashboard job path has been tested with a simulated source and disposable MariaDB; a bounded live import used the shared importer and central job lease.
 
+## Scheduled imports
+
+The **Scheduled import** GitHub workflow runs the imports without anyone opening Seeker, at 05:00 and 12:00 Vilnius winter time (03:00 and 10:00 UTC):
+
+1. Fetches the Vilnius Events list: every page at night, the newest page at midday.
+2. Imports every upcoming Avilys event.
+3. Refreshes the details of upcoming Vilnius Events listings not checked in the last 20 hours. A listing that now redirects to the Vilnius Events home page was taken down. A draft is deleted, a listing that shares its event with another source is detached, and a live event is unpublished and placed in **Needs attention** for you to decide. If more than 10% of the checked listings (at least 3) look removed, nothing is removed and the run fails.
+4. Merges confident duplicates. Pairs with conflicting values stay on the duplicates page.
+
+The run fails, and GitHub emails you, if any step fails. Each run's summary lists the counts per step. Start a run by hand from **Actions → Scheduled import → Run workflow**. Jobs share Seeker's leases, so a run fails instead of overlapping a job started from Seeker.
+
+The workflow uses the `production-imports` environment with the `CENTRAL_API_TOKEN` secret, and the optional `CENTRAL_API_URL` variable (default `https://api.dracula.lt`). To run the same steps locally with `.env.central`:
+
+```sh
+npm run build:server && node dist/scheduled-import.js midday
+```
+
 ## AI verification and publication
 
-New events enter Seeker as **Draft** and **Unsure**. Both event import forms start with **Verify with AI after import** checked unless you save a different default under **Settings → Event imports**. You can override the default on either import form. Verification runs in the central API when the source job releases its lease. It covers new events and meaningful source changes. The import itself still succeeds if verification is unavailable. The Vilnius Events worker attempts the usual detail lookup for each changed event before releasing the import lease.
+New events enter Seeker as **Unsure**. An import with a date goes **Live** at once; one without a date stays **Draft** until an import finds its date. Publication you set by hand is never changed by an import. Both event import forms start with **Verify with AI after import** checked unless you save a different default under **Settings → Event imports**. You can override the default on either import form. Verification runs in the central API when the source job releases its lease. It covers new events and meaningful source changes. The import itself still succeeds if verification is unavailable. The Vilnius Events worker attempts the usual detail lookup for each changed event before releasing the import lease.
 
 Under **Settings → AI providers**, add one or more Gemini or OpenAI connections with a model ID and API key. Use **Test** to check each connection and select a default for imports. Set `SEEKER_AI_ENCRYPTION_KEY` on the API server before adding connections. The API encrypts saved keys using this server secret. Keep the environment secret available across releases and backups so existing provider profiles can still be decrypted.
 

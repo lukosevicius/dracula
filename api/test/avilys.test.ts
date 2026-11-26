@@ -53,7 +53,9 @@ test('Avilys imports are idempotent, reviewable, and preserve edits on refresh',
     await importAvilysPage(pool,{verify_after_import:false,items:[event],job});
     assert.equal(db.prepare('SELECT event_time FROM events').get()!.event_time,null);
     db.exec(`UPDATE events SET event_date='2026-11-25',manual_fields='[]'`);
-    assert.equal(await catalogue.get(1,'2026-11-20'),null);
+    // A dated import is public at once.
+    assert.equal((await catalogue.get(1,'2026-11-20')).id,1);
+    db.exec(`UPDATE events SET publication_status='draft'`);
     await admin.details(1,{review_status:'music',event_date:'2026-11-25',event_time:'19:00',venue:'Edited'});
     assert.equal(await catalogue.get(1,'2026-11-20'),null);
     const revision=Number(db.prepare('SELECT revision FROM events WHERE id=1').get()!.revision);

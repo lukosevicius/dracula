@@ -202,6 +202,10 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     const saved=await (await importPage({...payload,verify_after_import:true,advance_cursor:false,job:{id:started.id,owner:started.owner},
       items:imports.map(e=>({...item,source_id:e.source_id,title:e.title,content_html:e.description,details:{event_date:'2099-11-20',event_time:e.event_time,venue:'Club'}}))})).json();
     const [clean, flagged, workshop]=saved.changedEventIds as number[];
+    // Dated imports go live at once. The verification checks below cover events that are still drafts.
+    const [importedLive]=await pool.execute<RowDataPacket[]>('SELECT publication_status FROM events WHERE id IN (?,?,?)',[clean,flagged,workshop]);
+    assert.deepEqual(importedLive.map(row=>row.publication_status),['live','live','live']);
+    await pool.execute("UPDATE events SET publication_status='draft' WHERE id IN (?,?,?)",[clean,flagged,workshop]);
     const worker=createVerificationWorker(pool,aiEncryptionKey,async (_url,request) => {
       const body=String(request?.body);
       const uncertain=body.includes('Test concert 31');
@@ -225,7 +229,7 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     assert.equal(cleanResult.publication_status,'live');
     const [[filled]]=await pool.execute<RowDataPacket[]>('SELECT event_time FROM events WHERE id=?',[clean]);
     assert.equal(filled.event_time,'19:30');
-    assert.deepEqual(cleanResult.log.map((entry:{action:string})=>entry.action),['published','verified','imported']);
+    assert.deepEqual(cleanResult.log.map((entry:{action:string})=>entry.action),['published','verified','published','imported']);
     const flaggedResult=await (await workflow(`/events/${flagged}/verification`)).json();
     assert.equal(flaggedResult.publication_status,'draft');
     assert.equal(flaggedResult.findings.length,1);
@@ -275,18 +279,18 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     const cleanupDb = await pool.getConnection();
     try { await cleanupDb.query(cleanup); } finally { cleanupDb.release(); }
     const cleared = await (await workflow(`/events/${clean}/verification`)).json();
-    assert.deepEqual(cleared.log.map((entry:{action:string})=>entry.action),['imported']);
+    assert.deepEqual(cleared.log.map((entry:{action:string})=>entry.action),['published','imported']);
     assert.deepEqual(cleared.findings,[]);
     assert.equal(cleared.needs_attention,0);
     assert.equal(cleared.publication_status,'live');
     assert.equal(cleared.last_run.id,cleanResult.last_run.id);
     const stillFlagged = await (await workflow(`/events/${flagged}/verification`)).json();
-    assert.deepEqual(stillFlagged.log.map((entry:{action:string})=>entry.action),['unpublished','published','finding_approved','imported']);
+    assert.deepEqual(stillFlagged.log.map((entry:{action:string})=>entry.action),['unpublished','published','finding_approved','published','imported']);
     assert.deepEqual(stillFlagged.findings.map((finding:{reason:string})=>finding.reason),[JSON.parse(currentFinding).reason]);
     assert.equal(stillFlagged.needs_attention,1);
     await pool.execute("INSERT INTO event_history(event_id,action,actor,changes,context) VALUES(?,'verified','AI verification','{}','{}')",[clean]);
     const afterCleanup = await (await workflow(`/events/${clean}/verification`)).json();
-    assert.deepEqual(afterCleanup.log.map((entry:{action:string})=>entry.action),['verified','imported']);
+    assert.deepEqual(afterCleanup.log.map((entry:{action:string})=>entry.action),['verified','published','imported']);
 
     // Recreate the pre-city, pre-preferences and pre-score schema to exercise migrations.
     await pool.query('DROP TABLE event_times,event_redirects,event_duplicate_dismissals');
@@ -539,6 +543,38 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
         assert.deepEqual(await removeListing(pool, 20020, 'vilnius-events', 'Test', '20021'), { event_deleted: false });
         const [once] = await pool.execute<RowDataPacket[]>("SELECT source_id FROM event_sources WHERE event_id=20020");
         assert.deepEqual(once.map(row => row.source_id), ['20020']);
+        // Scheduled imports: a removed live listing is unpublished and flagged once, a removed draft is deleted,
+        // and a listing beside another source is detached.
+        const { listingGone } = await import('../dist/events/remove.js');
+        await addEvent(20030, 'Gone live', 'Kablys', 'vilnius-events');
+        assert.deepEqual(await listingGone(pool, 20030, 'vilnius-events', '20030', 'Scheduled import'), { outcome: 'unpublished' });
+        const [[goneLive]] = await pool.execute<RowDataPacket[]>('SELECT publication_status,publication_manual,needs_attention FROM events WHERE id=20030');
+        assert.deepEqual([goneLive.publication_status, Number(goneLive.publication_manual), Number(goneLive.needs_attention)], ['draft', 0, 1]);
+        assert.deepEqual(await listingGone(pool, 20030, 'vilnius-events', '20030', 'Scheduled import'), { outcome: 'kept' });
+        await addEvent(20031, 'Gone draft', 'Kablys', 'vilnius-events', 'draft');
+        assert.deepEqual(await listingGone(pool, 20031, 'vilnius-events', 20031, 'Scheduled import'), { outcome: 'deleted' });
+        const [[goneDraft]] = await pool.execute<RowDataPacket[]>('SELECT COUNT(*) AS n FROM events WHERE id=20031');
+        assert.equal(Number(goneDraft.n), 0);
+        await addEvent(20032, 'Gone twice', 'Kablys', 'vilnius-events');
+        await pool.execute("INSERT INTO event_sources(event_id,source_key,source_id,source_url,content_html,source_data_json,is_secondary) VALUES(20032,'avilys','20032','https://example.com','Listing','{}',TRUE)");
+        assert.deepEqual(await listingGone(pool, 20032, 'vilnius-events', '20032', 'Scheduled import'), { outcome: 'detached' });
+        await assert.rejects(listingGone(pool, 20032, 'vilnius-events', '20032', 'Scheduled import'), { status: 404 });
+        // Imported events go live once they have a date, unless an editor chose the publication or the date was already known.
+        const { publishIfDated } = await import('../dist/events/auto-publish.js');
+        await addEvent(20033, 'Dated later', 'Kablys', 'vilnius-events', 'draft');
+        await addEvent(20034, 'Kept back', 'Kablys', 'vilnius-events', 'draft');
+        await pool.execute('UPDATE events SET publication_manual=1 WHERE id=20034');
+        await addEvent(20035, 'Undated', 'Kablys', 'vilnius-events', 'draft');
+        await pool.execute('UPDATE events SET event_date=NULL WHERE id=20035');
+        const publishConn = await pool.getConnection();
+        try {
+          for (const id of [20033, 20034, 20035]) await publishIfDated(publishConn, id, null, 'Vilnius Events');
+          await publishIfDated(publishConn, 20033, '2099-12-01', 'Vilnius Events');
+        } finally { publishConn.release(); }
+        const [published] = await pool.execute<RowDataPacket[]>('SELECT id,publication_status FROM events WHERE id BETWEEN 20033 AND 20035 ORDER BY id');
+        assert.deepEqual(published.map(row => row.publication_status), ['live', 'draft', 'draft']);
+        const [[publishedHistory]] = await pool.execute<RowDataPacket[]>("SELECT actor FROM event_history WHERE event_id=20033 AND action='published'");
+        assert.equal(publishedHistory.actor, 'Vilnius Events');
         // Several showings stay one event, listed only on days that have a showing.
         const { saveShowtimes, parseShowtimes } = await import('../dist/events/times.js');
         await addEvent(20011, 'DEO GRACIAS', 'Šv. Kotrynos bažnyčia', 'vilnius-events');

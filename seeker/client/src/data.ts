@@ -68,6 +68,7 @@ export const jobLabels: Record<string, string> = {
   details: 'Get details for 10 events',
   'refresh-details': 'Refresh 10 oldest checks',
   'refresh-all-details': 'Refresh all event details',
+  'refresh-upcoming-details': 'Refresh upcoming event details',
   'details-event': 'Refresh event details',
 };
 

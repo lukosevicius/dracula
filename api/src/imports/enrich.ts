@@ -3,6 +3,7 @@ import { fillFromSource, mergeIfMatched } from './attach.js';
 import { parseShowtimes, saveShowtimes } from '../events/times.js';
 import {createHash,timingSafeEqual} from 'node:crypto';
 import type {Pool, ResultSetHeader, RowDataPacket} from 'mysql2/promise';
+import { publishIfDated } from '../events/auto-publish.js';
 type DetailField = 'event_date' | 'event_end_date' | 'event_time' | 'venue' | 'ticket_url';
 type Details = Partial<Record<DetailField, string | null>>;
 interface EnrichmentInput { details: Details & { event_end_time?: string | null; times?: unknown }; price_type: string; price_text?: string | null; about_url?: string | null; expected_source_url: string; expected_content_html: string; job?: { id: number; owner: string } }
@@ -54,7 +55,10 @@ export async function enrichEvent(pool: Pool,id: number,data: unknown){
       if(pending.affectedRows)await conn.execute("UPDATE events SET verification_status='queued' WHERE id=?",[id]);
     }
     // A date found on the event page may reveal the same performance from another source.
-    if(!secondary)await mergeIfMatched(conn,id,event.event_date,'Vilnius Events');
+    if(!secondary){
+      await publishIfDated(conn,id,event.event_date,'Vilnius Events');
+      await mergeIfMatched(conn,id,event.event_date,'Vilnius Events');
+    }
     await conn.commit();
   }catch(cause){await conn.rollback();throw cause;}}finally{conn.release();}
 }

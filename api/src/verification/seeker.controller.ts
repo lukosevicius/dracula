@@ -12,7 +12,7 @@ import { listRules, updateRules } from './rule-settings.js';
 import { verificationUsage } from './usage.js';
 import { vilniusToday } from '../catalogue/catalogue.service.js';
 import { dismissDuplicate, listDuplicates } from '../events/duplicates.js';
-import { removeListing } from '../events/remove.js';
+import { listingGone, removeListing } from '../events/remove.js';
 import { mergeConfidentDuplicates, mergeEvents, pairPreviews, parseChoices, previewMerge } from '../events/merge.js';
 import { editPublication, manualVerification, proposeFinding, queueRulesPreview, recentVerificationJobs, resolveFinding, rulesPreview, verificationDetails, verificationJob } from './verification.js';
 
@@ -56,7 +56,7 @@ export class SeekerController {
       };
       const url = new URL(req.originalUrl, 'http://localhost');
       const path = url.pathname.slice('/v1/seeker'.length);
-      const event = /^\/events\/([1-9]\d{0,11})(?:\/(verification|publication|findings|remove-listing)(?:\/([1-9]\d{0,11}))?)?$/.exec(path);
+      const event = /^\/events\/([1-9]\d{0,11})(?:\/(verification|publication|findings|remove-listing|listing-gone)(?:\/([1-9]\d{0,11}))?)?$/.exec(path);
       const preview = /^\/verification\/rules\/previews\/([1-9]\d{0,14})$/.exec(path);
       const verification = /^\/verification\/jobs\/([1-9]\d{0,11})$/.exec(path);
       const imported = /^\/imports\/([1-9]\d{0,11})$/.exec(path);
@@ -181,6 +181,10 @@ export class SeekerController {
         if (event?.[2] === 'remove-listing' && !event[3]) {
           require('admin');
           return send(200, { ok: true, ...await removeListing(pool, Number(event[1]), body.source_key, access.actor, body.source_id) });
+        }
+        if (event?.[2] === 'listing-gone' && !event[3]) {
+          require('admin');
+          return send(200, { ok: true, ...await listingGone(pool, Number(event[1]), body.source_key, body.source_id, access.actor) });
         }
         if (event?.[2] === 'publication' && !event[3]) {
           require('publication:write');
