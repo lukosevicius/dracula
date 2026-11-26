@@ -3,7 +3,7 @@ import { eventTypes, normalizeEventType } from '../events/types.js';
 import { loadShowtimes } from '../events/times.js';
 type Field = 'event_date' | 'event_end_date' | 'event_time' | 'venue' | 'ticket_url';
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { normalizeEventSearch } from './event-search.js';
+import { matchesEventSearch, normalizeEventSearch } from './event-search.js';
 import { vilniusToday } from '../catalogue/catalogue.service.js';
 import { history, recordChange, snapshot } from '../verification/history.js';
 
@@ -170,10 +170,10 @@ export function createAdmin(pool: Pool, token: string) {
           let searchTotal=null;
           const order=when==='past'?'DESC':'ASC';
           const scoreOrder=sort==='score-desc'?'e.interest_score DESC,':sort==='score-asc'?'e.interest_score ASC,':'';
-          // Seeker strips HTML/entities before prefix matching. Searching titles in JS preserves that behavior.
+          // Titles are matched in JS so HTML, entities, accents and case are ignored.
           if(search){
             const [titles]=await conn.execute<RowDataPacket[]>(`SELECT e.id,e.title FROM events e ${where} ORDER BY ${scoreOrder}e.event_date IS NULL,e.event_date ${order},e.event_time IS NULL,e.event_time ${order},e.id`,params);
-            const matches=titles.filter(row=>normalizeEventSearch(row.title).startsWith(search));
+            const matches=titles.filter(row=>matchesEventSearch(row.title,search));
             searchTotal=matches.length;
             const ids=matches.slice((page-1)*limit,page*limit).map(row=>row.id);
             if(ids.length){where+=`${where?' AND':'WHERE'} e.id IN (${ids.map(()=>'?').join(',')})`;params.push(...ids);} else where+=`${where?' AND':'WHERE'} 1=0`;
