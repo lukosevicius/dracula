@@ -18,6 +18,7 @@ test('artist events only include accepted upcoming public matches and are pagina
     ALTER TABLE events ADD COLUMN about_url_override TEXT;
     ALTER TABLE events ADD COLUMN description_override TEXT;
     ALTER TABLE events ADD COLUMN event_end_time TEXT;
+    CREATE TABLE event_times(id INTEGER PRIMARY KEY,event_id INTEGER,event_date TEXT,event_time TEXT,event_end_time TEXT);
     UPDATE events SET publication_status='live' WHERE id IN (1,2,4,5)`);
   const pool={execute:async(sql:string,params:import('node:sqlite').SQLInputValue[])=>[db.prepare(sql).all(...params)]};
   const service=new CatalogueService({pool} as never,{publicBaseUrl:'https://api.example.com'} as never);

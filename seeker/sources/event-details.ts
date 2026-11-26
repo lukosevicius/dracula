@@ -37,11 +37,14 @@ export function extractEventPrice(html = ''): {price_text:string|null;price_type
   const text=textFromHtml(line).replace(/&euro;/gi,'€').replace(/\s+/g,' ').trim() || null;
   return {price_text:text,price_type:classifyPrice(text)};
 }
+export type Showtime = { date: string; time: string | null; end_time: string | null };
+
 /**
  * The page's own schema.org event data. VN emits it only for the event itself (not for related event cards) and only
  * while the event has upcoming dates. Gives the start date and time and, when the listing has one, the end time.
  */
-function structuredSchedule(html: string): { date: string | null; time: string | null; endTime: string | null } {
+function structuredSchedule(html: string): { date: string | null; time: string | null; endTime: string | null; lastDate: string | null; times: Showtime[] | null } {
+  const none = { date: null, time: null, endTime: null, lastDate: null, times: null };
   const related = html.search(/Kiti renginiai|class=["'][^"']*\boe-card\b/);
   const own = related > 0 ? html.slice(0, related) : html;
   const items: Record<string, unknown>[] = [];
@@ -57,15 +60,22 @@ function structuredSchedule(html: string): { date: string | null; time: string |
     if (!match || Number.isNaN(Date.parse(`${match[1]}T00:00:00Z`)) || new Date(`${match[1]}T00:00:00Z`).toISOString().slice(0, 10) !== match[1]) return null;
     return { date: match[1], time: match[2] ?? null };
   };
-  const starts = items.map(item => parse(item.startDate)).filter(value => value !== null);
-  const dates = new Set(starts.map(start => start.date));
-  if (dates.size !== 1) return { date: null, time: null, endTime: null };
-  const date = [...dates][0];
-  const times = new Set(starts.map(start => start.time).filter(Boolean));
-  const time = times.size === 1 ? [...times][0] : null;
-  // An end time on the start day (or after midnight) is real; 00:00 is VN's placeholder for "no end time".
-  const ends = new Set(items.map(item => parse(item.endDate)).filter(end => end?.time && end.time !== '00:00' && (end.date === date || end.time < '06:00')).map(end => end!.time));
-  return { date, time, endTime: time && ends.size === 1 ? [...ends][0] : null };
+  const slots = new Map<string, Showtime>();
+  for (const item of items) {
+    const start = parse(item.startDate);
+    if (!start) continue;
+    const end = parse(item.endDate);
+    // An end time on the start day (or after midnight) is real; 00:00 is VN's placeholder for "no end time".
+    const endTime = start.time && end?.time && end.time !== '00:00' && (end.date === start.date || end.time < '06:00') ? end.time : null;
+    const key = `${start.date} ${start.time ?? ''}`;
+    if (!slots.has(key) || endTime) slots.set(key, { date: start.date, time: start.time, end_time: endTime });
+  }
+  // A date-only entry next to a timed one on the same day describes the same showing.
+  for (const [key, slot] of slots) if (!slot.time && [...slots.values()].some(other => other.date === slot.date && other.time)) slots.delete(key);
+  const times = [...slots.values()].sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? ''));
+  if (!times.length) return none;
+  const first = times[0], last = times[times.length - 1];
+  return { date: first.date, time: first.time, endTime: times.length === 1 ? first.end_time : null, lastDate: last.date > first.date ? last.date : null, times };
 }
 
 export function extractPageDetails(html = '', sourceUrl = 'https://www.vilnius-events.lt/') {
@@ -121,12 +131,15 @@ export function extractPageDetails(html = '', sourceUrl = 'https://www.vilnius-e
   const range = cards.length === 1 ? textFromHtml(cards[0].match(/<[^>]*class=["'][^"']*\bse-date-card__time\b[^"']*["'][^>]*>([\s\S]*?)<\//i)?.[1] ?? '').match(/\b(?:[01]?\d|2[0-3]):[0-5]\d\s*[-–—]\s*((?:[01]?\d|2[0-3]):[0-5]\d)\b/) : null;
   let endTime = range ? range[1].padStart(5, '0') : null;
   const schedule = structuredSchedule(html);
+  let times: Showtime[] | null = null;
   if (schedule.date) {
-    // Structured data names the event's own date even when several date cards or calendar buttons are shown.
+    // Structured data lists the event's own showings even when several date cards or calendar buttons are shown.
     if (schedule.date !== date) { end = null; time = null; endTime = null; }
-    date = schedule.date; time = schedule.time ?? time; endTime = schedule.endTime ?? endTime; ambiguous = false;
+    date = schedule.date; time = schedule.time ?? time; ambiguous = false; times = schedule.times;
+    endTime = times && times.length > 1 ? null : schedule.endTime ?? endTime;
+    if (schedule.lastDate) end = schedule.lastDate;
   }
-  return {event_date:date,event_end_date:date?end:null,event_time:date?time:null,event_end_time:date&&time?endTime:null,venue,ticket_url:ticket,about_url:aboutUrl,ambiguous_dates:ambiguous};
+  return {event_date:date,event_end_date:date?end:null,event_time:date?time:null,event_end_time:date&&time?endTime:null,times,venue,ticket_url:ticket,about_url:aboutUrl,ambiguous_dates:ambiguous};
 }
 const normalized = (value: string) => textFromHtml(value || '').normalize('NFKC').toLocaleLowerCase('lt').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
 export function suggestArtists(event: {title: string; content_html: string}, artists: Artist[], reviews: Set<string>): ArtistSuggestion[] {

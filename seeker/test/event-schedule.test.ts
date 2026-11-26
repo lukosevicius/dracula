@@ -19,6 +19,16 @@ test('VN structured data settles the date when several date cards are shown', ()
     + '<h2>Kiti renginiai</h2>' + ld({ '@type': 'Event', startDate: '2027-01-03T10:00:00' });
   const details = extractPageDetails(page);
   assert.deepEqual([details.event_date, details.event_time, details.ambiguous_dates], ['2026-12-12', '12:00', false]);
-  // Different dates in the event's own data stay ambiguous.
-  assert.equal(extractPageDetails(ld([{ '@type': 'Event', startDate: '2026-12-12' }, { '@type': 'Event', startDate: '2026-12-19' }]) + card('') + card('')).ambiguous_dates, true);
+  // Different dates in the event's own data are separate showings of one event.
+  const dates = extractPageDetails(ld([{ '@type': 'Event', startDate: '2026-12-12' }, { '@type': 'Event', startDate: '2026-12-19' }]) + card('') + card(''));
+  assert.deepEqual([dates.ambiguous_dates, dates.event_date, dates.event_end_date, dates.times?.length], [false, '2026-12-12', '2026-12-19', 2]);
+});
+
+test('VN pages with several showings keep every showing', () => {
+  const details = extractPageDetails(card('16:00') + card('19:00')
+    + ld({ '@type': 'MusicEvent', startDate: '2026-12-26T16:00:00' }) + ld({ '@type': 'MusicEvent', startDate: '2026-12-26T19:00:00' }));
+  assert.deepEqual([details.event_date, details.event_time, details.event_end_time, details.ambiguous_dates], ['2026-12-26', '16:00', null, false]);
+  assert.deepEqual(details.times, [{ date: '2026-12-26', time: '16:00', end_time: null }, { date: '2026-12-26', time: '19:00', end_time: null }]);
+  const series = extractPageDetails(ld([{ '@type': 'Event', startDate: '2026-12-19T18:00:00' }, { '@type': 'Event', startDate: '2026-12-12T18:00:00', endDate: '2026-12-12T20:00:00' }]));
+  assert.deepEqual([series.event_date, series.event_end_date, series.times?.length, series.times?.[0].end_time], ['2026-12-12', '2026-12-19', 2, '20:00']);
 });

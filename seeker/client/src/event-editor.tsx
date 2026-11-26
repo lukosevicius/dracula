@@ -1,7 +1,7 @@
 import { EventVerification } from './verification';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { ArtistsDashboard, DashboardArtist, EventRecord, ReviewStatus } from '../../types';
-import { api, artistHref, errorMessage, formatDate, labels, priceInfo, reviews, safeUrl, sourceNames, type EventRow } from './data';
+import { api, artistHref, errorMessage, formatDate, labels, showtimesLabel, priceInfo, reviews, safeUrl, sourceNames, type EventRow } from './data';
 import { Description } from './event-description';
 import { Feedback, Icon } from './workspace';
 
@@ -153,6 +153,7 @@ export default function EventEditor({ row, onSaved, onRefresh, refreshing }: {
       </div>
       <EventVerification row={row} onSaved={onSaved} />
       {row.source_key === 'avilys' && <p className="editor-note">Avilys source start time: {info?.event.source_timestamp || 'unavailable'}</p>}
+      {row.showtimes && showtimesLabel(row.showtimes, formatDate) && <p className="editor-note">Showtimes from the source: {showtimesLabel(row.showtimes, formatDate)}. The first showing is the event date and time; the list updates with source details.</p>}
       <form className="editor-form" onSubmit={saveDetails}>
         {detailsFields.map(([name, label, type]) => (
           <label className="field" key={name}>

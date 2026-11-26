@@ -289,7 +289,7 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
     assert.deepEqual(afterCleanup.log.map((entry:{action:string})=>entry.action),['verified','imported']);
 
     // Recreate the pre-city, pre-preferences and pre-score schema to exercise migrations.
-    await pool.query('DROP TABLE event_redirects,event_duplicate_dismissals');
+    await pool.query('DROP TABLE event_times,event_redirects,event_duplicate_dismissals');
     await pool.query('ALTER TABLE event_sources DROP COLUMN is_secondary');
     await pool.query('ALTER TABLE events DROP COLUMN event_end_time');
     await pool.query('DROP TABLE verification_provider_requests,verification_findings,event_verifications,verification_jobs,verification_rule_state,verification_rule_versions,verification_providers,event_history,seeker_agent_keys,seeker_import_requests');
@@ -530,6 +530,18 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
         const [[deleted]] = await pool.execute<RowDataPacket[]>('SELECT (SELECT COUNT(*) FROM events WHERE id=20010)+(SELECT COUNT(*) FROM vilnius_events WHERE source_id=20010)+(SELECT COUNT(*) FROM user_saved_events WHERE event_id=20010) AS n');
         assert.equal(Number(deleted.n), 0);
         await assert.rejects(removeListing(pool, 20004, 'vilnius-events', 'Test'), { status: 404 });
+        // Several showings stay one event, listed only on days that have a showing.
+        const { saveShowtimes, parseShowtimes } = await import('../dist/events/times.js');
+        await addEvent(20011, 'DEO GRACIAS', 'Šv. Kotrynos bažnyčia', 'vilnius-events');
+        await pool.execute("UPDATE events SET event_date='2099-12-12',event_end_date='2099-12-19',event_time='16:00' WHERE id=20011");
+        const slots = parseShowtimes([{ date: '2099-12-19', time: '19:00' }, { date: '2099-12-12', time: '19:00' }, { date: '2099-12-12', time: '16:00' }]);
+        const showConn = await pool.getConnection();
+        try { await saveShowtimes(showConn, 20011, slots!); } finally { showConn.release(); }
+        const day = async (date: string) => (await catalogue.page({ offset: 0, limit: 100, filter: 'custom', from: date, to: date }, '2099-12-01')).items.filter((item: { id: number }) => item.id === 20011);
+        assert.equal((await day('2099-12-15')).length, 0);
+        assert.deepEqual((await day('2099-12-12'))[0].times.map((slot: { date: string; time: string | null }) => `${slot.date} ${slot.time}`), ['2099-12-12 16:00', '2099-12-12 19:00', '2099-12-19 19:00']);
+        assert.equal((await day('2099-12-19')).length, 1);
+        assert.throws(() => parseShowtimes([{ date: '2099-02-30', time: '16:00' }]), { status: 400 });
         await pool.query('DELETE FROM user_saved_events'); await pool.query('DELETE FROM seeker_saved_events'); await pool.query('DELETE FROM event_prices WHERE event_id>=20001');
         await pool.query('DELETE FROM event_artist_decisions WHERE event_id>=20001');
         await pool.query('DELETE FROM event_redirects'); await pool.query('DELETE FROM event_sources WHERE event_id>=20001'); await pool.query('DELETE FROM vilnius_events WHERE source_id IN (7001,7002)'); await pool.query('DELETE FROM events WHERE id>=20001');

@@ -1,5 +1,6 @@
 import type {Pool, PoolConnection, RowDataPacket, ResultSetHeader} from 'mysql2/promise';
 import { eventTypes, normalizeEventType } from '../events/types.js';
+import { loadShowtimes } from '../events/times.js';
 type Field = 'event_date' | 'event_end_date' | 'event_time' | 'venue' | 'ticket_url';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { normalizeEventSearch } from './event-search.js';
@@ -13,6 +14,12 @@ const detailFields: Field[] = ['event_date','event_end_date','event_time','venue
 const error = (status: number, message: string) => Object.assign(new Error(message), { status });
 const digest = (value: string) => createHash('sha256').update(value).digest();
 function validDate(value: string) { if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false; const d=new Date(`${value}T00:00:00Z`); return !Number.isNaN(d.valueOf()) && d.toISOString().slice(0,10)===value; }
+
+/** Adds each event's showings, as "YYYY-MM-DD HH:MM" comma separated, when it has more than one. */
+async function withShowtimes<T extends RowDataPacket | Record<string, unknown>>(db: Pool | PoolConnection, rows: T[]): Promise<T[]> {
+  const times = await loadShowtimes(db, rows.map(row => Number(row.id)));
+  return rows.map(row => ({ ...row, showtimes: times.get(Number(row.id))?.map(slot => `${slot.date} ${slot.time ?? ''}`).join(',') ?? null }));
+}
 
 export function createAdmin(pool: Pool, token: string) {
   if (typeof token !== 'string' || !/^[A-Za-z0-9._~-]{32,}$/.test(token)) throw new Error('ADMIN_TOKEN must be at least 32 URL-safe ASCII characters.');
@@ -39,7 +46,7 @@ export function createAdmin(pool: Pool, token: string) {
   return {
     async savedEvents() {
       const [rows]=await pool.execute<RowDataPacket[]>(`SELECT e.*,(SELECT JSON_UNQUOTE(JSON_EXTRACT(f.finding,'$.reason')) FROM verification_findings f WHERE f.event_id=e.id AND f.status='open' ORDER BY f.id LIMIT 1) AS attention_reason,s.source_id,s.source_key,s.source_url,COALESCE(e.about_url_override,s.about_url) AS about_url,s.last_checked_at AS details_checked_at,ar.reviewed_at AS assistant_reviewed_at,ar.confirmed_at AS assistant_confirmed_at,ar.notes AS assistant_notes,ep.price_text,COALESCE(ep.price_type,'unknown') AS price_type FROM seeker_saved_events saved JOIN events e ON e.id=saved.event_id LEFT JOIN event_prices ep ON ep.event_id=e.id LEFT JOIN assistant_event_reviews ar ON ar.event_id=e.id JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY id LIMIT 1) ORDER BY e.event_date IS NULL,e.event_date,e.event_time IS NULL,e.event_time,saved.saved_at DESC,e.id DESC`);
-      return rows.map(row=>({...row,id:Number(row.id)}));
+      return withShowtimes(pool,rows.map(row=>({...row,id:Number(row.id)})));
     },
     async saveEvents(ids: number[]) {
       if(!Array.isArray(ids)||ids.length>500||!ids.every(id=>Number.isSafeInteger(id)&&id>0&&id<=999999999999))throw error(400,'Invalid saved event IDs.');
@@ -180,7 +187,7 @@ export function createAdmin(pool: Pool, token: string) {
           const [sources]=await conn.execute<RowDataPacket[]>('SELECT DISTINCT source_key FROM event_sources ORDER BY source_key',[]);
           const [runs]=await conn.execute<RowDataPacket[]>('SELECT * FROM vilnius_event_runs ORDER BY id DESC LIMIT 8',[]);
           await conn.commit();
-          return {events,total:searchTotal ?? Number(totals[0].count),page,limit,counts:Object.fromEntries(Object.entries(counts[0]).map(([key,value])=>[key,Number(value)])),readyCount:Number(readyRows[0].count),nextPage:Number(states[0]?.next_offset || 0)+1,sources,runs};
+          return {events:await withShowtimes(conn,events),total:searchTotal ?? Number(totals[0].count),page,limit,counts:Object.fromEntries(Object.entries(counts[0]).map(([key,value])=>[key,Number(value)])),readyCount:Number(readyRows[0].count),nextPage:Number(states[0]?.next_offset || 0)+1,sources,runs};
         } catch(cause){await conn.rollback();throw cause;}
       } finally {conn.release();}
     },
@@ -193,6 +200,7 @@ export function createAdmin(pool: Pool, token: string) {
           if (events.length!==1) throw error(404,'Event not found.');
           const [sources]=await conn.execute<RowDataPacket[]>('SELECT * FROM event_sources WHERE event_id=? ORDER BY id',[id]);
           const [prices]=await conn.execute<RowDataPacket[]>('SELECT * FROM event_prices WHERE event_id=?',[id]);
+          const [times]=await conn.execute<RowDataPacket[]>('SELECT event_date AS date,event_time AS time,event_end_time AS end_time FROM event_times WHERE event_id=? ORDER BY event_date,event_time',[id]);
           const [artists]=await conn.execute<RowDataPacket[]>('SELECT d.artist_mbid,d.decision,a.name FROM event_artist_decisions d JOIN artists a ON a.mbid=d.artist_mbid WHERE d.event_id=? ORDER BY a.name',[id]);
           // Editors work on the primary Vilnius Events record; a secondary one still supplies its image.
           const vn=sources.find(source=>source.source_key==='vilnius-events');
@@ -203,7 +211,7 @@ export function createAdmin(pool: Pool, token: string) {
           const [avilysImages]=!images.length ? await conn.execute<RowDataPacket[]>("SELECT source_id,width,height,source_url,local_name,mime_type,source_key FROM event_images WHERE event_id=? AND source_key='avilys'",[id]) : [[]];
           const [candidates]=events[0].event_date ? await conn.execute<RowDataPacket[]>('SELECT id,title,event_date,venue FROM events WHERE id<>? AND event_date=? LIMIT 500',[id,events[0].event_date]) : [[]];
           await conn.commit();
-          return {event:events[0],sources,price:prices[0] || null,artist_decisions:artists,vilnius_event:primaryLegacy || null,available_artists:availableArtists,image:images[0] || avilysImages[0] || null,match_candidates:candidates};
+          return {event:events[0],times,sources,price:prices[0] || null,artist_decisions:artists,vilnius_event:primaryLegacy || null,available_artists:availableArtists,image:images[0] || avilysImages[0] || null,match_candidates:candidates};
         } catch(cause) {await conn.rollback(); throw cause;}
       } finally {conn.release();}
     },

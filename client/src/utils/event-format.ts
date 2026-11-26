@@ -1,3 +1,5 @@
+import type { Showtime } from './events-api';
+
 export function displayDate(value: string | null) {
   return value ? new Intl.DateTimeFormat('lt-LT', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${value}T00:00:00Z`)) : 'Data nežinoma';
 }
@@ -22,4 +24,20 @@ export function eventSource(aboutUrl: string | null, sourceUrl: string) {
     } catch { /* Try the fallback. */ }
   }
   return null;
+}
+
+const timeRange = (slot: Showtime) => slot.time ? `${slot.time}${slot.end_time ? `–${slot.end_time}` : ''}` : 'laikas nežinomas';
+
+/** Several showings on one day, as "16:00, 19:00". Null when there is one showing or they span several days. */
+export function sameDayTimes(times: Showtime[] | undefined) {
+  if (!times || times.length < 2 || times.some(slot => slot.date !== times[0].date)) return null;
+  return times.map(timeRange).join(', ');
+}
+
+/** Showings across several days, one line per day: "2026 m. gruodžio 12 d. · 18:00, 20:00". */
+export function showtimeLines(times: Showtime[] | undefined) {
+  if (!times || times.length < 2 || sameDayTimes(times)) return [];
+  const days = new Map<string, Showtime[]>();
+  for (const slot of times) days.set(slot.date, [...days.get(slot.date) ?? [], slot]);
+  return [...days].map(([date, slots]) => `${displayDate(date)}${slots.some(slot => slot.time) ? ` · ${slots.map(timeRange).join(', ')}` : ''}`);
 }

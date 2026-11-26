@@ -3,6 +3,7 @@ import { type RowDataPacket } from 'mysql2/promise';
 import { APP_CONFIG, type AppConfig } from '../config/config.js';
 import { DatabaseService } from '../database/database.service.js';
 import { descriptionText } from './description.js';
+import { loadShowtimes } from '../events/times.js';
 
 export type DateFilter = 'upcoming' | 'today' | 'tomorrow' | 'weekend' | 'custom' | 'all' | 'past' | 'unknown';
 export interface PageOptions { offset: number; limit: number; filter: DateFilter; from: string; to: string; artists?: string[]; city?: string }
@@ -26,6 +27,7 @@ export class CatalogueService {
   private async map(rows: EventRow[]) {
     if (!rows.length) return [];
     const ids = rows.map(row => row.id);
+    const times = await loadShowtimes(this.db.pool, ids);
     const [artists] = await this.db.pool.execute<ArtistRow[]>(`SELECT d.event_id,a.mbid,a.name FROM event_artist_decisions d
       JOIN artists a ON a.mbid=d.artist_mbid WHERE d.decision='accepted' AND d.event_id IN (${ids.map(() => '?').join(',')}) ORDER BY a.name`, ids);
     return rows.map(({content_html, description_override, local_name, source_key, source_data_json, stored_end_time, ...row}) => ({ ...row,
@@ -34,22 +36,26 @@ export class CatalogueService {
       image_url: typeof local_name === 'string' && /^[A-Za-z0-9._-]+$/.test(local_name) && local_name !== '.' && local_name !== '..'
         ? `${this.config.publicBaseUrl}/v1/images/${encodeURIComponent(local_name)}` : null,
       artists: artists.filter(a => a.event_id === row.id).map(({mbid,name}) => ({mbid,name})),
+      // Every showing when there is more than one; the event's own date and time are the first showing.
+      times: times.get(row.id) ?? [],
     }));
   }
   async page({offset, limit, filter, from, to, artists, city}: PageOptions, today = vilniusToday()) {
     const shift = (date: string, days: number) => { const d = new Date(`${date}T00:00:00Z`); d.setUTCDate(d.getUTCDate()+days); return d.toISOString().slice(0,10); };
     const end = "COALESCE(NULLIF(e.event_end_date,''),e.event_date)";
+    // Events with several showings match only on days that have one, not on the days in between.
+    const showing = (condition: string) => `(NOT EXISTS (SELECT 1 FROM event_times t WHERE t.event_id=e.id) OR EXISTS (SELECT 1 FROM event_times t WHERE t.event_id=e.id AND t.event_date ${condition}))`;
     let clause = ''; let params: string[] = []; let groupStart = today;
     if (filter === 'unknown') clause = " AND NULLIF(e.event_date,'') IS NULL";
     else if (filter === 'past') { clause = ` AND NULLIF(e.event_date,'') IS NOT NULL AND ${end}<?`; params=[today]; }
-    else if (filter === 'upcoming') { clause = ` AND NULLIF(e.event_date,'') IS NOT NULL AND ${end}>=?`; params=[today]; }
+    else if (filter === 'upcoming') { clause = ` AND NULLIF(e.event_date,'') IS NOT NULL AND ${end}>=? AND ${showing('>=?')}`; params=[today,today]; }
     else if (filter !== 'all') {
       let start=from, finish=to || from;
       if (filter==='today') start=finish=today;
       if (filter==='tomorrow') start=finish=shift(today,1);
       if (filter==='weekend') { const day=new Date(`${today}T00:00:00Z`).getUTCDay(); start=shift(today,day===0?-1:6-day); finish=shift(start,1); }
       groupStart=start;
-      clause=` AND NULLIF(e.event_date,'') IS NOT NULL AND e.event_date<=? AND ${end}>=?`; params=[finish,start];
+      clause=` AND NULLIF(e.event_date,'') IS NOT NULL AND e.event_date<=? AND ${end}>=? AND ${showing('BETWEEN ? AND ?')}`; params=[finish,start,start,finish];
     }
     if (artists?.length) {
       clause += ` AND EXISTS (SELECT 1 FROM event_artist_decisions d WHERE d.event_id=e.id AND d.decision='accepted' AND d.artist_mbid IN (${artists.map(() => '?').join(',')}))`;

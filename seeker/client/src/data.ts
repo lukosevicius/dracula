@@ -19,6 +19,8 @@ export type EventRow = Omit<EventRecord, 'source_id' | 'artist_links' | 'artist_
   assistant_reviewed_at: string | null;
   assistant_confirmed_at: string | null;
   assistant_notes: string | null;
+  /** "YYYY-MM-DD HH:MM" per showing, comma separated, when an event has more than one. */
+  showtimes?: string | null;
 };
 
 export function priceInfo(row: Pick<EventRow, 'source_key' | 'price_text' | 'price_type'>) {
@@ -157,4 +159,12 @@ export function useJobs(onFinished: (completed: Job[]) => void) {
     }
   };
   return { jobs, start, startingSource };
+}
+
+/** Showings as written in a row: "16:00, 19:00" on one day, otherwise each date with its time. */
+export function showtimesLabel(value: string | null | undefined, formatDay: (date: string) => string): string | null {
+  const slots = (value ?? '').split(',').map(entry => entry.trim().split(' ')).filter(([date]) => date);
+  if (slots.length < 2) return null;
+  if (slots.every(([date]) => date === slots[0][0])) return slots.map(([, time]) => time || 'time unknown').join(', ');
+  return slots.map(([date, time]) => `${formatDay(date)}${time ? ` ${time}` : ''}`).join(', ');
 }

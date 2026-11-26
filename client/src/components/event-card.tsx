@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'expo-router';
 import { Image } from 'expo-image';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { displayDate, displayText, eventLocation } from '../utils/event-format';
+import { displayDate, displayText, eventLocation, sameDayTimes, showtimeLines } from '../utils/event-format';
 import type { DisplayEvent } from '../utils/events-api';
 import { SaveButton } from './save-button';
 export function EventCard({ event, width }: { event: DisplayEvent; width?: number }) {
@@ -10,11 +10,13 @@ export function EventCard({ event, width }: { event: DisplayEvent; width?: numbe
   const title = displayText(event.title);
   const location = eventLocation(event.venue, event.city);
   const source = event.image_url ? { uri: event.image_url } : undefined;
+  // One card per event; several showings are listed with it rather than as separate events.
+  const times = sameDayTimes(event.times) ?? (showtimeLines(event.times).length ? 'keli laikai' : event.event_time);
   return <View style={[styles.card, width != null && { width }]}><Link href={{ pathname: '/events/[id]', params: { id: String(event.id) } }} asChild>
     <Pressable accessibilityRole="link" accessibilityLabel={`${title}, atidaryti renginio puslapį`}>
     {source && !failed ? <Image source={source} style={styles.image} contentFit="cover" onError={() => setFailed(true)} accessibilityLabel={`Renginio ${title} nuotrauka`} /> : <View style={[styles.image, styles.placeholder]}><Text style={styles.placeholderText}>DRACULA</Text></View>}
     <View style={styles.cardBody}>
-      <Text style={styles.date}>{displayDate(event.event_date)}{event.event_end_date && event.event_end_date !== event.event_date ? ` – ${displayDate(event.event_end_date)}` : ''}{event.event_time ? ` · ${event.event_time}` : ''}</Text>
+      <Text style={styles.date}>{displayDate(event.event_date)}{event.event_end_date && event.event_end_date !== event.event_date ? ` – ${displayDate(event.event_end_date)}` : ''}{times ? ` · ${times}` : ''}</Text>
       <Text style={styles.title}>{title}</Text>
       {location ? <Text style={styles.venue}>{location}</Text> : null}
       {event.artists.length ? <Text style={styles.artists}>{event.artists.map(a => displayText(a.name)).join(' · ')}</Text> : null}

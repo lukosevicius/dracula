@@ -5,7 +5,7 @@ import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, useWindowDimen
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SaveButton } from '../../components/save-button';
 import { CalendarButton } from '../../components/calendar-button';
-import { displayDate, displayText, eventLocation, eventSource } from '../../utils/event-format';
+import { displayDate, displayText, eventLocation, eventSource, sameDayTimes, showtimeLines } from '../../utils/event-format';
 import { fetchEvent, type DisplayEvent } from '../../utils/events-api';
 
 export default function EventPage() {
@@ -40,9 +40,11 @@ export default function EventPage() {
   const date = event.event_date
     ? `${displayDate(event.event_date)}${event.event_end_date && event.event_end_date !== event.event_date ? ` – ${displayDate(event.event_end_date)}` : ''}`
     : null;
-  const time = event.event_time
+  const sameDay = sameDayTimes(event.times);
+  const showings = showtimeLines(event.times);
+  const time = showings.length ? null : sameDay ?? (event.event_time
     ? `${event.event_time}${event.event_end_time ? ` iki ${event.event_end_time}` : ''}`
-    : null;
+    : null);
   const price = event.price_text?.trim() || (event.price_type === 'free' ? 'Nemokamai' : null);
 
   async function openLink(url: string) {
@@ -64,7 +66,8 @@ export default function EventPage() {
         <Text style={[styles.title, desktop && styles.titleDesktop]}>{title}</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}><CalendarButton event={event} /><SaveButton event={event} /></View>
         {date ? <View style={styles.section}><Text style={styles.label}>DATA</Text><Text style={styles.value}>{date}</Text></View> : null}
-        {time ? <View style={styles.section}><Text style={styles.label}>LAIKAS</Text><Text style={styles.value}>{time}</Text></View> : null}
+        {time ? <View style={styles.section}><Text style={styles.label}>{sameDay ? 'LAIKAI' : 'LAIKAS'}</Text><Text style={styles.value}>{time}</Text></View> : null}
+        {showings.length ? <View style={styles.section}><Text style={styles.label}>RENGINIO LAIKAI</Text>{showings.map(line => <Text key={line} style={styles.value}>{line}</Text>)}</View> : null}
       {location ? <View style={styles.section}><Text style={styles.label}>VIETA</Text><Text style={styles.value}>{location}</Text></View> : null}
         {price ? <View style={styles.section}><Text style={styles.label}>KAINA</Text><Text style={styles.value}>{displayText(price)}</Text></View> : null}
         {event.artists.length ? <View style={styles.section}><Text style={styles.label}>ATLIKĖJAI</Text>{event.artists.map(artist => <Link key={artist.mbid} href={{pathname:'/artists/[id]',params:{id:artist.mbid}}} style={styles.link}>{displayText(artist.name)} →</Link>)}</View> : null}

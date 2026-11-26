@@ -8,7 +8,7 @@ import { suggestEventMatches } from '../database/event-matching.js';
 
 test('date fallback reads the event card and ignores other page dates', () => {
   const html='<div class="se-date-card"><div>Trečiadienis, lapkričio 11, 2026</div><div class="se-date-card__time">20:00</div></div><div>lapkričio 12, 2026</div>';
-  assert.deepEqual(extractPageDetails(html), {event_date:'2026-11-11',event_end_date:null,event_time:'20:00',event_end_time:null,venue:null,ticket_url:null,about_url:null,ambiguous_dates:false});
+  assert.deepEqual(extractPageDetails(html), {event_date:'2026-11-11',event_end_date:null,event_time:'20:00',event_end_time:null,times:null,venue:null,ticket_url:null,about_url:null,ambiguous_dates:false});
   assert.equal(extractPageDetails('<div>lapkričio 11, 2026</div>').event_date,null);
   assert.equal(extractPageDetails(html+html).ambiguous_dates,true);
   assert.equal(extractPageDetails('<div class="se-date-card">vasario 31, 2026</div>').event_date,null);

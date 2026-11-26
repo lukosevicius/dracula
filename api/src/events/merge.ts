@@ -159,6 +159,8 @@ export async function mergeEventsIn(conn: PoolConnection, firstId: number, secon
   await conn.execute(`INSERT IGNORE INTO event_artist_decisions(event_id,artist_mbid,decision)
     SELECT ?,artist_mbid,decision FROM event_artist_decisions WHERE event_id=?`, [keep, drop]);
   await conn.execute('DELETE FROM event_artist_decisions WHERE event_id=?', [drop]);
+  // The kept event's showtimes win; it takes the other event's only when it has none.
+  await conn.execute('UPDATE event_times SET event_id=? WHERE event_id=? AND NOT EXISTS (SELECT 1 FROM (SELECT event_id FROM event_times WHERE event_id=?) kept)', [keep, drop, keep]);
   await conn.execute('UPDATE IGNORE event_images SET event_id=? WHERE event_id=?', [keep, drop]);
   await conn.execute('UPDATE IGNORE assistant_event_reviews SET event_id=? WHERE event_id=?', [keep, drop]);
   await conn.execute('UPDATE ai_evaluations SET event_id=? WHERE event_id=?', [keep, drop]);

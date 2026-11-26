@@ -1,7 +1,7 @@
 import { EventBadges } from './verification';
 import { isValidElement, memo, useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import type { ReviewStatus } from '../../types';
-import { formatDate, labels, plainText, priceInfo, publicationLabels, reviews, sourceNames, type EventRow, type PublicationStatus } from './data';
+import { formatDate, labels, showtimesLabel, plainText, priceInfo, publicationLabels, reviews, sourceNames, type EventRow, type PublicationStatus } from './data';
 import type { EventRowEdits } from './event-row-edits';
 import { Icon } from './workspace';
 
@@ -24,7 +24,8 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, pendi
   const date = row.event_date ? formatDate(row.event_date) : 'Date unknown';
   const past = !!row.event_date && (row.event_end_date || row.event_date) < today;
   const start = row.event_time?.trim().slice(0, 5), end = row.event_end_time?.trim().slice(0, 5);
-  const time = start && end ? `${start}–${end}` : start;
+  const showings = showtimesLabel(row.showtimes, formatDate);
+  const time = showings ?? (start && end ? `${start}–${end}` : start);
   const price = priceInfo(row);
   const scorePending = pendingEdit?.interest_score !== undefined;
   const reviewPending = pendingEdit?.review_status !== undefined;
@@ -68,7 +69,7 @@ function EventItem({ row, today, open, toggle, selected, select, disabled, pendi
             <strong>{title}</strong>
             <span>
               {row.event_date && row.event_date.slice(0, 4) !== today.slice(0, 4) && <span>{row.event_date.slice(0, 4)}</span>}
-              {time && <span title="Event time"><Icon name="clock" size={13} /> {time}</span>}
+              {time && <span title={showings ? 'Showtimes' : 'Event time'}><Icon name="clock" size={13} /> {time}</span>}
               {!time && <span className="missing-detail"><Icon name="clock" size={13} /> Time unknown</span>}
               {row.venue && <span title="Venue"><Icon name="pin" size={13} /> {row.venue}</span>}
               {(price.text || price.type === 'free' || price.type === 'paid') && <span title="Price"><Icon name="ticket" size={13} /> {price.text || (price.type === 'free' ? 'Free' : 'Paid')}</span>}

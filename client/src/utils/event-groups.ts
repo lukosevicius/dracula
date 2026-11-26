@@ -1,11 +1,13 @@
-type DatedEvent = { id: number; event_date: string | null };
+type DatedEvent = { id: number; event_date: string | null; times?: { date: string }[] };
 export type EventListItem<T> = { type: 'heading'; date: string | null; key: string } | { type: 'row'; events: T[]; key: string } | { type: 'more'; date: string; remaining: number; key: string };
 
 // Ongoing events appear on the first day of the selected range, rather than under a past date.
 export function groupEventRows<T extends DatedEvent>(events: T[], columns: number, rangeStart: string, limits: Record<string, number> = {}): EventListItem<T>[] {
   const groups = new Map<string, T[]>();
   for (const event of events) {
-    const date = event.event_date ? (event.event_date < rangeStart ? rangeStart : event.event_date) : '';
+    // An event with several showings is listed once, under its next showing in the range.
+    const next = event.times?.length ? event.times.find(slot => slot.date >= rangeStart)?.date : undefined;
+    const date = next ?? (event.event_date ? (event.event_date < rangeStart ? rangeStart : event.event_date) : '');
     const group = groups.get(date) ?? [];
     group.push(event);
     groups.set(date, group);
