@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api, errorMessage } from './data';
-import { Feedback } from './workspace';
+import { Feedback, Icon } from './workspace';
 
 export type Field = { field: string; label: string; kept: string | null; other: string | null; choice: number; conflict: boolean };
 type Side = { id: number; publication_status: string; sources: string[] };
@@ -30,6 +30,9 @@ export function MergePreview({ preview, eventIds, onMerged }: { preview: Preview
   const { kept, removed } = preview;
   const source = (side: Side) => `#${side.id}${side.sources.length ? ` · ${side.sources.join(', ')}` : ''}`;
   const open = preview.fields.filter(field => field.conflict && choices[field.field] === kept.id && field.kept !== field.other).length;
+  // Ticket links get a button to open them in a new tab. Only web links are opened.
+  const openLink = (field: string, value: string | null) => field === 'ticket_url' && value && /^https?:\/\//i.test(value)
+    ? <a className="icon-button merge-option-open" href={value} target="_blank" rel="noreferrer" aria-label={`Open ${value}`} title="Open link"><Icon name="external" size={15} /></a> : null;
   return <div className="merge-preview" aria-label="Merge preview">
     <p className="merge-preview-summary">
       Keeps <strong>#{kept.id}</strong> ({kept.publication_status === 'live' ? 'Live' : 'Draft'}) with listings from {[...kept.sources, ...removed.sources].join(' and ')}.
@@ -41,14 +44,17 @@ export function MergePreview({ preview, eventIds, onMerged }: { preview: Preview
         return <div className="merge-preview-row" role="row" key={field.field}>
           <span className="merge-preview-label" role="rowheader">{field.label}{field.conflict && <span className="merge-preview-flag">Differs</span>}</span>
           <span role="cell" className="merge-preview-values">
-            {same ? <span className="merge-preview-same">{display(field.kept)}</span>
+            {same ? <span className="merge-option-wrap"><span className="merge-preview-same">{display(field.kept)}</span>{openLink(field.field, field.kept)}</span>
               : [[kept, field.kept], [removed, field.other]].map(([side, value]) => {
                 const id = (side as Side).id, selected = choices[field.field] === id;
-                return <button key={id} type="button" className={`merge-option${selected ? ' selected' : ''}`} aria-pressed={selected} disabled={saving}
-                  onClick={() => setChoices(current => ({ ...current, [field.field]: id }))}>
-                  <span className="merge-option-value">{display(value as string | null)}</span>
-                  <span className="merge-option-source">{source(side as Side)}</span>
-                </button>;
+                return <span key={id} className="merge-option-wrap">
+                  <button type="button" className={`merge-option${selected ? ' selected' : ''}`} aria-pressed={selected} disabled={saving}
+                    onClick={() => setChoices(current => ({ ...current, [field.field]: id }))}>
+                    <span className="merge-option-value">{display(value as string | null)}</span>
+                    <span className="merge-option-source">{source(side as Side)}</span>
+                  </button>
+                  {openLink(field.field, value as string | null)}
+                </span>;
               })}
           </span>
         </div>;

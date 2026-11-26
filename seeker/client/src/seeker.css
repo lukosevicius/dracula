@@ -351,6 +351,8 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
 .merge-option.selected { border-color: var(--accent); background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent); }
 .merge-option-value { font-size: 13px; overflow-wrap: anywhere; }
 .merge-option-source { color: var(--muted); font-size: 11px; }
+.merge-option-wrap { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0; }
+.merge-option-open { flex: 0 0 auto; }
 .merge-preview-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
 @media (max-width: 640px) { .merge-preview-row { grid-template-columns: 1fr; gap: 4px; } .merge-preview-label { padding-top: 0; } }
 .event-item + .event-item { border-top: 1px solid var(--border); }
