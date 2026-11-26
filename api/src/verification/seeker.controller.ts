@@ -180,7 +180,7 @@ export class SeekerController {
         }
         if (event?.[2] === 'remove-listing' && !event[3]) {
           require('admin');
-          return send(200, { ok: true, ...await removeListing(pool, Number(event[1]), body.source_key, access.actor) });
+          return send(200, { ok: true, ...await removeListing(pool, Number(event[1]), body.source_key, access.actor, body.source_id) });
         }
         if (event?.[2] === 'publication' && !event[3]) {
           require('publication:write');

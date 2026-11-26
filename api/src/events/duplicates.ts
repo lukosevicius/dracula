@@ -74,7 +74,7 @@ export function compareEvents(a: MatchEvent, b: MatchEvent): MatchLevel | null {
 
 const pairKey = (a: number, b: number) => a < b ? `${a}-${b}` : `${b}-${a}`;
 
-interface CandidateRow extends RowDataPacket, MatchEvent { source_keys: string | null }
+interface CandidateRow extends RowDataPacket, MatchEvent {}
 
 /**
  * The single existing event a new source listing should join, if the match is confident and unambiguous.
@@ -88,12 +88,11 @@ export async function findImportMatch(conn: PoolConnection, listing: Omit<MatchE
   return confident.length === 1 ? Number(confident[0].id) : null;
 }
 
-export interface DuplicatePair { level: MatchLevel; mergeable: boolean; event_ids: [number, number] }
+export interface DuplicatePair { level: MatchLevel; event_ids: [number, number] }
 
-/** Pairs on or after a date, excluding pairs marked as distinct. Pairs from the same source cannot be merged. */
+/** Pairs on or after a date, excluding pairs marked as distinct. */
 export async function listDuplicates(db: Pool | PoolConnection, fromDate: string): Promise<DuplicatePair[]> {
-  const [rows] = await db.execute<CandidateRow[]>(`SELECT e.id,e.title,e.event_date,e.event_time,e.venue,e.city,
-      (SELECT GROUP_CONCAT(DISTINCT s.source_key ORDER BY s.source_key) FROM event_sources s WHERE s.event_id=e.id) AS source_keys
+  const [rows] = await db.execute<CandidateRow[]>(`SELECT e.id,e.title,e.event_date,e.event_time,e.venue,e.city
     FROM events e WHERE e.event_date>=? ORDER BY e.event_date,e.id`, [fromDate]);
   const [dismissed] = await db.execute<RowDataPacket[]>('SELECT first_event_id,second_event_id FROM event_duplicate_dismissals', []);
   const distinct = new Set(dismissed.map(row => pairKey(Number(row.first_event_id), Number(row.second_event_id))));
@@ -106,9 +105,7 @@ export async function listDuplicates(db: Pool | PoolConnection, fromDate: string
       if (distinct.has(pairKey(first, second))) continue;
       const level = compareEvents({ ...a, id: first }, { ...b, id: second });
       if (!level) continue;
-      const left = new Set(String(a.source_keys ?? '').split(',').filter(Boolean));
-      const mergeable = !String(b.source_keys ?? '').split(',').some(key => left.has(key));
-      pairs.push({ level, mergeable, event_ids: [first, second] });
+      pairs.push({ level, event_ids: [first, second] });
     }
   }
   return pairs.sort((x, y) => Number(y.level === 'confident') - Number(x.level === 'confident'));

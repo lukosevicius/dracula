@@ -455,11 +455,10 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
         await pool.execute('INSERT INTO seeker_saved_events(event_id) VALUES(20003)');
         const pairs = await listDuplicates(pool, '2099-12-01');
         // Without a matching time or venue, the Kablys listing is a question for a person, not an automatic merge.
-        assert.deepEqual(pairs.map(pair => [pair.level, pair.mergeable, pair.event_ids]), [['confident', true, [20002, 20003]], ['likely', true, [20002, 20004]], ['likely', false, [20003, 20004]]]);
+        assert.deepEqual(pairs.map(pair => [pair.level, pair.event_ids]), [['confident', [20002, 20003]], ['likely', [20002, 20004]], ['likely', [20003, 20004]]]);
         await dismissDuplicate(pool, [20003, 20002]);
         assert.deepEqual((await listDuplicates(pool, '2099-12-01')).map(pair => pair.event_ids), [[20002, 20004], [20003, 20004]]);
         await pool.query('DELETE FROM event_duplicate_dismissals');
-        await assert.rejects(mergeEvents(pool, 20001, 20004, 'Test'), { status: 409 });
         assert.deepEqual(await mergeEvents(pool, 20003, 20002, 'Test'), { event_id: 20002, merged_event_id: 20003 });
         const [[kept]] = await pool.execute<RowDataPacket[]>('SELECT event_time,venue,publication_status FROM events WHERE id=20002');
         assert.deepEqual({ ...kept }, { event_time: '20:00', venue: 'Aušros Vartų 11, Vilnius, Lithuania', publication_status: 'live' });
@@ -530,6 +529,16 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
         const [[deleted]] = await pool.execute<RowDataPacket[]>('SELECT (SELECT COUNT(*) FROM events WHERE id=20010)+(SELECT COUNT(*) FROM vilnius_events WHERE source_id=20010)+(SELECT COUNT(*) FROM user_saved_events WHERE event_id=20010) AS n');
         assert.equal(Number(deleted.n), 0);
         await assert.rejects(removeListing(pool, 20004, 'vilnius-events', 'Test'), { status: 404 });
+        // A source that listed one event twice: the pair merges, the kept listing stays primary, and removal names a listing.
+        await addEvent(20020, 'Viva Italia', 'Vilniaus rotušė', 'vilnius-events');
+        await addEvent(20021, 'VIVA ITALIA!', 'Vilniaus rotušė', 'vilnius-events', 'draft');
+        assert.deepEqual(await mergeEvents(pool, 20021, 20020, 'Test'), { event_id: 20020, merged_event_id: 20021 });
+        const [twice] = await pool.execute<RowDataPacket[]>("SELECT source_id,is_secondary FROM event_sources WHERE event_id=20020 ORDER BY source_id");
+        assert.deepEqual(twice.map(row => [row.source_id, Number(row.is_secondary)]), [['20020', 0], ['20021', 1]]);
+        await assert.rejects(removeListing(pool, 20020, 'vilnius-events', 'Test'), { status: 409 });
+        assert.deepEqual(await removeListing(pool, 20020, 'vilnius-events', 'Test', '20021'), { event_deleted: false });
+        const [once] = await pool.execute<RowDataPacket[]>("SELECT source_id FROM event_sources WHERE event_id=20020");
+        assert.deepEqual(once.map(row => row.source_id), ['20020']);
         // Several showings stay one event, listed only on days that have a showing.
         const { saveShowtimes, parseShowtimes } = await import('../dist/events/times.js');
         await addEvent(20011, 'DEO GRACIAS', 'Šv. Kotrynos bažnyčia', 'vilnius-events');

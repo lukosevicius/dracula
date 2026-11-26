@@ -113,11 +113,9 @@ async function loadPair(conn: PoolConnection, firstId: number, secondId: number,
   if (rows.length !== 2) throw fail(404, 'Event not found. It may already have been merged.');
   const [survivor, removed] = chooseSurvivor(rows[0], rows[1]);
   const keep = Number(survivor.id), drop = Number(removed.id);
+  // Both events may come from the same source (it listed the event twice). The kept event's listing stays primary;
+  // the removed event's listings become secondary and only fill missing values on later imports.
   const [sources] = await conn.execute<RowDataPacket[]>(`SELECT event_id,source_key,source_id,is_secondary FROM event_sources WHERE event_id IN (?,?) ORDER BY id${forUpdate}`, [keep, drop]);
-  const keptKeys = new Set(sources.filter(source => Number(source.event_id) === keep).map(source => source.source_key));
-  if (sources.some(source => Number(source.event_id) === drop && keptKeys.has(source.source_key))) {
-    throw fail(409, 'Both events have a listing from the same source. Unpublish the extra listing instead.');
-  }
   const [prices] = await conn.execute<RowDataPacket[]>(`SELECT * FROM event_prices WHERE event_id IN (?,?)${forUpdate}`, [keep, drop]);
   return { survivor, removed, sources, keptPrice: prices.find(price => Number(price.event_id) === keep), removedPrice: prices.find(price => Number(price.event_id) === drop) };
 }
@@ -217,17 +215,17 @@ export function mergeEvents(pool: Pool, firstId: number, secondId: number, actor
   return transaction(pool, conn => mergeEventsIn(conn, firstId, secondId, actor, choices));
 }
 
-/** The merge preview for each mergeable pair, so a list can show them without further requests. */
-export async function pairPreviews(pool: Pool, pairs: { event_ids: [number, number]; mergeable: boolean }[]) {
+/** The merge preview for each pair, so a list can show them without further requests. */
+export async function pairPreviews(pool: Pool, pairs: { event_ids: [number, number] }[]) {
   const previews = [];
   // One pair at a time keeps a long list from taking every pooled connection.
-  for (const pair of pairs) previews.push(pair.mergeable ? await previewMerge(pool, ...pair.event_ids).catch(() => null) : null);
+  for (const pair of pairs) previews.push(await previewMerge(pool, ...pair.event_ids).catch(() => null));
   return previews;
 }
 
 /** Merges every confident pair from a date onward that has no conflicting values, one transaction per pair. */
 export async function mergeConfidentDuplicates(pool: Pool, fromDate: string, actor: string) {
-  const pairs = (await listDuplicates(pool, fromDate)).filter(pair => pair.level === 'confident' && pair.mergeable);
+  const pairs = (await listDuplicates(pool, fromDate)).filter(pair => pair.level === 'confident');
   const moved = new Map<number, number>();
   const current = (id: number) => { while (moved.has(id)) id = moved.get(id)!; return id; };
   const merged: { event_id: number; merged_event_id: number }[] = [];

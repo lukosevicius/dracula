@@ -23,13 +23,15 @@ export async function enrichEvent(pool: Pool,id: number,data: unknown){
     const lease=leases[0],owner=input.job?.owner;if(!lease||!Number.isSafeInteger(input.job?.id)||input.job?.id!==Number(lease.job_id)||typeof owner!=='string'||!/^[a-f0-9]{64}$/.test(owner)||Number(lease.expires_at)<=Date.now()||!timingSafeEqual(Buffer.from(lease.owner_hash),Buffer.from(createHash('sha256').update(owner).digest('hex'))))throw fail(409,'The import lease is invalid or has expired.');
     const event=await lockEvent(conn,id);
     const before=await snapshot(conn,id,event);
-    const [links]=await conn.execute<RowDataPacket[]>("SELECT source_id,source_url,content_html,about_url,detail_evidence_json,is_secondary FROM event_sources WHERE event_id=? AND source_key='vilnius-events' FOR UPDATE",[id]);if(links.length!==1)throw fail(404,'Event not found.');
-    if(links[0].source_url!==input.expected_source_url||links[0].content_html!==input.expected_content_html)throw fail(409,'Source changed while details were fetched.');
-    const sourceId=Number(links[0].source_id),[rows]=await conn.execute<RowDataPacket[]>('SELECT * FROM vilnius_events WHERE source_id=? FOR UPDATE',[sourceId]);if(rows.length!==1)throw fail(409,'Event source is inconsistent.');
+    const [links]=await conn.execute<RowDataPacket[]>("SELECT source_id,source_url,content_html,about_url,detail_evidence_json,is_secondary FROM event_sources WHERE event_id=? AND source_key='vilnius-events' ORDER BY is_secondary,id FOR UPDATE",[id]);if(!links.length)throw fail(404,'Event not found.');
+    // A merged event can hold two Vilnius Events listings; the fetched page says which one these details belong to.
+    const link=links.find(row=>row.source_url===input.expected_source_url&&row.content_html===input.expected_content_html);
+    if(!link)throw fail(409,'Source changed while details were fetched.');
+    const sourceId=Number(link.source_id),[rows]=await conn.execute<RowDataPacket[]>('SELECT * FROM vilnius_events WHERE source_id=? FOR UPDATE',[sourceId]);if(rows.length!==1)throw fail(409,'Event source is inconsistent.');
     const row=rows[0],manual=JSON.parse(row.manual_fields);if(!Array.isArray(manual))throw fail(409,'Event manual fields are inconsistent.');
     const values=fields.map(field=>manual.includes(field)?row[field]:(d[field]??row[field]));const now=new Date().toISOString();
     await conn.execute('UPDATE vilnius_events SET event_date=?,event_end_date=?,event_time=?,venue=?,ticket_url=?,details_checked_at=?,details_version=1 WHERE source_id=?',[...values,now,sourceId]);
-    const secondary=Boolean(Number(links[0].is_secondary));
+    const secondary=Boolean(Number(link.is_secondary));
     // A listing that joined an event from another source only fills missing values.
     if(secondary)await fillFromSource(conn,event,{...Object.fromEntries(fields.map((field,index)=>[field,values[index]])),event_end_time:d.event_end_time??null},now);
     else {
@@ -41,10 +43,10 @@ export async function enrichEvent(pool: Pool,id: number,data: unknown){
       if(times&&Array.isArray(eventManual)&&!eventManual.includes('event_date')&&!eventManual.includes('event_time')&&!manual.includes('event_date')&&!manual.includes('event_time'))await saveShowtimes(conn,id,times);
     }
     const detailEvidence=JSON.stringify({...d,price_type:input.price_type,price_text:input.price_text??null});
-    await conn.execute("UPDATE event_sources SET about_url=?,about_checked_at=?,last_checked_at=?,detail_evidence_json=? WHERE event_id=? AND source_key='vilnius-events'",[input.about_url||null,now,now,detailEvidence,id]);
+    await conn.execute("UPDATE event_sources SET about_url=?,about_checked_at=?,last_checked_at=?,detail_evidence_json=? WHERE source_key='vilnius-events' AND source_id=?",[input.about_url||null,now,now,detailEvidence,link.source_id]);
     const replace=secondary?"manual=0 AND price_type='unknown'":'manual=0';
     await conn.execute(`INSERT INTO event_prices(event_id,price_text,price_type,manual,checked_at) VALUES(?,?,?,0,?) ON DUPLICATE KEY UPDATE checked_at=IF(${replace},VALUES(checked_at),checked_at),price_text=IF(${replace},VALUES(price_text),price_text),price_type=IF(${replace},VALUES(price_type),price_type)`,[id,input.price_text||null,input.price_type,now]);
-    const changed = await recordChange(conn,id,'details_refreshed','Vilnius Events',{...before,about_url:links[0].about_url,source_details:links[0].detail_evidence_json},{...await snapshot(conn,id),about_url:input.about_url||null,source_details:detailEvidence},{job_id:input.job?.id});
+    const changed = await recordChange(conn,id,'details_refreshed','Vilnius Events',{...before,about_url:link.about_url,source_details:link.detail_evidence_json},{...await snapshot(conn,id),about_url:input.about_url||null,source_details:detailEvidence},{job_id:input.job?.id});
     if(changed && input.job){
       // Source enrichment is the final step of this import. Rebase only the verification queued for that same source revision.
       const [pending]=await conn.execute<ResultSetHeader>(`UPDATE event_verifications v JOIN verification_jobs j ON j.id=v.job_id

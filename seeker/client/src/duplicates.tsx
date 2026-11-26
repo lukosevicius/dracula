@@ -7,10 +7,14 @@ import { useSavedEvents } from './saved-events';
 import { Feedback, Icon, PageHeading, PanelHeading } from './workspace';
 import { MergePreview, type Preview } from './merge-preview';
 
-type ServerPair = { level: 'confident' | 'likely'; mergeable: boolean; conflicts: boolean; event_ids: [number, number]; preview: Preview | null };
+type ServerPair = { level: 'confident' | 'likely'; conflicts: boolean; event_ids: [number, number]; preview: Preview | null };
 type Pair = ServerPair & { events: [EventRow, EventRow] };
-type LevelFilter = 'all' | ServerPair['level'];
-const levelFilters: [LevelFilter, string][] = [['all', 'All matches'], ['confident', 'Confident'], ['likely', 'Likely']];
+/** What a pair needs from you: nothing (the merge button takes it), value choices, or a decision whether it is the same event. */
+type Category = 'ready' | 'differ' | 'possible';
+type CategoryFilter = 'all' | Category;
+const categoryLabels: Record<Category, string> = { ready: 'Ready to merge', differ: 'Values differ', possible: 'Possible match' };
+const categoryFilters: CategoryFilter[] = ['ready', 'differ', 'possible', 'all'];
+const categoryOf = (pair: ServerPair): Category => pair.level === 'likely' ? 'possible' : pair.conflicts ? 'differ' : 'ready';
 const workflow = '/api/workflow/duplicates';
 const rules: [string, string[]][] = [
   ['Finding pairs', [
@@ -19,16 +23,19 @@ const rules: [string, string[]][] = [
     'Titles are compared without capitals, accents, punctuation, ticket-status words such as "Sold out" or "Išparduota", and a trailing city part such as "| Vilnius".',
     'Numbered editions with different numbers, such as "Vol. 2" and "Vol. 3", are never paired.',
   ]],
-  ['Match levels', [
-    'Confident: the same title, and the same start time or venue, with no two different venue names.',
-    'Likely: the same title without a matching time or venue, or titles that share most of their words. These need your decision.',
+  ['Groups', [
+    'Ready to merge: a confident match whose values agree. The merge button takes these.',
+    'Values differ: a confident match with at least one differing value. Check the preview, pick values and merge it yourself.',
+    'Possible match: not confident. Decide whether it is the same event, then merge it or mark it "Not a duplicate".',
+    'A confident match has the same title, and the same start time or venue, with no two different venue names. A possible match has the same title without a matching time or venue, or titles that share most of their words.',
     'A venue name never contradicts a street address. Venues match when one name starts with the other, such as "Šv. Kotrynos bažnyčia" and "Šv. Kotrynos bažnyčia. Renginių salė".',
   ]],
   ['Merging', [
     'One event is kept: the Live one first, then one with manual edits, then the older one. The other is removed and its link redirects to the kept event.',
     'The kept event gets every source listing, so later imports update it.',
     'A value taken from the removed event is protected from being overwritten by source refreshes.',
-    '"Not a duplicate" hides the pair for good. Two events from the same source cannot be merged; unpublish the extra listing instead.',
+    'Two events from the same source can be merged too. The kept event\'s listing stays the main one; the other only fills missing values on later imports.',
+    '"Not a duplicate" hides the pair for good.',
   ]],
   ['Choosing values', [
     'When only one event has a value, that value is used.',
@@ -37,8 +44,8 @@ const rules: [string, string[]][] = [
     'Ticket links that differ only by a trailing "/" are the same. A bilietai.lt event page link beats its seat map link.',
     'Any other difference is marked "Differs" and keeps the kept event\'s value until you switch it.',
   ]],
-  ['Merge confident matches', [
-    'Merges every confident pair that has no differing values. Pairs marked "Values differ" stay for review.',
+  ['Merge ready', [
+    'Shows the "Ready to merge" pairs and asks you to confirm before merging all of them. Other pairs are not touched.',
   ]],
 ];
 const todayFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Vilnius', year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -54,7 +61,9 @@ export default function DuplicatesPage() {
   const [error, setError] = useState('');
   const [pendingId, setPendingId] = useState<number | null>(null);
   const [openKey, setOpenKey] = useState('');
-  const [level, setLevel] = useState<LevelFilter>('all');
+  // Until you pick a chip, the page opens on the first group with pairs to act on.
+  const [chosenCategory, setCategory] = useState<CategoryFilter | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const editsDuringLoad = useRef<Map<number, EventRowEdits> | null>(null);
   const { isSaved, toggle, update, refresh, pendingIds, loading: savedLoading } = useSavedEvents();
@@ -132,9 +141,15 @@ export default function DuplicatesPage() {
     const [first, second] = pair.event_ids.map(id => byId.get(id));
     return first && second ? [{ ...pair, events: [first, second] as [EventRow, EventRow] }] : [];
   });
-  const pairs = level === 'all' ? allPairs : allPairs.filter(pair => pair.level === level);
-  const levelCount = (filter: LevelFilter) => filter === 'all' ? allPairs.length : allPairs.filter(pair => pair.level === filter).length;
-  const ready = allPairs.filter(pair => pair.level === 'confident' && pair.mergeable && !pair.conflicts).length;
+  const categoryCount = (filter: CategoryFilter) => filter === 'all' ? allPairs.length : allPairs.filter(pair => categoryOf(pair) === filter).length;
+  const category = chosenCategory ?? (['ready', 'differ', 'possible'] as const).find(filter => categoryCount(filter) > 0) ?? 'all';
+  const pairs = category === 'all' ? allPairs : allPairs.filter(pair => categoryOf(pair) === category);
+  const ready = categoryCount('ready');
+  const chooseCategory = (filter: CategoryFilter) => { setCategory(filter); setConfirming(false); };
+  const mergeReady = () => {
+    setConfirming(false);
+    void act('all', 'merge-confident', {}, result => `Merged ${(result.merged as unknown[]).length} events.${(result.skipped as unknown[]).length ? ` ${(result.skipped as unknown[]).length} need review.` : ''}`);
+  };
   const pairKey = (pair: Pair) => pair.event_ids.join('-');
   const withPreview = pairs.filter(pair => pair.preview);
   const anyOpen = withPreview.some(pair => !hidden.has(pairKey(pair)));
@@ -162,26 +177,30 @@ export default function DuplicatesPage() {
           <Icon name={anyOpen ? 'up' : 'down'} size={15} /> {anyOpen ? 'Hide previews' : 'Show previews'}
         </button>}
         <span className="count-label">{pairs.length} {pairs.length === 1 ? 'pair' : 'pairs'}</span>
-        <button className="primary-button" type="button" disabled={Boolean(merging) || ready === 0}
-          title={ready ? 'Merges confident matches whose values agree. Pairs marked "Values differ" stay for review.' : 'No confident matches without differences to merge.'}
-          onClick={() => void act('all', 'merge-confident', {}, result => `Merged ${(result.merged as unknown[]).length} events.${(result.skipped as unknown[]).length ? ` ${(result.skipped as unknown[]).length} need review.` : ''}`)}>
-          {merging === 'all' ? 'Merging…' : ready ? `Merge ${ready} confident ${ready === 1 ? 'match' : 'matches'}` : 'Merge confident matches'}
+        <button className="primary-button" type="button" disabled={Boolean(merging) || ready === 0 || confirming}
+          title={ready ? 'Shows the pairs that are ready to merge, then asks you to confirm.' : 'No pairs are ready to merge.'}
+          onClick={() => { setCategory('ready'); setConfirming(true); }}>
+          {merging === 'all' ? 'Merging…' : ready ? `Merge ${ready} ready` : 'Merge ready pairs'}
         </button>
       </span>} />
-      {!loading && allPairs.length > 0 && <div className="date-quick-filters duplicate-filters" role="group" aria-label="Match type">
-        {levelFilters.map(([filter, label]) => <button key={filter} type="button" className={`secondary-button date-filter-button ${level === filter ? 'active' : ''}`}
-          aria-pressed={level === filter} onClick={() => setLevel(filter)}>{label} · {levelCount(filter)}</button>)}
+      {!loading && allPairs.length > 0 && <div className="date-quick-filters duplicate-filters" role="group" aria-label="Show pairs">
+        {categoryFilters.map(filter => <button key={filter} type="button" className={`secondary-button date-filter-button ${category === filter ? 'active' : ''}`}
+          aria-pressed={category === filter} onClick={() => chooseCategory(filter)}>{filter === 'all' ? 'All' : categoryLabels[filter]} · {categoryCount(filter)}</button>)}
+      </div>}
+      {confirming && ready > 0 && <div className="duplicate-confirm" role="alert">
+        <span>Merge {ready === 1 ? 'this pair' : `these ${ready} pairs`}? Each keeps one event and redirects the other.</span>
+        <button className="primary-button" type="button" disabled={Boolean(merging)} onClick={mergeReady}>Merge {ready}</button>
+        <button className="secondary-button" type="button" disabled={Boolean(merging)} onClick={() => setConfirming(false)}>Cancel</button>
       </div>}
       <div className="catalogue-feedback"><Feedback message={error} error /><Feedback message={notice} /></div>
       {loading && <p className="empty-state" role="status">Looking for possible duplicates…</p>}
-      {!loading && !error && !pairs.length && <p className="empty-state">{allPairs.length ? `No ${level} matches.` : 'No possible duplicates found.'}</p>}
+      {!loading && !error && !pairs.length && <p className="empty-state">{allPairs.length ? `No pairs in ${category === 'all' ? 'this view' : `"${categoryLabels[category]}"`}.` : 'No possible duplicates found.'}</p>}
       {!loading && pairs.map(pair => {
         const [first, second] = pair.events, key = `${first.id}-${second.id}`;
         return <section className="duplicate-pair" key={key}>
         <div className="duplicate-pair-heading">
-          <h3>{pair.level === 'confident' ? 'Confident match' : 'Likely match'} · {formatDate(first.event_date!)}{pair.mergeable && pair.conflicts && <span className="merge-preview-flag">Values differ</span>}</h3>
+          <h3>{categoryLabels[categoryOf(pair)]} · {formatDate(first.event_date!)}</h3>
           <div className="duplicate-pair-actions">
-            {!pair.mergeable && <span className="duplicate-note">Same source listed twice. Unpublish the extra listing.</span>}
             <button className="text-button" type="button" disabled={Boolean(merging)}
               onClick={() => void act(`${key}-distinct`, 'dismiss', { event_ids: [first.id, second.id] }, () => 'Marked as different events.')}>Not a duplicate</button>
             {pair.preview && <button className="icon-button preview-toggle" type="button" aria-expanded={!hidden.has(key)} aria-controls={`merge-preview-${key}`}

@@ -7,16 +7,20 @@ const sourceNames: Record<string, string> = { 'vilnius-events': 'Vilnius Events'
  * Removes one source listing, for example one the source has taken down. An event with no other listing is deleted
  * with everything attached to it; otherwise the event stays and its remaining listing becomes the primary one.
  */
-export function removeListing(pool: Pool, eventId: number, sourceKey: unknown, actor: string) {
+export function removeListing(pool: Pool, eventId: number, sourceKey: unknown, actor: string, sourceId?: unknown) {
   if (!Number.isSafeInteger(eventId) || eventId < 1 || typeof sourceKey !== 'string' || !(sourceKey in sourceNames)) throw fail(400, 'Choose an event and a source.');
+  if (sourceId !== undefined && sourceId !== null && (typeof sourceId !== 'string' && typeof sourceId !== 'number' || String(sourceId).length > 191)) throw fail(400, 'Invalid source listing.');
   return transaction(pool, async conn => {
     await lockEvent(conn, eventId);
     const [sources] = await conn.execute<RowDataPacket[]>('SELECT id,source_key,source_id,is_secondary FROM event_sources WHERE event_id=? ORDER BY id FOR UPDATE', [eventId]);
-    const listing = sources.find(source => source.source_key === sourceKey);
-    if (!listing) throw fail(404, `This event has no ${sourceNames[sourceKey]} listing.`);
+    // A merged event can hold two listings from one source; then the request must say which one.
+    const matching = sources.filter(source => source.source_key === sourceKey && (sourceId == null || String(source.source_id) === String(sourceId)));
+    if (!matching.length) throw fail(404, `This event has no ${sourceNames[sourceKey]} listing.`);
+    if (matching.length > 1) throw fail(409, `This event has several ${sourceNames[sourceKey]} listings. Choose one by source_id.`);
+    const listing = matching[0];
     const remaining = sources.filter(source => source !== listing);
     if (sourceKey === 'vilnius-events') await conn.execute('DELETE FROM vilnius_events WHERE source_id=?', [Number(listing.source_id)]);
-    await conn.execute('DELETE FROM event_images WHERE event_id=? AND source_key=?', [eventId, sourceKey]);
+    await conn.execute('DELETE FROM event_images WHERE event_id=? AND source_key=? AND source_id=?', [eventId, sourceKey, String(listing.source_id)]);
     await conn.execute('DELETE FROM event_sources WHERE id=?', [listing.id]);
     if (!remaining.length) {
       // Tables without cascading keys; the rest (history, findings, prices, saves, redirects) cascade.
