@@ -294,7 +294,11 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
 .event-tools { display: grid; gap: 9px; padding-bottom: 9px; }
 .filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .date-quick-filters { display: flex; align-items: end; flex-wrap: wrap; gap: 7px; }
-.duplicate-filters { margin-bottom: 12px; }
+.duplicate-filters { padding: 0 17px 13px; }
+.duplicate-rules { margin-bottom: 16px; }
+.duplicate-rules-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px 24px; padding: 0 17px 17px; }
+.duplicate-rules-body h3 { margin-bottom: 6px; font-size: 13px; }
+.duplicate-rules-body ul { display: grid; gap: 5px; margin: 0; padding-left: 17px; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .date-filter-button { min-height: 37px; }
 .date-filter-button.active { border-color: var(--accent-strong); background: #342334; color: var(--text); }
 .specific-date-field { width: min(100%, 190px); }
@@ -501,7 +505,7 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
   .metric-icon { display: none; }
   .metric-label { font-size: 11px; line-height: 1.25; }
   .metric strong { font-size: 15px; }
-  .panel-heading, .panel-body, .catalogue-tools, .selection-bar, .event-details { padding-inline: 12px; }
+  .panel-heading, .panel-body, .catalogue-tools, .selection-bar, .event-details, .duplicate-filters { padding-inline: 12px; }
   .event-list, .saved-event-list { display: grid; gap: 8px; padding: 8px; }
   .event-group-heading { padding: 8px 4px; background: transparent; border-block: 0; }
   .event-item { min-width: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--input); }

@@ -28,6 +28,7 @@ const paths = {
   noMusic: 'M9 18V5l10-2v11M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm10-4a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM3 3l18 18',
   sidebar: 'M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm4 0v16',
   close: 'm6 6 12 12M18 6 6 18',
+  info: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 4.5V11m0-3.5h.01',
   settings: 'M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm0-5v2m0 13v2m9-8h-2m-14 0H3m15.36-6.36-1.42 1.42M7.06 16.94l-1.42 1.42m12.72 0-1.42-1.42M7.06 7.06 5.64 5.64',
 } as const;
 
@@ -161,8 +162,8 @@ export function Workspace({ children }: { children: ReactNode }) {
   );
 }
 
-export function PageHeading({ title, description, icon, href, linkLabel, tools }: {
-  title: string; description: string; icon: IconName; href?: string; linkLabel?: string; tools?: boolean;
+export function PageHeading({ title, description, icon, href, linkLabel, tools, actions }: {
+  title: string; description: string; icon: IconName; href?: string; linkLabel?: string; tools?: boolean; actions?: ReactNode;
 }) {
   return (
     <header className="page-heading">
@@ -171,7 +172,8 @@ export function PageHeading({ title, description, icon, href, linkLabel, tools }
         <h1>{title}</h1>
         <p>{description}</p>
       </div>
-      {(href || tools) && <div className="heading-actions">
+      {(href || tools || actions) && <div className="heading-actions">
+        {actions}
         {tools && <a className="secondary-button mobile-import-link" href="#import-tools"><Icon name="download" size={15} /> Import tools</a>}
         {href && <a className="secondary-button source-link" href={href} target="_blank" rel="noreferrer">{linkLabel} <Icon name="external" size={15} /></a>}
       </div>}

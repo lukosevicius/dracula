@@ -42,15 +42,20 @@ const knownPrice = (price?: RowDataPacket) => Boolean(price && (price.price_type
 /** A plain "paid" price with no amount says less than a listing that states the price. */
 const barePaid = (price?: RowDataPacket) => price?.price_type === 'paid' && blank(price.price_text);
 const statedPrice = (price?: RowDataPacket) => Boolean(price && price.price_type !== 'free' && !blank(price.price_text));
-/** Ticket links that differ only by surrounding spaces or a trailing slash point to the same page. */
 /** A title written in capitals only, such as "ROSEYE". */
 const allCaps = (value: string) => /\p{L}/u.test(value) && value === value.toLocaleUpperCase('lt') && value !== value.toLocaleLowerCase('lt');
-const sameUrl = (a: string, b: string) => a.trim().replace(/\/+$/, '') === b.trim().replace(/\/+$/, '');
+/** Ticket links that differ only by surrounding spaces or a trailing slash point to the same page. */
+const urlKey = (value: string) => value.trim().replace(/\/+$/, '');
+const sameUrl = (a: string, b: string) => urlKey(a) === urlKey(b);
+/** A bilietai.lt seat map link, such as ".../renginiai/ID/name/seatmap?sector=1", belongs to the event page before "/seatmap". */
+const bilietaiSeatmap = /^(https?:\/\/(?:www\.)?bilietai\.lt\/.+?)\/seatmap(?:[/?#].*)?$/i;
+const isSeatmap = (value: string) => bilietaiSeatmap.test(urlKey(value));
+const ticketPage = (value: string) => urlKey(value).replace(bilietaiSeatmap, '$1').replace(/\/+$/, '');
 
 /**
  * Decides each field of the merged event. Equal values need no decision. When only one event has a value it is used.
  * A venue name beats a street address, a known price beats an unknown one and a stated price beats a plain "paid".
- * Ticket links that differ only by a trailing slash count as equal, and a title in normal case beats the same title in capitals. Other disagreements are conflicts that
+ * Ticket links that differ only by a trailing slash count as equal, a bilietai.lt event page link beats its seat map link, and a title in normal case beats the same title in capitals. Other disagreements are conflicts that
  * keep the kept event's value unless a choice (an event ID per field) says otherwise.
  */
 export function planMerge({ survivor, removed, keptPrice, removedPrice }: Pair, choices: Choices = {}) {
@@ -85,6 +90,10 @@ export function planMerge({ survivor, removed, keptPrice, removedPrice }: Pair, 
         else if (field === 'venue') {
           if (isAddress(kept) && !isAddress(other)) preferOther = true;
           else conflict = !venuesMatch(kept, other) && isAddress(kept) === isAddress(other);
+        } else if (field === 'ticket_url') {
+          // A bilietai.lt seat map and its event page are the same tickets; the event page link wins.
+          if (ticketPage(kept) === ticketPage(other)) preferOther = isSeatmap(kept) && !isSeatmap(other);
+          else conflict = true;
         } else if (field === 'city') conflict = kept.trim().toLocaleLowerCase('lt') !== other.trim().toLocaleLowerCase('lt');
         else conflict = true;
       }

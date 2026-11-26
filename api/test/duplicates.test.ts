@@ -72,4 +72,14 @@ test('a merge plan prefers venue names and known prices, and flags real disagree
     .fields.find((entry: { field: string }) => entry.field === 'title')!;
   assert.deepEqual([caps('ROSEYE', 'Roseye').choice, caps('ROSEYE', 'Roseye').conflict], [184, false]);
   assert.equal(caps('Roseye', 'ROSEYE').choice, 28);
+  // A bilietai.lt event page link beats its seat map link; other deeper links still differ.
+  const page = 'https://www.bilietai.lt/renginiai/QOV5FOZDPP/mkc26-ciurlionis';
+  const tickets = (survivor: string, removed: string) => planMerge({ ...pair, survivor: { ...(pair.survivor as object), ticket_url: survivor } as never,
+    removed: { ...(pair.removed as object), ticket_url: removed } as never }).fields.find((entry: { field: string }) => entry.field === 'ticket_url')!;
+  assert.deepEqual([tickets(page + '/seatmap?sector=72329', page).choice, tickets(page + '/seatmap?sector=72329', page).conflict], [184, false]);
+  assert.deepEqual([tickets(page + '/', page + '/seatmap').choice, tickets(page + '/', page + '/seatmap').conflict], [28, false]);
+  assert.equal(tickets(page, page + '/info').conflict, true);
+  assert.equal(tickets('https://www.bilietai.lt/', page).conflict, true);
+  assert.equal(tickets('https://example.lt/e/1', 'https://example.lt/e/1/seatmap').conflict, true);
+  assert.equal(tickets(page, page + '-2').conflict, true);
 });

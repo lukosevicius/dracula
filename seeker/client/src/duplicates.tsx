@@ -12,6 +12,35 @@ type Pair = ServerPair & { events: [EventRow, EventRow] };
 type LevelFilter = 'all' | ServerPair['level'];
 const levelFilters: [LevelFilter, string][] = [['all', 'All matches'], ['confident', 'Confident'], ['likely', 'Likely']];
 const workflow = '/api/workflow/duplicates';
+const rules: [string, string[]][] = [
+  ['Finding pairs', [
+    'Only upcoming events are compared, and only events on the same date.',
+    'A different start time or a different city means a different performance, so those are never paired.',
+    'Titles are compared without capitals, accents, punctuation, ticket-status words such as "Sold out" or "Išparduota", and a trailing city part such as "| Vilnius".',
+    'Numbered editions with different numbers, such as "Vol. 2" and "Vol. 3", are never paired.',
+  ]],
+  ['Match levels', [
+    'Confident: the same title, and the same start time or venue, with no two different venue names.',
+    'Likely: the same title without a matching time or venue, or titles that share most of their words. These need your decision.',
+    'A venue name never contradicts a street address. Venues match when one name starts with the other, such as "Šv. Kotrynos bažnyčia" and "Šv. Kotrynos bažnyčia. Renginių salė".',
+  ]],
+  ['Merging', [
+    'One event is kept: the Live one first, then one with manual edits, then the older one. The other is removed and its link redirects to the kept event.',
+    'The kept event gets every source listing, so later imports update it.',
+    'A value taken from the removed event is protected from being overwritten by source refreshes.',
+    '"Not a duplicate" hides the pair for good. Two events from the same source cannot be merged; unpublish the extra listing instead.',
+  ]],
+  ['Choosing values', [
+    'When only one event has a value, that value is used.',
+    'A venue name beats a street address, a known price beats an unknown one, a stated price such as "Nuo 12.90 €" beats a plain "Paid", and a known type beats "Unsure".',
+    'Titles that differ only in capitals or punctuation are not a difference; normal case beats all capitals.',
+    'Ticket links that differ only by a trailing "/" are the same. A bilietai.lt event page link beats its seat map link.',
+    'Any other difference is marked "Differs" and keeps the kept event\'s value until you switch it.',
+  ]],
+  ['Merge confident matches', [
+    'Merges every confident pair that has no differing values. Pairs marked "Values differ" stay for review.',
+  ]],
+];
 const todayFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Vilnius', year: 'numeric', month: '2-digit', day: '2-digit' });
 
 export default function DuplicatesPage() {
@@ -26,6 +55,7 @@ export default function DuplicatesPage() {
   const [pendingId, setPendingId] = useState<number | null>(null);
   const [openKey, setOpenKey] = useState('');
   const [level, setLevel] = useState<LevelFilter>('all');
+  const [showRules, setShowRules] = useState(false);
   const editsDuringLoad = useRef<Map<number, EventRowEdits> | null>(null);
   const { isSaved, toggle, update, refresh, pendingIds, loading: savedLoading } = useSavedEvents();
   const { jobs, start, startingSource } = useJobs(() => {});
@@ -115,7 +145,16 @@ export default function DuplicatesPage() {
   });
   return <>
     {rowEdits.feedback}
-    <PageHeading title="Possible duplicates" description="Upcoming events that look like the same performance. Merging keeps one event with every source listing; the other event's link redirects to it." icon="calendar" />
+    <PageHeading title="Possible duplicates" description="Upcoming events that look like the same performance. Merging keeps one event with every source listing; the other event's link redirects to it." icon="calendar"
+      actions={<button className="icon-button" type="button" aria-expanded={showRules} aria-controls="duplicate-rules" aria-label={showRules ? 'Hide duplicate rules' : 'Show duplicate rules'}
+        title={showRules ? 'Hide rules' : 'How duplicates work'} onClick={() => setShowRules(open => !open)}><Icon name="info" size={18} /></button>} />
+    {showRules && <section className="panel duplicate-rules" id="duplicate-rules" aria-label="Duplicate rules">
+      <PanelHeading title="How duplicates work" end={<button className="icon-button" type="button" aria-label="Close rules" title="Close" onClick={() => setShowRules(false)}><Icon name="close" size={16} /></button>} />
+      <div className="duplicate-rules-body">{rules.map(([heading, items]) => <div key={heading}>
+        <h3>{heading}</h3>
+        <ul>{items.map(item => <li key={item}>{item}</li>)}</ul>
+      </div>)}</div>
+    </section>}
     <section className="panel">
       <PanelHeading title="Possible duplicate events" end={!loading && <span className="duplicate-actions">
         {withPreview.length > 0 && <button className="secondary-button preview-toggle-all" type="button" aria-label={anyOpen ? 'Hide all merge previews' : 'Show all merge previews'}
