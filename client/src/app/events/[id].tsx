@@ -7,6 +7,7 @@ import { SaveButton } from '../../components/save-button';
 import { CalendarButton } from '../../components/calendar-button';
 import { displayDate, displayText, eventLocation, eventSource, sameDayTimes, showtimeLines } from '../../utils/event-format';
 import { fetchEvent, type DisplayEvent } from '../../utils/events-api';
+import { artistsEnabled } from '../../constants/features';
 
 export default function EventPage() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -70,7 +71,7 @@ export default function EventPage() {
         {showings.length ? <View style={styles.section}><Text style={styles.label}>RENGINIO LAIKAI</Text>{showings.map(line => <Text key={line} style={styles.value}>{line}</Text>)}</View> : null}
       {location ? <View style={styles.section}><Text style={styles.label}>VIETA</Text><Text style={styles.value}>{location}</Text></View> : null}
         {price ? <View style={styles.section}><Text style={styles.label}>KAINA</Text><Text style={styles.value}>{displayText(price)}</Text></View> : null}
-        {event.artists.length ? <View style={styles.section}><Text style={styles.label}>ATLIKĖJAI</Text>{event.artists.map(artist => <Link key={artist.mbid} href={{pathname:'/artists/[id]',params:{id:artist.mbid}}} style={styles.link}>{displayText(artist.name)} →</Link>)}</View> : null}
+        {artistsEnabled && event.artists.length ? <View style={styles.section}><Text style={styles.label}>ATLIKĖJAI</Text>{event.artists.map(artist => <Link key={artist.mbid} href={{pathname:'/artists/[id]',params:{id:artist.mbid}}} style={styles.link}>{displayText(artist.name)} →</Link>)}</View> : null}
         {desktop ? links : null}
       </View>
     </View>

@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { displayDate, displayText, eventLocation, sameDayTimes, showtimeLines } from '../utils/event-format';
 import type { DisplayEvent } from '../utils/events-api';
 import { SaveButton } from './save-button';
+import { artistsEnabled } from '../constants/features';
 export function EventCard({ event, width }: { event: DisplayEvent; width?: number }) {
   const [failed, setFailed] = useState(false);
   const title = displayText(event.title);
@@ -19,7 +20,7 @@ export function EventCard({ event, width }: { event: DisplayEvent; width?: numbe
       <Text style={styles.date}>{displayDate(event.event_date)}{event.event_end_date && event.event_end_date !== event.event_date ? ` – ${displayDate(event.event_end_date)}` : ''}{times ? ` · ${times}` : ''}</Text>
       <Text style={styles.title}>{title}</Text>
       {location ? <Text style={styles.venue}>{location}</Text> : null}
-      {event.artists.length ? <Text style={styles.artists}>{event.artists.map(a => displayText(a.name)).join(' · ')}</Text> : null}
+      {artistsEnabled && event.artists.length ? <Text style={styles.artists}>{event.artists.map(a => displayText(a.name)).join(' · ')}</Text> : null}
       <Text style={styles.link}>Daugiau apie renginį →</Text>
     </View>
   </Pressable></Link><SaveButton event={event} overlay /></View>;

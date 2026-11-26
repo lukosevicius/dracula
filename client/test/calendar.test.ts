@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { calendarFile, hasCalendarTime } from '../src/utils/calendar';
 import type { DisplayEvent } from '../src/utils/events-api';
+import { artistsEnabled } from '../src/constants/features';
 
 const event: DisplayEvent = {
   id: 42, title: 'Koncertas &#8211; Vilnius', interest_score: 1,
@@ -18,7 +19,8 @@ test('calendar export includes useful event details and escapes calendar text', 
   assert.match(unfolded, /DTSTART:20261121T173000Z/);
   assert.match(unfolded, /LOCATION:Klubas\\, Vilnius/);
   assert.match(unfolded, /DESCRIPTION:Gyva muzika\\;\\nAntra eilutė\\, čia\./);
-  for (const detail of ['Atlikėjai: Atlikėjas', 'Kaina: Nuo 10 €', 'https://app.dracula.lt/events/42', 'https://example.com/event', 'https://tickets.example/buy']) assert.ok(unfolded.includes(detail));
+  assert.equal(unfolded.includes('Atlikėjai: Atlikėjas'), artistsEnabled);
+  for (const detail of ['Kaina: Nuo 10 €', 'https://app.dracula.lt/events/42', 'https://example.com/event', 'https://tickets.example/buy']) assert.ok(unfolded.includes(detail));
   for (const line of file.split('\r\n')) assert.ok(Buffer.byteLength(line) <= 75);
 });
 

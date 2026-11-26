@@ -5,6 +5,7 @@ import { useAuth } from '../auth/auth-context';
 import { GoogleSignIn } from '../auth/google-sign-in';
 import profileStyles from '../auth/profile.module.css';
 import styles from './web-header.module.css';
+import { artistsEnabled } from '../constants/features';
 
 function ProfileIcon() {
   return <svg className={styles.profileIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5" /><path d="M4.5 20c.5-4 3.3-6 7.5-6s7 2 7.5 6" /></svg>;
@@ -44,7 +45,7 @@ export function WebHeader({ children }: { children: ReactNode }) {
   async function leave() {setBusy(true);setError('');try{await signOut();}catch{setError('Nepavyko atsijungti.');}finally{setBusy(false);}}
   return <div className={styles.header}><div className={styles.content}>
     {children}
-    <nav className={styles.desktopNav} aria-label="Pagrindinė navigacija"><Link href="/">Visi renginiai</Link><Link href={'/saved' as Href}>Išsaugoti</Link><Link href={'/following' as Href}>Seku</Link></nav>
+    <nav className={styles.desktopNav} aria-label="Pagrindinė navigacija"><Link href="/">Visi renginiai</Link><Link href={'/saved' as Href}>Išsaugoti</Link>{artistsEnabled ? <Link href={'/following' as Href}>Seku</Link> : null}</nav>
     {state==='loading' ? <span className={styles.status}>Kraunama...</span> : state==='signed-in' && user ?
       <details className={styles.menu} ref={menu}><summary className={styles.account} aria-label={`Mano paskyra: ${user.displayName}`}>
         <ProfileIcon /><span className={styles.accountLabel}>Profilis</span>

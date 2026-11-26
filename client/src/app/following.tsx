@@ -1,10 +1,15 @@
-import { Link } from 'expo-router';
+import { Link, Redirect } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ArtistEvents } from '../components/artist-events';
 import { displayText } from '../utils/event-format';
 import { useFollowedArtists } from '../utils/followed-artists';
+import { artistsEnabled } from '../constants/features';
 
-export default function FollowingPage() {
+export default function FollowingPageRoute() {
+  return artistsEnabled ? <FollowingPage /> : <Redirect href="/" />;
+}
+
+function FollowingPage() {
   const {artists,loading,error,retry}=useFollowedArtists();
   const header=<View style={styles.header}><Text style={styles.eyebrow}>TAVO ATLIKĖJAI</Text><Text style={styles.title}>Seku</Text><Text style={styles.copy}>Artėjančių sekamų atlikėjų renginiai vienoje vietoje.</Text>{artists.length?<View style={styles.artists}><Text style={styles.label}>SEKAMI ATLIKĖJAI</Text><View style={styles.chips}>{artists.map(artist=><Link key={artist.mbid} href={{pathname:'/artists/[id]',params:{id:artist.mbid}}} style={styles.chip}>{displayText(artist.name)} →</Link>)}</View></View>:null}</View>;
   if(loading || error) return <View style={styles.container}>{header}<Text accessibilityRole={error?'alert':undefined} style={error?styles.error:styles.copy}>{error?'Nepavyko įkelti sekamų atlikėjų.':'Kraunami sekami atlikėjai...'}</Text>{error?<Pressable accessibilityRole="button" onPress={retry}><Text style={styles.link}>Bandyti dar kartą</Text></Pressable>:null}</View>;

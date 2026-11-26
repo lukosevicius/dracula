@@ -1,12 +1,17 @@
 import { useEffect, useState } from 'react';
-import { Link, Stack, useLocalSearchParams } from 'expo-router';
+import { Link, Redirect, Stack, useLocalSearchParams } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ArtistEvents } from '../../components/artist-events';
 import { fetchArtist } from '../../utils/events-api';
 import { displayText } from '../../utils/event-format';
 import { useFollowedArtists, type FollowedArtist } from '../../utils/followed-artists';
+import { artistsEnabled } from '../../constants/features';
 
-export default function ArtistPage() {
+export default function ArtistPageRoute() {
+  return artistsEnabled ? <ArtistPage /> : <Redirect href="/" />;
+}
+
+function ArtistPage() {
   const {id}=useLocalSearchParams<{id:string}>();
   const [artist,setArtist]=useState<FollowedArtist|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(false),[retry,setRetry]=useState(0);
   const follows=useFollowedArtists();

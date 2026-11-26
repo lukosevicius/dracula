@@ -1,5 +1,6 @@
 import type { DisplayEvent } from './events-api';
 import { displayText, eventSource } from './event-format';
+import { artistsEnabled } from '../constants/features';
 
 function escapeText(value: string) {
   return value.replace(/\\/g, '\\\\').replace(/\r\n|\r|\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;');
@@ -52,7 +53,7 @@ export function calendarFile(event: DisplayEvent, now = new Date()) {
   const eventUrl = `https://app.dracula.lt/events/${event.id}`;
   const description = [
     event.description?.trim(),
-    event.artists?.length ? `Atlikėjai: ${event.artists.map(artist => displayText(artist.name)).join(', ')}` : '',
+    artistsEnabled && event.artists?.length ? `Atlikėjai: ${event.artists.map(artist => displayText(artist.name)).join(', ')}` : '',
     event.price_text ? `Kaina: ${displayText(event.price_text)}` : event.price_type === 'free' ? 'Kaina: Nemokamas' : '',
     `Renginys Dracula: ${eventUrl}`,
     source ? `Renginio nuoroda: ${source.url}` : '',

@@ -25,11 +25,11 @@ html {
 }
 
 /* Keep the browser's focus ring off the text; highlight the whole search box instead. */
-input[aria-label="Ieškoti renginio, vietos arba atlikėjo"]:focus {
+input[aria-label^="Ieškoti renginio"]:focus {
   outline: none;
 }
 
-div:has(> input[aria-label="Ieškoti renginio, vietos arba atlikėjo"]:focus-visible) {
+div:has(> input[aria-label^="Ieškoti renginio"]:focus-visible) {
   outline: 2px solid #ed7d83;
   outline-offset: 2px;
 }
