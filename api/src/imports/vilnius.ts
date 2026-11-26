@@ -1,7 +1,7 @@
 import { diff, history, jsonValue, lockEvent, recordChange, snapshot, type Snapshot } from '../verification/history.js';
 import { queueAfterImport } from '../verification/verification.js';
 import { findImportMatch } from '../events/duplicates.js';
-import { fillFromSource, recordAttach } from './attach.js';
+import { fillFromSource, mergeIfMatched, recordAttach } from './attach.js';
 import type {Pool, RowDataPacket, ResultSetHeader} from 'mysql2/promise';
 type Field = 'event_date' | 'event_end_date' | 'event_time' | 'venue' | 'ticket_url';
 type Details = Partial<Record<Field, string | null>>;
@@ -89,7 +89,8 @@ export async function importVilniusPage(pool: Pool, data: unknown) {
           const sourceAfter={source_url:item.source_url,description:item.content_html,image_id:item.featured_media||null,source_title:item.title,structured_details:jsonValue<Snapshot>(metadata).structured_details};
           if(await recordChange(conn,id,'source_refreshed','Vilnius Events',{...before,...sourceBefore},{...await snapshot(conn,id),...sourceAfter},{source_id:item.source_id,job_id:input.job?.id})){
             await queueAfterImport(conn,id,input.job?.id,input.verify_after_import!==false,input.publish_after_verification!==false);
-            changedEventIds.push(id);
+            // A listing that now states its date may match an event from another source.
+            changedEventIds.push(Number(links[0].is_secondary)?id:await mergeIfMatched(conn,id,event.event_date,'Vilnius Events'));
           }
           updated++;
         }

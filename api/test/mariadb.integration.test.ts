@@ -478,9 +478,21 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
         assert.deepEqual(await mergeEvents(pool, 20007, 20008, 'Test', { price: 20008, title: 20008 }), { event_id: 20007, merged_event_id: 20008 });
         const [[chosen]] = await pool.execute<RowDataPacket[]>('SELECT e.title,e.venue,e.manual_fields,p.price_type,p.manual FROM events e JOIN event_prices p ON p.event_id=e.id WHERE e.id=20007');
         assert.deepEqual({ ...chosen, manual_fields: JSON.parse(chosen.manual_fields) }, { title: 'Jam Session', venue: 'Jazz Cellar 11', manual_fields: ['title'], price_type: 'free', manual: 1 });
+        // A VN listing imported without a date is merged once a later refresh gives it one.
+        await addEvent(20009, 'Dūdos ir būgnai: Mood Sellers', 'Estradà', 'avilys');
+        await pool.execute("UPDATE events SET event_date='2099-12-18' WHERE id=20009");
+        const undated = { ...listing, source_id: 7002, title: 'Dūdos ir būgnai: Mood Sellers', source_url: 'https://www.vilnius-events.lt/renginiai/dudos', details: { event_date: '', event_time: '', venue: 'Estradà', ticket_url: '' } };
+        assert.equal((await page(undated)).added, 1);
+        const [[created]] = await pool.execute<RowDataPacket[]>("SELECT event_id FROM event_sources WHERE source_key='vilnius-events' AND source_id='7002'");
+        const dated = await page({ ...undated, content_html: 'Now with a date', details: { ...undated.details, event_date: '2099-12-18', event_time: '20:00' } });
+        assert.deepEqual(dated.changedEventIds, [20009]);
+        const [[joinedLater]] = await pool.execute<RowDataPacket[]>("SELECT event_id,is_secondary FROM event_sources WHERE source_key='vilnius-events' AND source_id='7002'");
+        assert.deepEqual([Number(joinedLater.event_id), Number(joinedLater.is_secondary)], [20009, 1]);
+        const [[redirected]] = await pool.execute<RowDataPacket[]>('SELECT event_id FROM event_redirects WHERE old_event_id=?', [created.event_id]);
+        assert.equal(Number(redirected.event_id), 20009);
         await pool.query('DELETE FROM user_saved_events'); await pool.query('DELETE FROM seeker_saved_events'); await pool.query('DELETE FROM event_prices WHERE event_id>=20001');
         await pool.query('DELETE FROM event_artist_decisions WHERE event_id>=20001');
-        await pool.query('DELETE FROM event_sources WHERE event_id>=20001'); await pool.query('DELETE FROM events WHERE id>=20001');
+        await pool.query('DELETE FROM event_redirects'); await pool.query('DELETE FROM event_sources WHERE event_id>=20001'); await pool.query('DELETE FROM vilnius_events WHERE source_id IN (7001,7002)'); await pool.query('DELETE FROM events WHERE id>=20001');
       }
 
       const migrations = await loadMigrations();

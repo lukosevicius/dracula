@@ -1,5 +1,5 @@
 import { lockEvent, recordChange, snapshot } from '../verification/history.js';
-import { fillFromSource } from './attach.js';
+import { fillFromSource, mergeIfMatched } from './attach.js';
 import {createHash,timingSafeEqual} from 'node:crypto';
 import type {Pool, ResultSetHeader, RowDataPacket} from 'mysql2/promise';
 type DetailField = 'event_date' | 'event_end_date' | 'event_time' | 'venue' | 'ticket_url';
@@ -43,6 +43,8 @@ export async function enrichEvent(pool: Pool,id: number,data: unknown){
         SET v.event_revision=v.event_revision+1 WHERE j.import_job_id=? AND v.event_id=? AND v.event_revision=? AND v.status='queued'`,[input.job.id,id,event.revision]);
       if(pending.affectedRows)await conn.execute("UPDATE events SET verification_status='queued' WHERE id=?",[id]);
     }
+    // A date found on the event page may reveal the same performance from another source.
+    if(!secondary)await mergeIfMatched(conn,id,event.event_date,'Vilnius Events');
     await conn.commit();
   }catch(cause){await conn.rollback();throw cause;}}finally{conn.release();}
 }
