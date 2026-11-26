@@ -35,3 +35,44 @@ export function eventGroupLabel(date: string | null, today: string) {
   const detail = new Intl.DateTimeFormat('lt-LT', { ...(date === today || date === tomorrow.toISOString().slice(0, 10) ? { weekday: 'long' as const } : {}), year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(value);
   return { title, date: detail };
 }
+
+/** Current Vilnius time as "HH:MM". */
+export function vilniusTime(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Vilnius', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(now);
+  const value = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${value.hour}:${value.minute}`;
+}
+
+const minutes = (time: string) => { const [h, m] = time.split(':').map(Number); return h * 60 + (m || 0); };
+/** Without an end time an event is treated as over this long after it starts. */
+const assumedLength = 120;
+
+type TimedEvent = { event_date: string | null; event_end_date?: string | null; event_time?: string | null; event_end_time?: string | null; times?: { date: string; time: string | null; end_time: string | null }[] };
+
+/**
+ * True for an event that took place earlier today and is over, so "Šiandien" shows what is still ahead.
+ * Multi-day events, events with later showings and events without a time are never hidden.
+ */
+export function endedToday(event: TimedEvent, today: string, now: string) {
+  const slots = event.times?.length ? event.times : [{ date: event.event_date ?? '', time: event.event_time ?? null, end_time: event.event_end_time ?? null }];
+  if (event.event_end_date && event.event_end_date > today) return false;
+  if (slots.some(slot => slot.date > today)) return false;
+  const todays = slots.filter(slot => slot.date === today);
+  if (!todays.length || todays.some(slot => !slot.time)) return false;
+  return todays.every(slot => {
+    const start = minutes(slot.time!);
+    // An end time earlier than the start runs past midnight, so it is still on; one equal to the start is a data gap.
+    const given = slot.end_time && slot.end_time !== slot.time ? minutes(slot.end_time) : null;
+    const end = given == null ? start + assumedLength : given < start ? Infinity : given;
+    return end <= minutes(now);
+  });
+}
+
+/** Lithuanian noun form for a count: 1 renginys, 2 renginiai, 10 renginių. */
+export function plural(count: number, [one, few, many]: [string, string, string]) {
+  const mod10 = count % 10, mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod100 >= 10 && mod100 < 20) return many;
+  return mod10 >= 2 ? few : many;
+}
+export const eventsWord = (count: number) => `${count} ${plural(count, ['renginys', 'renginiai', 'renginių'])}`;
