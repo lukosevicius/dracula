@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'expo-router';
 import { Image } from 'expo-image';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { displayDate, displayText, eventLocation, eventPrice, sameDayTimes, showtimeLines } from '../utils/event-format';
+import { displayText, eventLocation, eventPrice, sameDayTimes, shortDate, showtimeLines } from '../utils/event-format';
 import type { DisplayEvent } from '../utils/events-api';
 import { SaveButton } from './save-button';
 import { artistsEnabled } from '../constants/features';
@@ -26,7 +26,7 @@ export function EventCard({ event, width, variant = 'large', hideDate = false }:
   // One card per event; several showings are listed with it rather than as separate events.
   const times = sameDayTimes(event.times) ?? (showtimeLines(event.times).length ? 'keli laikai' : event.event_time);
   const ends = event.event_end_date && event.event_end_date !== event.event_date ? event.event_end_date : null;
-  const date = hideDate ? (ends ? `iki ${displayDate(ends)}` : '') : `${displayDate(event.event_date)}${ends ? ` – ${displayDate(ends)}` : ''}`;
+  const date = hideDate ? (ends ? `iki ${shortDate(ends)}` : '') : `${shortDate(event.event_date)}${ends ? ` – ${shortDate(ends)}` : ''}`;
   const meta = [date, times].filter(Boolean).join(' · ');
   const image = source && !failed
     ? <Image source={source} style={compact ? styles.thumb : styles.image} contentFit="cover" onError={() => setFailed(true)} accessibilityLabel={`Renginio ${title} nuotrauka`} />

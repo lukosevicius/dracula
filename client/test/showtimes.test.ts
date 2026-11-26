@@ -24,3 +24,11 @@ test('an event with several showings appears once, under its next showing', () =
   assert.deepEqual(rows.filter(row => row.type === 'heading').map(row => row.type === 'heading' && row.date), ['2026-12-19']);
   assert.equal(rows.filter(row => row.type === 'row').length, 1);
 });
+
+test('short card dates add the year only outside the current one', async () => {
+  const { shortDate } = await import('../src/utils/event-format');
+  assert.equal(shortDate('2026-11-27', '2026-11-26'), 'lapkr. 27');
+  assert.equal(shortDate('2026-05-01', '2026-11-26'), 'geg. 1');
+  assert.equal(shortDate('2027-01-15', '2026-11-26'), '2027 m. saus. 15');
+  assert.equal(shortDate(null), 'Data nežinoma');
+});

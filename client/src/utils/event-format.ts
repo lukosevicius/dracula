@@ -1,4 +1,5 @@
 import type { Showtime } from './events-api';
+import { vilniusDate } from '../shared/event-date-filters';
 
 export function displayDate(value: string | null) {
   return value ? new Intl.DateTimeFormat('lt-LT', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${value}T00:00:00Z`)) : 'Data nežinoma';
@@ -47,4 +48,14 @@ export function eventPrice(event: { price_type?: 'free' | 'paid' | 'unknown' | n
   const text = event.price_text?.trim();
   if (text && !/^nemokam/i.test(text)) return displayText(text);
   return text || event.price_type === 'free' ? 'Nemokamai' : null;
+}
+
+const shortMonths = ['saus.', 'vas.', 'kov.', 'bal.', 'geg.', 'birž.', 'liep.', 'rugp.', 'rugs.', 'spal.', 'lapkr.', 'gruod.'];
+
+/** Compact card date, "lapkr. 27"; the year is added only when it is not the current one ("2027 m. saus. 15"). */
+export function shortDate(value: string | null, today = vilniusDate()) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return 'Data nežinoma';
+  const [year, month, day] = value.split('-').map(Number);
+  const label = `${shortMonths[month - 1]} ${day}`;
+  return value.slice(0, 4) === today.slice(0, 4) ? label : `${year} m. ${label}`;
 }
