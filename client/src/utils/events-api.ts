@@ -1,6 +1,6 @@
 import type { PublicEvent } from '../../../seeker/types';
 
-export type DisplayEvent = PublicEvent & { event_end_time?: string | null; image_url?: string | null; price_type?: 'free' | 'paid' | 'unknown' | null; price_text?: string | null };
+export type DisplayEvent = PublicEvent & { city?: string | null; event_end_time?: string | null; image_url?: string | null; price_type?: 'free' | 'paid' | 'unknown' | null; price_text?: string | null };
 export const apiUrl = (process.env.EXPO_PUBLIC_API_URL || 'https://api.dracula.lt').replace(/\/$/, '');
 export type EventPage = { items: DisplayEvent[]; total: number; nextOffset: number | null };
 
@@ -10,12 +10,14 @@ async function request<T>(path: string, signal: AbortSignal): Promise<T | null> 
   if (!response.ok) throw new Error(`API returned ${response.status}`);
   return response.json();
 }
-export async function fetchEvents(filter: string, from: string, to: string, offset: number, signal: AbortSignal, limit = 30, artists: string[] = []): Promise<EventPage> {
+export async function fetchEvents(filter: string, from: string, to: string, offset: number, signal: AbortSignal, { limit = 30, artists = [], city = '' }: { limit?: number; artists?: string[]; city?: string } = {}): Promise<EventPage> {
   const query = new URLSearchParams({ filter, offset: String(offset), limit: String(limit) });
   if (artists.length) query.set('artists', artists.join(','));
+  if (city) query.set('city', city);
   if (filter === 'custom') { query.set('from', from); if (to) query.set('to', to); }
   const page = await request<EventPage>(`/v1/events?${query}`, signal);
   if (!page || !Array.isArray(page.items) || !Number.isInteger(page.total)) throw new Error('Invalid API response');
+  if (city && page.items.some(event => event.city == null)) throw new Error('City filter is unavailable');
   return page;
 }
 export function fetchArtist(id: string, signal: AbortSignal) {

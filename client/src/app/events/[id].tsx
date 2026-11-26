@@ -5,7 +5,7 @@ import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, useWindowDimen
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SaveButton } from '../../components/save-button';
 import { CalendarButton } from '../../components/calendar-button';
-import { displayDate, displayText, eventSource } from '../../utils/event-format';
+import { displayDate, displayText, eventLocation, eventSource } from '../../utils/event-format';
 import { fetchEvent, type DisplayEvent } from '../../utils/events-api';
 
 export default function EventPage() {
@@ -34,6 +34,7 @@ export default function EventPage() {
   if (!event) return <View style={styles.empty}><Stack.Screen options={{ title: 'Renginys' }} /><Text style={styles.title}>Renginio neradome</Text><Link href="/" style={styles.link}>Grįžti į renginius</Link></View>;
 
   const title = displayText(event.title);
+  const location = eventLocation(event.venue, event.city);
   const image = event.image_url ? { uri: event.image_url } : undefined;
   const source = eventSource(event.about_url, event.source_url);
   const date = event.event_date
@@ -64,7 +65,7 @@ export default function EventPage() {
         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}><CalendarButton event={event} /><SaveButton event={event} /></View>
         {date ? <View style={styles.section}><Text style={styles.label}>DATA</Text><Text style={styles.value}>{date}</Text></View> : null}
         {time ? <View style={styles.section}><Text style={styles.label}>LAIKAS</Text><Text style={styles.value}>{time}</Text></View> : null}
-        {event.venue ? <View style={styles.section}><Text style={styles.label}>VIETA</Text><Text style={styles.value}>{displayText(event.venue)}</Text></View> : null}
+      {location ? <View style={styles.section}><Text style={styles.label}>VIETA</Text><Text style={styles.value}>{location}</Text></View> : null}
         {price ? <View style={styles.section}><Text style={styles.label}>KAINA</Text><Text style={styles.value}>{displayText(price)}</Text></View> : null}
         {event.artists.length ? <View style={styles.section}><Text style={styles.label}>ATLIKĖJAI</Text>{event.artists.map(artist => <Link key={artist.mbid} href={{pathname:'/artists/[id]',params:{id:artist.mbid}}} style={styles.link}>{displayText(artist.name)} →</Link>)}</View> : null}
         {desktop ? links : null}

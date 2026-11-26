@@ -6,8 +6,8 @@ import { matchesEventSearch, normalizeEventSearch, transitionEvents } from './ev
 type CachedEvents = { key: string; items: DisplayEvent[]; total: number; next: number | null };
 let cachedEvents: CachedEvents | null = null;
 
-export function useEvents(filter: string, from: string, to: string, invalid: boolean, search: string, freeOnly: boolean) {
-  const key = JSON.stringify([filter, from, to, invalid, search, freeOnly]);
+export function useEvents(filter: string, from: string, to: string, invalid: boolean, search: string, freeOnly: boolean, city: string) {
+  const key = JSON.stringify([filter, from, to, invalid, search, freeOnly, city]);
   const initialCache = useRef(cachedEvents?.key === key ? cachedEvents : null);
   const [items, setItems] = useState<DisplayEvent[]>(() => initialCache.current?.items ?? []);
   const [total, setTotal] = useState(() => initialCache.current?.total ?? 0);
@@ -33,14 +33,14 @@ export function useEvents(filter: string, from: string, to: string, invalid: boo
     if (invalid) { pending.current = false; setLoading(false); return () => active.abort(); }
     pending.current = true; setLoading(true);
     async function load() {
-      if (!search && !freeOnly && filter !== 'upcoming') return fetchEvents(filter, from, to, 0, active.signal);
+      if (!search && !freeOnly && filter !== 'upcoming') return fetchEvents(filter, from, to, 0, active.signal, { city });
       const matches: DisplayEvent[] = [];
       const term = normalizeEventSearch(search);
       let offset: number | null = 0;
       let total = 0;
       const tomorrow = selectedDates('tomorrow', '', '')?.from;
       while (offset !== null) {
-        const page = await fetchEvents(filter, from, to, offset, active.signal, 100);
+        const page = await fetchEvents(filter, from, to, offset, active.signal, { limit: 100, city });
         total = page.total;
         matches.push(...page.items.filter(event => (!freeOnly || event.price_type === 'free') && matchesEventSearch(event, term)));
         if (page.nextOffset !== null && page.nextOffset <= offset) throw new Error('Invalid pagination');
@@ -58,13 +58,13 @@ export function useEvents(filter: string, from: string, to: string, invalid: boo
     }).catch(() => { if (!active.signal.aborted && current === generation.current) setError(true); })
       .finally(() => { if (current === generation.current) { pending.current = false; setLoading(false); } });
     return () => { active.abort(); generation.current++; };
-  }, [filter, from, to, invalid, search, freeOnly, retry, key]);
+  }, [filter, from, to, invalid, search, freeOnly, city, retry, key]);
 
   function loadMore() {
     if (!apiUrl || loadedKey !== key || next == null || pending.current || invalid) return;
     const active = controller.current; if (!active) return;
     const current = generation.current; pending.current = true; setLoading(true); setError(false);
-    fetchEvents(filter, from, to, next, active.signal).then(page => {
+    fetchEvents(filter, from, to, next, active.signal, { city }).then(page => {
       if (current !== generation.current) return;
       setItems(previous => { const merged = [...previous, ...page.items]; cachedEvents = { key, items: merged, total: page.total, next: page.nextOffset }; return merged; }); setTotal(page.total); setNext(page.nextOffset);
     }).catch(() => { if (!active.signal.aborted && current === generation.current) setError(true); })
@@ -72,7 +72,7 @@ export function useEvents(filter: string, from: string, to: string, invalid: boo
   }
   const transitioning = loadedKey !== key;
   const visibleItems = invalid ? [] : transitioning
-    ? transitionEvents(items, filter, from, to, vilniusDate(), search, freeOnly)
+    ? transitionEvents(items, filter, from, to, vilniusDate(), search, freeOnly, city)
     : items;
   return { items: visibleItems, total, next: transitioning ? null : next, loading: loading || (transitioning && !invalid && !error), transitioning, error, loadMore, retry: () => setRetry(value => value + 1) };
 }

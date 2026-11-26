@@ -23,6 +23,7 @@ function fixture() {
     INSERT INTO event_prices VALUES(1,'Nemokama','free'); INSERT INTO artists VALUES('artist-1','Artist');
     INSERT INTO event_artist_decisions VALUES(1,'artist-1','accepted');`);
   db.exec(`ALTER TABLE events ADD COLUMN interest_score INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE events ADD COLUMN city TEXT;
     ALTER TABLE events ADD COLUMN publication_status TEXT NOT NULL DEFAULT 'draft';
     ALTER TABLE events ADD COLUMN about_url_override TEXT;
     ALTER TABLE events ADD COLUMN description_override TEXT;

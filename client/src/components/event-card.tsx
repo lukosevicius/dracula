@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { Link } from 'expo-router';
 import { Image } from 'expo-image';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { displayDate, displayText } from '../utils/event-format';
+import { displayDate, displayText, eventLocation } from '../utils/event-format';
 import type { DisplayEvent } from '../utils/events-api';
 import { SaveButton } from './save-button';
 export function EventCard({ event, width }: { event: DisplayEvent; width?: number }) {
   const [failed, setFailed] = useState(false);
   const title = displayText(event.title);
+  const location = eventLocation(event.venue, event.city);
   const source = event.image_url ? { uri: event.image_url } : undefined;
   return <View style={[styles.card, width != null && { width }]}><Link href={{ pathname: '/events/[id]', params: { id: String(event.id) } }} asChild>
     <Pressable accessibilityRole="link" accessibilityLabel={`${title}, atidaryti renginio puslapį`}>
@@ -15,7 +16,7 @@ export function EventCard({ event, width }: { event: DisplayEvent; width?: numbe
     <View style={styles.cardBody}>
       <Text style={styles.date}>{displayDate(event.event_date)}{event.event_end_date && event.event_end_date !== event.event_date ? ` – ${displayDate(event.event_end_date)}` : ''}{event.event_time ? ` · ${event.event_time}` : ''}</Text>
       <Text style={styles.title}>{title}</Text>
-      {event.venue ? <Text style={styles.venue}>{displayText(event.venue)}</Text> : null}
+      {location ? <Text style={styles.venue}>{location}</Text> : null}
       {event.artists.length ? <Text style={styles.artists}>{event.artists.map(a => displayText(a.name)).join(' · ')}</Text> : null}
       <Text style={styles.link}>Daugiau apie renginį →</Text>
     </View>

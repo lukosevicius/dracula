@@ -30,6 +30,7 @@ function fixture() {
     INSERT INTO event_artist_decisions VALUES(1,'artist-1','accepted');`);
   const pool={ execute: async (sql: string,params: import('node:sqlite').SQLInputValue[]) => [db.prepare(sql).all(...params)] };
   db.exec(`ALTER TABLE events ADD COLUMN interest_score INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE events ADD COLUMN city TEXT;
     ALTER TABLE events ADD COLUMN publication_status TEXT NOT NULL DEFAULT 'draft';
     ALTER TABLE events ADD COLUMN about_url_override TEXT;
     ALTER TABLE events ADD COLUMN description_override TEXT;
@@ -108,5 +109,24 @@ test('Nest public endpoints preserve the existing API contract', async () => {
       assert.equal(await response.text(),expected.body,path);
     }
     assert.equal((await fetch(current+'/v1/events',{method:'POST'})).status,405);
+
+    db.exec(`UPDATE events SET city='Vilnius' WHERE id=1;
+      UPDATE events SET city='Kaunas' WHERE id IN (2,4);
+      INSERT INTO events(id,title,event_date,city,review_status,publication_status) VALUES
+        (5,'Kaunas concert','2026-11-21','Kaunas','music','live'),
+        (6,'Klaipėda concert','2026-11-21','Klaipėda','music','live');
+      INSERT INTO event_sources SELECT id,id,'avilys',CAST(id AS TEXT),'https://example.com',NULL,'',NULL FROM events WHERE id IN (5,6);`);
+    const kaunasFirst=await (await fetch(current+'/v1/events?filter=all&city=kaunas&limit=1')).json();
+    assert.deepEqual(kaunasFirst.items.map((event: { id: number; city: string })=>[event.id,event.city]),[[5,'Kaunas']]);
+    assert.equal(kaunasFirst.total,2);
+    assert.equal(kaunasFirst.nextOffset,1);
+    const kaunasSecond=await (await fetch(current+'/v1/events?filter=all&city=Kaunas&limit=1&offset=1')).json();
+    assert.deepEqual(kaunasSecond.items.map((event: { id: number })=>event.id),[2]);
+    assert.equal(kaunasSecond.nextOffset,null);
+    const klaipeda=await (await fetch(current+'/v1/events?city='+encodeURIComponent('Klaipėda'))).json();
+    assert.deepEqual(klaipeda.items.map((event: { id: number })=>event.id),[6]);
+    const palanga=await (await fetch(current+'/v1/events?city=Palanga')).json();
+    assert.deepEqual(palanga,{items:[],total:0,nextOffset:null});
+    assert.equal((await fetch(current+'/v1/events?city=')).status,400);
   } finally { await app.close(); db.close(); await rm(directory,{recursive:true,force:true}); }
 });

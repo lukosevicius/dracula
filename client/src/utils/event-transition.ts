@@ -7,8 +7,10 @@ export function matchesEventSearch(event: DisplayEvent, term: string) {
   return !term || normalizeEventSearch([event.title, event.venue ?? '', ...event.artists.map(artist => artist.name)].map(displayText).join(' ')).includes(term);
 }
 
-export function transitionEvents(events: DisplayEvent[], filter: string, from: string, to: string, today: string, search: string, freeOnly: boolean) {
+export function transitionEvents(events: DisplayEvent[], filter: string, from: string, to: string, today: string, search: string, freeOnly: boolean, city = '') {
   const range = selectedDates(filter, from, to, new Date(`${today}T12:00:00Z`));
   const term = normalizeEventSearch(search);
-  return events.filter(event => matchesDate(event, filter, range, today) && (!freeOnly || event.price_type === 'free') && matchesEventSearch(event, term));
+  const targetCity = normalizeEventSearch(city);
+  return events.filter(event => (!targetCity || normalizeEventSearch(event.city?.trim() ?? '') === targetCity) &&
+    matchesDate(event, filter, range, today) && (!freeOnly || event.price_type === 'free') && matchesEventSearch(event, term));
 }

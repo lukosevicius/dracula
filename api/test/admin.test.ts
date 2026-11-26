@@ -26,6 +26,7 @@ function setup() {
     INSERT INTO events VALUES(1,'unsure','Tést &amp; show','2026-11-20',NULL,NULL,NULL,NULL,'[]'); INSERT INTO event_sources VALUES(1,1,'vilnius-events','99','https://example.com',NULL,'Description',NULL,NULL);
     INSERT INTO vilnius_events VALUES(99,'unsure',NULL,'2026-11-20',NULL,NULL,NULL,NULL,'[]',0); INSERT INTO artists VALUES('${artist}','Artist');`);
   db.exec(`ALTER TABLE events ADD COLUMN interest_score INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE events ADD COLUMN city TEXT;
     ALTER TABLE events ADD COLUMN publication_status TEXT NOT NULL DEFAULT 'draft';
     ALTER TABLE events ADD COLUMN publication_manual INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE events ADD COLUMN classification_manual INTEGER NOT NULL DEFAULT 0;

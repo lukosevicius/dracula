@@ -5,11 +5,11 @@ import { DatabaseService } from '../database/database.service.js';
 import { descriptionText } from './description.js';
 
 export type DateFilter = 'upcoming' | 'today' | 'tomorrow' | 'weekend' | 'custom' | 'all' | 'past' | 'unknown';
-export interface PageOptions { offset: number; limit: number; filter: DateFilter; from: string; to: string; artists?: string[] }
-interface EventRow extends RowDataPacket { id: number; interest_score: number; title: string; event_date: string | null; event_end_date: string | null; event_time: string | null; venue: string | null; ticket_url: string | null; source_url: string; source_key: string; source_data_json: string | null; about_url: string | null; price_text: string | null; price_type: string | null; content_html: string | null; description_override: string | null; local_name: string | null }
+export interface PageOptions { offset: number; limit: number; filter: DateFilter; from: string; to: string; artists?: string[]; city?: string }
+interface EventRow extends RowDataPacket { id: number; interest_score: number; title: string; event_date: string | null; event_end_date: string | null; event_time: string | null; venue: string | null; city: string | null; ticket_url: string | null; source_url: string; source_key: string; source_data_json: string | null; about_url: string | null; price_text: string | null; price_type: string | null; content_html: string | null; description_override: string | null; local_name: string | null }
 interface ArtistRow extends RowDataPacket { event_id: number; mbid: string; name: string }
 interface CountRow extends RowDataPacket { total: number | string }
-const columns = `e.id,e.title,e.event_date,e.event_end_date,e.event_time,e.venue,e.ticket_url,e.interest_score,
+const columns = `e.id,e.title,e.event_date,e.event_end_date,e.event_time,e.venue,e.city,e.ticket_url,e.interest_score,
  s.source_url,s.source_key,s.source_data_json,COALESCE(e.about_url_override,s.about_url) AS about_url,s.content_html,e.description_override,COALESCE(i.local_name,ei.local_name) AS local_name,p.price_text,p.price_type`;
 const joins = `FROM events e JOIN event_sources s ON s.id=(SELECT id FROM event_sources WHERE event_id=e.id ORDER BY CASE WHEN source_key='vilnius-events' THEN 0 ELSE 1 END,id LIMIT 1)
  LEFT JOIN vilnius_events v ON s.source_key='vilnius-events' AND v.source_id=CAST(s.source_id AS UNSIGNED)
@@ -36,7 +36,7 @@ export class CatalogueService {
       artists: artists.filter(a => a.event_id === row.id).map(({mbid,name}) => ({mbid,name})),
     }));
   }
-  async page({offset, limit, filter, from, to, artists}: PageOptions, today = vilniusToday()) {
+  async page({offset, limit, filter, from, to, artists, city}: PageOptions, today = vilniusToday()) {
     const shift = (date: string, days: number) => { const d = new Date(`${date}T00:00:00Z`); d.setUTCDate(d.getUTCDate()+days); return d.toISOString().slice(0,10); };
     const end = "COALESCE(NULLIF(e.event_end_date,''),e.event_date)";
     let clause = ''; let params: string[] = []; let groupStart = today;
@@ -54,6 +54,10 @@ export class CatalogueService {
     if (artists?.length) {
       clause += ` AND EXISTS (SELECT 1 FROM event_artist_decisions d WHERE d.event_id=e.id AND d.decision='accepted' AND d.artist_mbid IN (${artists.map(() => '?').join(',')}))`;
       params.push(...artists);
+    }
+    if (city) {
+      clause += ' AND LOWER(TRIM(e.city))=LOWER(?)';
+      params.push(city);
     }
     const [countRows] = await this.db.pool.execute<CountRow[]>(`SELECT COUNT(*) AS total ${joins} WHERE ${ready}${clause}`, [today,...params]);
     const [rows] = await this.db.pool.execute<EventRow[]>(`SELECT ${columns} ${joins} WHERE ${ready}${clause} ORDER BY CASE WHEN NULLIF(e.event_date,'') IS NULL THEN 1 ELSE 0 END, CASE WHEN e.event_date<? THEN ? ELSE e.event_date END, e.interest_score DESC, COALESCE(e.event_time,''), e.id LIMIT ? OFFSET ?`, [today,...params,groupStart,groupStart,limit,offset]);

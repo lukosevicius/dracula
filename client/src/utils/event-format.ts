@@ -9,6 +9,10 @@ export function displayText(value: string) {
   });
 }
 
+export function eventLocation(venue: string | null, city?: string | null) {
+  return [venue?.trim(), city?.trim()].filter((value): value is string => Boolean(value)).map(displayText).join(', ');
+}
+
 export function eventSource(aboutUrl: string | null, sourceUrl: string) {
   for (const candidate of [aboutUrl, sourceUrl]) {
     if (!candidate) continue;

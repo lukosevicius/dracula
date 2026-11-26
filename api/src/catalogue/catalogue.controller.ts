@@ -28,13 +28,15 @@ export class CatalogueController {
     if (req.method !== 'GET') return json(res, 405, {error:'Method not allowed'});
     const params = new URL(req.originalUrl, 'http://localhost').searchParams;
     try {
-      if (params.has('filter') || params.has('offset')) {
+      if (params.has('filter') || params.has('offset') || params.has('city')) {
         const filter=params.get('filter') ?? 'upcoming', offset=params.get('offset') ?? '0', limit=params.get('limit') ?? '30';
         const from=params.get('from') ?? '', to=params.get('to') ?? '';
+        const city=params.get('city')?.trim();
         const artists=params.has('artists') ? (params.get('artists') || '').split(',') : [];
+        if (city !== undefined && (!city || city.length>191)) return json(res,400,{error:'Invalid city'});
         if (artists.length>100 || artists.some(id=>!artistId.test(id))) return json(res,400,{error:'Invalid artists'});
         if (!filters.has(filter) || !/^\d{1,8}$/.test(offset) || !/^\d{1,3}$/.test(limit) || Number(limit)<1 || Number(limit)>100 || (filter==='custom' && (!validDate(from) || (to && (!validDate(to) || to<from))))) return json(res,400,{error:'Invalid filter or pagination'});
-        return json(res,200,await this.catalogue.page({offset:Number(offset),limit:Number(limit),filter:filter as DateFilter,from,to,artists}));
+        return json(res,200,await this.catalogue.page({offset:Number(offset),limit:Number(limit),filter:filter as DateFilter,from,to,artists,city}));
       }
       const after=params.get('after') ?? '0', limit=params.get('limit') ?? '30';
       if (!/^\d{1,12}$/.test(after) || !/^\d{1,3}$/.test(limit) || Number(limit)<1 || Number(limit)>100) return json(res,400,{error:'Invalid pagination'});

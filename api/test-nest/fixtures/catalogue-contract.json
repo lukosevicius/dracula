@@ -8,7 +8,7 @@
       "access-control-allow-origin": "*",
       "x-content-type-options": "nosniff"
     },
-    "body": "{\"items\":[{\"id\":1,\"title\":\"Upcoming\",\"event_date\":\"2026-11-20\",\"event_end_date\":null,\"event_time\":\"19:00\",\"venue\":\"Club\",\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":\"Nemokama\",\"price_type\":\"free\",\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":\"https://api.example.com/v1/images/5.jpg\",\"artists\":[{\"mbid\":\"artist-1\",\"name\":\"Artist\"}]},{\"id\":2,\"title\":\"Undated\",\"event_date\":null,\"event_end_date\":null,\"event_time\":null,\"venue\":null,\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":null,\"price_type\":null,\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":null,\"artists\":[]}],\"next\":null}"
+    "body": "{\"items\":[{\"id\":1,\"title\":\"Upcoming\",\"event_date\":\"2026-11-20\",\"event_end_date\":null,\"event_time\":\"19:00\",\"venue\":\"Club\",\"city\":null,\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":\"Nemokama\",\"price_type\":\"free\",\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":\"https://api.example.com/v1/images/5.jpg\",\"artists\":[{\"mbid\":\"artist-1\",\"name\":\"Artist\"}]},{\"id\":2,\"title\":\"Undated\",\"event_date\":null,\"event_end_date\":null,\"event_time\":null,\"venue\":null,\"city\":null,\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":null,\"price_type\":null,\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":null,\"artists\":[]}],\"next\":null}"
   },
   {
     "path": "/v1/events?limit=1",
@@ -19,7 +19,7 @@
       "access-control-allow-origin": "*",
       "x-content-type-options": "nosniff"
     },
-    "body": "{\"items\":[{\"id\":1,\"title\":\"Upcoming\",\"event_date\":\"2026-11-20\",\"event_end_date\":null,\"event_time\":\"19:00\",\"venue\":\"Club\",\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":\"Nemokama\",\"price_type\":\"free\",\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":\"https://api.example.com/v1/images/5.jpg\",\"artists\":[{\"mbid\":\"artist-1\",\"name\":\"Artist\"}]}],\"next\":1}"
+    "body": "{\"items\":[{\"id\":1,\"title\":\"Upcoming\",\"event_date\":\"2026-11-20\",\"event_end_date\":null,\"event_time\":\"19:00\",\"venue\":\"Club\",\"city\":null,\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":\"Nemokama\",\"price_type\":\"free\",\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":\"https://api.example.com/v1/images/5.jpg\",\"artists\":[{\"mbid\":\"artist-1\",\"name\":\"Artist\"}]}],\"next\":1}"
   },
   {
     "path": "/v1/events?after=1&limit=1",
@@ -30,7 +30,7 @@
       "access-control-allow-origin": "*",
       "x-content-type-options": "nosniff"
     },
-    "body": "{\"items\":[{\"id\":2,\"title\":\"Undated\",\"event_date\":null,\"event_end_date\":null,\"event_time\":null,\"venue\":null,\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":null,\"price_type\":null,\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":null,\"artists\":[]}],\"next\":null}"
+    "body": "{\"items\":[{\"id\":2,\"title\":\"Undated\",\"event_date\":null,\"event_end_date\":null,\"event_time\":null,\"venue\":null,\"city\":null,\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":null,\"price_type\":null,\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":null,\"artists\":[]}],\"next\":null}"
   },
   {
     "path": "/v1/events?limit=101",
@@ -52,7 +52,7 @@
       "access-control-allow-origin": "*",
       "x-content-type-options": "nosniff"
     },
-    "body": "{\"items\":[{\"id\":1,\"title\":\"Upcoming\",\"event_date\":\"2026-11-20\",\"event_end_date\":null,\"event_time\":\"19:00\",\"venue\":\"Club\",\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":\"Nemokama\",\"price_type\":\"free\",\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":\"https://api.example.com/v1/images/5.jpg\",\"artists\":[{\"mbid\":\"artist-1\",\"name\":\"Artist\"}]}],\"total\":1,\"nextOffset\":null}"
+    "body": "{\"items\":[{\"id\":1,\"title\":\"Upcoming\",\"event_date\":\"2026-11-20\",\"event_end_date\":null,\"event_time\":\"19:00\",\"venue\":\"Club\",\"city\":null,\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":\"Nemokama\",\"price_type\":\"free\",\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":\"https://api.example.com/v1/images/5.jpg\",\"artists\":[{\"mbid\":\"artist-1\",\"name\":\"Artist\"}]}],\"total\":1,\"nextOffset\":null}"
   },
   {
     "path": "/v1/events?filter=today",
@@ -96,7 +96,7 @@
       "access-control-allow-origin": "*",
       "x-content-type-options": "nosniff"
     },
-    "body": "{\"items\":[{\"id\":1,\"title\":\"Upcoming\",\"event_date\":\"2026-11-20\",\"event_end_date\":null,\"event_time\":\"19:00\",\"venue\":\"Club\",\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":\"Nemokama\",\"price_type\":\"free\",\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":\"https://api.example.com/v1/images/5.jpg\",\"artists\":[{\"mbid\":\"artist-1\",\"name\":\"Artist\"}]},{\"id\":2,\"title\":\"Undated\",\"event_date\":null,\"event_end_date\":null,\"event_time\":null,\"venue\":null,\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":null,\"price_type\":null,\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":null,\"artists\":[]}],\"total\":2,\"nextOffset\":null}"
+    "body": "{\"items\":[{\"id\":1,\"title\":\"Upcoming\",\"event_date\":\"2026-11-20\",\"event_end_date\":null,\"event_time\":\"19:00\",\"venue\":\"Club\",\"city\":null,\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":\"Nemokama\",\"price_type\":\"free\",\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":\"https://api.example.com/v1/images/5.jpg\",\"artists\":[{\"mbid\":\"artist-1\",\"name\":\"Artist\"}]},{\"id\":2,\"title\":\"Undated\",\"event_date\":null,\"event_end_date\":null,\"event_time\":null,\"venue\":null,\"city\":null,\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":null,\"price_type\":null,\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":null,\"artists\":[]}],\"total\":2,\"nextOffset\":null}"
   },
   {
     "path": "/v1/events?filter=past",
@@ -118,7 +118,7 @@
       "access-control-allow-origin": "*",
       "x-content-type-options": "nosniff"
     },
-    "body": "{\"items\":[{\"id\":2,\"title\":\"Undated\",\"event_date\":null,\"event_end_date\":null,\"event_time\":null,\"venue\":null,\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":null,\"price_type\":null,\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":null,\"artists\":[]}],\"total\":1,\"nextOffset\":null}"
+    "body": "{\"items\":[{\"id\":2,\"title\":\"Undated\",\"event_date\":null,\"event_end_date\":null,\"event_time\":null,\"venue\":null,\"city\":null,\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":null,\"price_type\":null,\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":null,\"artists\":[]}],\"total\":1,\"nextOffset\":null}"
   },
   {
     "path": "/v1/events?filter=custom&from=2026-11-20&to=2026-11-21",
@@ -129,7 +129,7 @@
       "access-control-allow-origin": "*",
       "x-content-type-options": "nosniff"
     },
-    "body": "{\"items\":[{\"id\":1,\"title\":\"Upcoming\",\"event_date\":\"2026-11-20\",\"event_end_date\":null,\"event_time\":\"19:00\",\"venue\":\"Club\",\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":\"Nemokama\",\"price_type\":\"free\",\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":\"https://api.example.com/v1/images/5.jpg\",\"artists\":[{\"mbid\":\"artist-1\",\"name\":\"Artist\"}]}],\"total\":1,\"nextOffset\":null}"
+    "body": "{\"items\":[{\"id\":1,\"title\":\"Upcoming\",\"event_date\":\"2026-11-20\",\"event_end_date\":null,\"event_time\":\"19:00\",\"venue\":\"Club\",\"city\":null,\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":\"Nemokama\",\"price_type\":\"free\",\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":\"https://api.example.com/v1/images/5.jpg\",\"artists\":[{\"mbid\":\"artist-1\",\"name\":\"Artist\"}]}],\"total\":1,\"nextOffset\":null}"
   },
   {
     "path": "/v1/events?filter=custom&from=2026-02-30",
@@ -162,7 +162,7 @@
       "access-control-allow-origin": "*",
       "x-content-type-options": "nosniff"
     },
-    "body": "{\"items\":[{\"id\":2,\"title\":\"Undated\",\"event_date\":null,\"event_end_date\":null,\"event_time\":null,\"venue\":null,\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":null,\"price_type\":null,\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":null,\"artists\":[]}],\"total\":2,\"nextOffset\":null}"
+    "body": "{\"items\":[{\"id\":2,\"title\":\"Undated\",\"event_date\":null,\"event_end_date\":null,\"event_time\":null,\"venue\":null,\"city\":null,\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":null,\"price_type\":null,\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":null,\"artists\":[]}],\"total\":2,\"nextOffset\":null}"
   },
   {
     "path": "/v1/events/1",
@@ -173,7 +173,7 @@
       "access-control-allow-origin": "*",
       "x-content-type-options": "nosniff"
     },
-    "body": "{\"id\":1,\"title\":\"Upcoming\",\"event_date\":\"2026-11-20\",\"event_end_date\":null,\"event_time\":\"19:00\",\"venue\":\"Club\",\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":\"Nemokama\",\"price_type\":\"free\",\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":\"https://api.example.com/v1/images/5.jpg\",\"artists\":[{\"mbid\":\"artist-1\",\"name\":\"Artist\"}]}"
+    "body": "{\"id\":1,\"title\":\"Upcoming\",\"event_date\":\"2026-11-20\",\"event_end_date\":null,\"event_time\":\"19:00\",\"venue\":\"Club\",\"city\":null,\"ticket_url\":null,\"interest_score\":1,\"source_url\":\"https://vilnius-events.lt/event\",\"about_url\":null,\"price_text\":\"Nemokama\",\"price_type\":\"free\",\"event_end_time\":null,\"description\":\"Hello & welcome\",\"image_url\":\"https://api.example.com/v1/images/5.jpg\",\"artists\":[{\"mbid\":\"artist-1\",\"name\":\"Artist\"}]}"
   },
   {
     "path": "/v1/events/4",

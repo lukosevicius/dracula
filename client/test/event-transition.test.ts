@@ -12,3 +12,13 @@ test('filter transitions keep only known matching events, including ongoing even
   assert.deepEqual(ids('today','zeme',true),[1]);
   assert.deepEqual(ids('today','music',true),[]);
 });
+
+test('switching cities only keeps matching cached events while loading', () => {
+  const events = [
+    { ...event(1,'2026-11-21',null,'Concert','free'), city: 'Klaipėda' },
+    { ...event(2,'2026-11-21',null,'Concert','free'), city: 'Kaunas' },
+    event(3,'2026-11-21',null,'Concert','free'),
+  ];
+  assert.deepEqual(transitionEvents(events,'today','','','2026-11-21','concert',true,'Klaipėda').map(item=>item.id),[1]);
+  assert.deepEqual(transitionEvents(events,'today','','','2026-11-21','',false,'Palanga'),[]);
+});

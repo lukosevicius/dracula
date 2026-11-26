@@ -19,7 +19,7 @@ export function useArtistEvents(ids: string[]) {
       for(let i=0;i<ids.length;i+=100) {
         let offset:number|null=0;
         while(offset!==null) {
-          const page=await fetchEvents('upcoming','','',offset,controller.signal,100,ids.slice(i,i+100));
+          const page=await fetchEvents('upcoming','','',offset,controller.signal,{limit:100,artists:ids.slice(i,i+100)});
           for(const event of page.items) unique.set(event.id,event);
           if(page.nextOffset!==null && page.nextOffset<=offset)throw Error('Invalid pagination');
           offset=page.nextOffset;
