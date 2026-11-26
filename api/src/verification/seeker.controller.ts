@@ -12,7 +12,7 @@ import { listRules, updateRules } from './rule-settings.js';
 import { verificationUsage } from './usage.js';
 import { vilniusToday } from '../catalogue/catalogue.service.js';
 import { dismissDuplicate, listDuplicates } from '../events/duplicates.js';
-import { mergeConfidentDuplicates, mergeEvents, pairConflicts, parseChoices, previewMerge } from '../events/merge.js';
+import { mergeConfidentDuplicates, mergeEvents, pairPreviews, parseChoices, previewMerge } from '../events/merge.js';
 import { editPublication, manualVerification, proposeFinding, queueRulesPreview, recentVerificationJobs, resolveFinding, rulesPreview, verificationDetails, verificationJob } from './verification.js';
 
 async function readJson(request: Request): Promise<Snapshot> {
@@ -101,8 +101,8 @@ export class SeekerController {
         if (path === '/duplicates') {
           require('admin');
           const pairs = await listDuplicates(pool, vilniusToday());
-          const conflicts = await pairConflicts(pool, pairs);
-          return send(200, { pairs: pairs.map((pair, index) => ({ ...pair, conflicts: conflicts[index] })) });
+          const previews = await pairPreviews(pool, pairs);
+          return send(200, { pairs: pairs.map((pair, index) => ({ ...pair, conflicts: previews[index]?.conflicts ?? false, preview: previews[index] })) });
         }
         if (path === '/verification/usage') {
           require('admin');

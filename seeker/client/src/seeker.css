@@ -328,7 +328,9 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
 .duplicate-pair-heading h3 { margin: 0; color: var(--muted); font-size: 12px; }
 .duplicate-pair-actions, .duplicate-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .duplicate-note { color: var(--muted); font-size: 12px; }
-.merge-preview { margin: 0 17px 12px; padding: 14px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--raised); }
+.preview-toggle-all { display: inline-flex; align-items: center; gap: 6px; }
+.preview-toggle { display: grid; place-items: center; width: 32px; min-height: 32px; padding: 0; }
+.merge-preview { margin: 10px 17px 14px; padding: 14px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--raised); }
 .merge-preview-summary { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
 .merge-preview-summary strong { color: var(--text); }
 .merge-preview-fields { display: grid; gap: 6px; }

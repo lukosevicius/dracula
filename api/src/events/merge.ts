@@ -191,12 +191,12 @@ export function mergeEvents(pool: Pool, firstId: number, secondId: number, actor
   return transaction(pool, conn => mergeEventsIn(conn, firstId, secondId, actor, choices));
 }
 
-/** Whether each pair has values a person must choose between. */
-export async function pairConflicts(pool: Pool, pairs: { event_ids: [number, number]; mergeable: boolean }[]) {
-  return Promise.all(pairs.map(async pair => {
-    if (!pair.mergeable) return false;
-    return (await previewMerge(pool, ...pair.event_ids)).conflicts;
-  }));
+/** The merge preview for each mergeable pair, so a list can show them without further requests. */
+export async function pairPreviews(pool: Pool, pairs: { event_ids: [number, number]; mergeable: boolean }[]) {
+  const previews = [];
+  // One pair at a time keeps a long list from taking every pooled connection.
+  for (const pair of pairs) previews.push(pair.mergeable ? await previewMerge(pool, ...pair.event_ids).catch(() => null) : null);
+  return previews;
 }
 
 /** Merges every confident pair from a date onward that has no conflicting values, one transaction per pair. */

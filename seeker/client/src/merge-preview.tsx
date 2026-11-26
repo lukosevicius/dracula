@@ -1,34 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { api, errorMessage } from './data';
 import { Feedback } from './workspace';
 
-type Field = { field: string; label: string; kept: string | null; other: string | null; choice: number; conflict: boolean };
+export type Field = { field: string; label: string; kept: string | null; other: string | null; choice: number; conflict: boolean };
 type Side = { id: number; publication_status: string; sources: string[] };
-type Preview = { kept: Side; removed: Side; fields: Field[]; conflicts: boolean };
+export type Preview = { kept: Side; removed: Side; fields: Field[]; conflicts: boolean };
 const workflow = '/api/workflow/duplicates';
 const display = (value: string | null) => value ?? '—';
 
 /** The merged event field by field. Differing values can be switched before merging; the merge saves exactly this. */
-export function MergePreview({ eventIds, onCancel, onMerged }: { eventIds: [number, number]; onCancel: () => void; onMerged: (message: string) => void }) {
-  const [preview, setPreview] = useState<Preview | null>(null);
-  const [choices, setChoices] = useState<Record<string, number>>({});
+export function MergePreview({ preview, eventIds, onMerged }: { preview: Preview; eventIds: [number, number]; onMerged: (message: string) => void }) {
+  const [choices, setChoices] = useState<Record<string, number>>(() => Object.fromEntries(preview.fields.map(field => [field.field, field.choice])));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-    api<Preview>(`${workflow}/preview`, { event_ids: eventIds })
-      .then(result => {
-        if (!active) return;
-        setPreview(result);
-        setChoices(Object.fromEntries(result.fields.map(field => [field.field, field.choice])));
-      })
-      .catch(cause => { if (active) setError(errorMessage(cause)); });
-    return () => { active = false; };
-  }, [eventIds]);
-
   async function merge() {
-    if (!preview) return;
     setSaving(true);
     setError('');
     try {
@@ -41,7 +27,6 @@ export function MergePreview({ eventIds, onCancel, onMerged }: { eventIds: [numb
     }
   }
 
-  if (!preview) return <div className="merge-preview">{error ? <Feedback message={error} error /> : <p className="duplicate-note" role="status">Preparing preview…</p>}</div>;
   const { kept, removed } = preview;
   const source = (side: Side) => `#${side.id}${side.sources.length ? ` · ${side.sources.join(', ')}` : ''}`;
   const open = preview.fields.filter(field => field.conflict && choices[field.field] === kept.id && field.kept !== field.other).length;
@@ -71,8 +56,7 @@ export function MergePreview({ eventIds, onCancel, onMerged }: { eventIds: [numb
     </div>
     <Feedback message={error} error />
     <div className="merge-preview-actions">
-      <button className="primary-button" type="button" disabled={saving} onClick={() => void merge()}>{saving ? 'Merging…' : 'Confirm merge'}</button>
-      <button className="text-button" type="button" disabled={saving} onClick={onCancel}>Cancel</button>
+      <button className="primary-button" type="button" disabled={saving} onClick={() => void merge()}>{saving ? 'Merging…' : 'Merge'}</button>
       {open > 0 && <span className="duplicate-note">{open === 1 ? '1 differing value keeps' : `${open} differing values keep`} #{kept.id}'s value. Switch it above if needed.</span>}
     </div>
   </div>;

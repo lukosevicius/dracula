@@ -4,10 +4,10 @@ import EventEditor from './event-editor';
 import EventItem from './event-item';
 import { useEventRowEdits, type EventRowEdits } from './event-row-edits';
 import { useSavedEvents } from './saved-events';
-import { Feedback, PageHeading, PanelHeading } from './workspace';
-import { MergePreview } from './merge-preview';
+import { Feedback, Icon, PageHeading, PanelHeading } from './workspace';
+import { MergePreview, type Preview } from './merge-preview';
 
-type ServerPair = { level: 'confident' | 'likely'; mergeable: boolean; conflicts: boolean; event_ids: [number, number] };
+type ServerPair = { level: 'confident' | 'likely'; mergeable: boolean; conflicts: boolean; event_ids: [number, number]; preview: Preview | null };
 type Pair = ServerPair & { events: [EventRow, EventRow] };
 const workflow = '/api/workflow/duplicates';
 const todayFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Vilnius', year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -16,7 +16,8 @@ export default function DuplicatesPage() {
   const [events, setEvents] = useState<EventRow[]>([]);
   const [serverPairs, setServerPairs] = useState<ServerPair[]>([]);
   const [merging, setMerging] = useState('');
-  const [previewKey, setPreviewKey] = useState('');
+  // Previews are open unless hidden here.
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set());
   const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -99,11 +100,23 @@ export default function DuplicatesPage() {
     return first && second ? [{ ...pair, events: [first, second] as [EventRow, EventRow] }] : [];
   });
   const ready = pairs.filter(pair => pair.level === 'confident' && pair.mergeable && !pair.conflicts).length;
+  const pairKey = (pair: Pair) => pair.event_ids.join('-');
+  const withPreview = pairs.filter(pair => pair.preview);
+  const anyOpen = withPreview.some(pair => !hidden.has(pairKey(pair)));
+  const togglePreview = (key: string) => setHidden(current => {
+    const next = new Set(current);
+    if (!next.delete(key)) next.add(key);
+    return next;
+  });
   return <>
     {rowEdits.feedback}
     <PageHeading title="Possible duplicates" description="Upcoming events that look like the same performance. Merging keeps one event with every source listing; the other event's link redirects to it." icon="calendar" />
     <section className="panel">
       <PanelHeading title="Possible duplicate events" end={!loading && <span className="duplicate-actions">
+        {withPreview.length > 0 && <button className="secondary-button preview-toggle-all" type="button" aria-label={anyOpen ? 'Hide all merge previews' : 'Show all merge previews'}
+          onClick={() => setHidden(anyOpen ? new Set(withPreview.map(pairKey)) : new Set())}>
+          <Icon name={anyOpen ? 'up' : 'down'} size={15} /> {anyOpen ? 'Hide previews' : 'Show previews'}
+        </button>}
         <span className="count-label">{pairs.length} {pairs.length === 1 ? 'pair' : 'pairs'}</span>
         {ready > 0 && <button className="primary-button" type="button" disabled={Boolean(merging)} title="Confident pairs whose values agree. Pairs with differing values need a preview."
           onClick={() => void act('all', 'merge-confident', {}, result => `Merged ${(result.merged as unknown[]).length} events.${(result.skipped as unknown[]).length ? ` ${(result.skipped as unknown[]).length} need review.` : ''}`)}>
@@ -119,18 +132,16 @@ export default function DuplicatesPage() {
         <div className="duplicate-pair-heading">
           <h3>{pair.level === 'confident' ? 'Confident match' : 'Likely match'} · {formatDate(first.event_date!)}{pair.mergeable && pair.conflicts && <span className="merge-preview-flag">Values differ</span>}</h3>
           <div className="duplicate-pair-actions">
-            {pair.mergeable
-              ? <button className="secondary-button" type="button" disabled={Boolean(merging)} aria-expanded={previewKey === key}
-                  onClick={() => setPreviewKey(current => current === key ? '' : key)}>
-                  {previewKey === key ? 'Hide preview' : 'Merge…'}
-                </button>
-              : <span className="duplicate-note">Same source listed twice. Unpublish the extra listing.</span>}
+            {!pair.mergeable && <span className="duplicate-note">Same source listed twice. Unpublish the extra listing.</span>}
             <button className="text-button" type="button" disabled={Boolean(merging)}
               onClick={() => void act(`${key}-distinct`, 'dismiss', { event_ids: [first.id, second.id] }, () => 'Marked as different events.')}>Not a duplicate</button>
+            {pair.preview && <button className="icon-button preview-toggle" type="button" aria-expanded={!hidden.has(key)} aria-controls={`merge-preview-${key}`}
+              aria-label={hidden.has(key) ? 'Show merge preview' : 'Hide merge preview'} title={hidden.has(key) ? 'Show merge preview' : 'Hide merge preview'}
+              onClick={() => togglePreview(key)}>
+              <Icon name={hidden.has(key) ? 'down' : 'up'} size={16} />
+            </button>}
           </div>
         </div>
-        {previewKey === key && <MergePreview eventIds={pair.event_ids} onCancel={() => setPreviewKey('')}
-          onMerged={message => { setPreviewKey(''); setError(''); setNotice(message); void load(true); }} />}
         <div className="event-list">{[first, second].map(row => {
           const key = `${first.id}-${second.id}-${row.id}`;
           return <EventItem key={key} row={row} today={today} open={openKey === key} toggle={() => setOpenKey(current => current === key ? '' : key)}
@@ -143,6 +154,10 @@ export default function DuplicatesPage() {
             showSource saved={isSaved(row.id)} toggleSaved={() => void toggle(row)}
             editor={<EventEditor row={row} onSaved={() => load(true)} onRefresh={() => void refreshSource(row)} refreshing={refreshing} />} />;
         })}</div>
+        {pair.preview && !hidden.has(key) && <div id={`merge-preview-${key}`}>
+          <MergePreview key={JSON.stringify(pair.preview)} preview={pair.preview} eventIds={pair.event_ids}
+            onMerged={message => { setError(''); setNotice(message); void load(true); }} />
+        </div>}
       </section>;
       })}
     </section>
