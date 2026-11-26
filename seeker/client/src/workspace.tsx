@@ -24,6 +24,8 @@ const paths = {
   save: 'M5 3h12l4 4v14H3V3h2Zm2 0v6h10V3M7 21v-8h10v8',
   copy: 'M8 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v3M10 8h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2Z',
   menu: 'M4 6h16M4 12h16M4 18h16',
+  noMusic: 'M9 18V5l10-2v11M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm10-4a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM3 3l18 18',
+  sidebar: 'M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm4 0v16',
   close: 'm6 6 12 12M18 6 6 18',
   settings: 'M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm0-5v2m0 13v2m9-8h-2m-14 0H3m15.36-6.36-1.42 1.42M7.06 16.94l-1.42 1.42m12.72 0-1.42-1.42M7.06 7.06 5.64 5.64',
 } as const;
@@ -42,9 +44,9 @@ const navigation = [
     { path: '/all-events.html', name: 'All', icon: 'calendar' },
     { path: '/needs-attention.html', name: 'Needs attention', icon: 'filter' },
     { path: '/saved-events.html', name: 'Saved', icon: 'save' },
-    { path: '/not-music.html', name: 'Not music', icon: 'calendar' },
+    { path: '/not-music.html', name: 'Not music', icon: 'noMusic' },
     { path: '/avilys.html', name: 'Avilys', icon: 'avilys' },
-    { path: '/vilnius-events.html', name: 'Vilnius Events', icon: 'calendar' },
+    { path: '/vilnius-events.html', name: 'Vilnius Events', icon: 'pin' },
     { path: '/possible-duplicates.html', name: 'Possible duplicates', icon: 'search' },
   ] },
   { label: 'Tools', items: [
@@ -57,8 +59,21 @@ const navigation = [
   ] },
 ] as const;
 
+const collapsedKey = 'seeker.sidebar-collapsed';
+function readCollapsed() {
+  try { return window.localStorage.getItem(collapsedKey) === '1'; } catch { return false; }
+}
+
 export function Workspace({ children }: { children: ReactNode }) {
   const [attentionCount, setAttentionCount] = useState(0);
+  // Desktop only: the phone layout uses the menu button instead.
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  function toggleCollapsed() {
+    setCollapsed(value => {
+      try { window.localStorage.setItem(collapsedKey, value ? '0' : '1'); } catch { /* The choice lasts for this page only. */ }
+      return !value;
+    });
+  }
   useEffect(() => {
     let disposed = false;
     const load = () => { void api<{ count: number }>('/api/workflow/attention-count').then(result => {
@@ -99,14 +114,18 @@ export function Workspace({ children }: { children: ReactNode }) {
   </form>;
 
   return (
-    <div className="workspace">
+    <div className="workspace" data-sidebar={collapsed ? 'collapsed' : 'expanded'}>
       <a className="skip-link" href="#content">Skip to content</a>
       <header className="sidebar" ref={sidebar}>
         <div className="sidebar-heading">
           <a className="brand" href="/" aria-label="Seeker home">
             <span className="brand-logo"><img src={logo} alt="" /></span>
-            <span><strong>Seeker</strong><small className="brand-workspace">Dracula workspace</small><small className="brand-page">{current?.name ?? 'Artists'}</small></span>
+            <span className="brand-text"><strong>Seeker</strong><small className="brand-workspace">Dracula workspace</small><small className="brand-page">{current?.name ?? 'Artists'}</small></span>
           </a>
+          <button type="button" className="sidebar-toggle" aria-expanded={!collapsed} aria-controls="seeker-navigation"
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={toggleCollapsed}>
+            <Icon name="sidebar" size={17} />
+          </button>
           <button type="button" className="secondary-button mobile-menu-toggle" aria-label={menuOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={menuOpen} aria-controls="seeker-navigation" ref={menuButton} onClick={() => setMenuOpen(open => !open)}>
             <Icon name={menuOpen ? 'close' : 'menu'} size={22} />
@@ -118,8 +137,9 @@ export function Workspace({ children }: { children: ReactNode }) {
               <div className="nav-group" key={group.label}>
                 <p>{group.label}</p>
                 {group.items.map(item => (
-                  <a className="nav-link" key={item.path} href={item.path} aria-current={item === current ? 'page' : undefined} onClick={() => setMenuOpen(false)}>
-                    <Icon name={item.icon} /> <span>{item.name}</span>{item.path === '/needs-attention.html' && attentionCount > 0 && <span className="nav-attention-count">{attentionCount}</span>}
+                  <a className="nav-link" key={item.path} href={item.path} aria-current={item === current ? 'page' : undefined} onClick={() => setMenuOpen(false)}
+                    title={collapsed ? item.name : undefined}>
+                    <Icon name={item.icon} /> <span className="nav-label">{item.name}</span>{item.path === '/needs-attention.html' && attentionCount > 0 && <span className="nav-attention-count" aria-label={`${attentionCount} need attention`}>{attentionCount}</span>}
                   </a>
                 ))}
               </div>
@@ -127,7 +147,7 @@ export function Workspace({ children }: { children: ReactNode }) {
           </nav>
           {hosted && <div className="mobile-sign-out">{signOut}</div>}
         </div>
-        <div className="sidebar-footer"><span className="local-dot" />{hosted ? 'Online workspace' : 'Local workspace'}</div>
+        <div className="sidebar-footer" title={collapsed ? (hosted ? 'Online workspace' : 'Local workspace') : undefined}><span className="local-dot" /><span className="nav-label">{hosted ? 'Online workspace' : 'Local workspace'}</span></div>
       </header>
       <main className="main-content" id="content" tabIndex={-1}>
         <header className="topbar">
