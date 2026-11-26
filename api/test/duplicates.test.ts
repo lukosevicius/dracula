@@ -37,3 +37,24 @@ test('a merge keeps the live event, then the edited one, then the older one', ()
   assert.equal(chooseSurvivor(row(5), row(9, 'draft', '["venue"]'))[0].id, 9);
   assert.equal(chooseSurvivor(row(9), row(5))[0].id, 5);
 });
+
+test('a merge plan prefers venue names and known prices, and flags real disagreements', async () => {
+  const { planMerge } = await import('../dist/events/merge.js');
+  const row = (id: number, venue: string, title: string) => ({ id, title, venue, event_time: '20:00', event_end_date: null, city: 'Vilnius', ticket_url: null, review_status: 'music', manual_fields: '[]' }) as never;
+  const price = (event_id: number, price_type: string, price_text: string | null) => ({ event_id, price_type, price_text, manual: 0 }) as never;
+  const pair = { survivor: row(28, 'Jazz Cellar 11', 'Jam session'), removed: row(184, 'Aušros Vartų 11, Vilnius, Lithuania', 'Jam Session'), sources: [],
+    keptPrice: price(28, 'paid', 'Nuo 10 €'), removedPrice: price(184, 'free', null) };
+  const plan = planMerge(pair);
+  const field = (name: string) => plan.fields.find((entry: { field: string }) => entry.field === name)!;
+  assert.deepEqual([field('venue').choice, field('venue').conflict], [28, false]);
+  assert.deepEqual([field('title').choice, field('title').conflict], [28, false]);
+  assert.deepEqual([field('price').kept, field('price').other, field('price').choice, field('price').conflict], ['Nuo 10 €', 'Free', 28, true]);
+  assert.equal(plan.conflicts, true);
+  assert.equal(planMerge(pair, { price: 184 }).fields.find((entry: { field: string }) => entry.field === 'price')!.choice, 184);
+  assert.throws(() => planMerge(pair, { price: 999 }), { status: 400 });
+  // The address listing survives when it is Live, but the venue name still wins by default.
+  const swapped = planMerge({ ...pair, survivor: pair.removed, removed: pair.survivor, keptPrice: price(184, 'unknown', null), removedPrice: pair.keptPrice });
+  const venue = swapped.fields.find((entry: { field: string }) => entry.field === 'venue')!;
+  const known = swapped.fields.find((entry: { field: string }) => entry.field === 'price')!;
+  assert.deepEqual([venue.choice, known.choice, swapped.conflicts], [28, 28, false]);
+});

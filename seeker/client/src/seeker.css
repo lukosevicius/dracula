@@ -303,6 +303,22 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
 .duplicate-pair-heading h3 { margin: 0; color: var(--muted); font-size: 12px; }
 .duplicate-pair-actions, .duplicate-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .duplicate-note { color: var(--muted); font-size: 12px; }
+.merge-preview { margin: 0 17px 12px; padding: 14px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--raised); }
+.merge-preview-summary { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+.merge-preview-summary strong { color: var(--text); }
+.merge-preview-fields { display: grid; gap: 6px; }
+.merge-preview-row { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 10px; align-items: start; }
+.merge-preview-label { padding-top: 6px; color: var(--muted); font-size: 12px; }
+.merge-preview-flag { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, var(--amber) 18%, transparent); color: var(--amber); font-size: 10px; font-weight: 600; vertical-align: 1px; }
+.merge-preview-values { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.merge-preview-same { padding: 6px 0; font-size: 13px; overflow-wrap: anywhere; }
+.merge-option { display: grid; gap: 2px; max-width: 100%; padding: 6px 10px; border: 1px solid var(--border-light); border-radius: 6px; background: transparent; color: var(--text); text-align: left; }
+.merge-option:hover:not(:disabled) { border-color: #68546d; }
+.merge-option.selected { border-color: var(--accent); background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent); }
+.merge-option-value { font-size: 13px; overflow-wrap: anywhere; }
+.merge-option-source { color: var(--muted); font-size: 11px; }
+.merge-preview-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
+@media (max-width: 640px) { .merge-preview-row { grid-template-columns: 1fr; gap: 4px; } .merge-preview-label { padding-top: 0; } }
 .event-item + .event-item { border-top: 1px solid var(--border); }
 .event-row { display: grid; grid-template-columns: 16px 42px minmax(0, 1fr) 108px 32px 32px 29px; align-items: center; gap: 10px; min-height: 69px; padding: 8px 13px 8px 17px; }
 .event-row-saved { grid-template-columns: 42px minmax(0, 1fr) 108px 32px 32px 29px; }

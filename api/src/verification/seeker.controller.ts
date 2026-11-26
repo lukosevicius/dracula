@@ -12,7 +12,7 @@ import { listRules, updateRules } from './rule-settings.js';
 import { verificationUsage } from './usage.js';
 import { vilniusToday } from '../catalogue/catalogue.service.js';
 import { dismissDuplicate, listDuplicates } from '../events/duplicates.js';
-import { mergeConfidentDuplicates, mergeEvents } from '../events/merge.js';
+import { mergeConfidentDuplicates, mergeEvents, pairConflicts, parseChoices, previewMerge } from '../events/merge.js';
 import { editPublication, manualVerification, proposeFinding, queueRulesPreview, recentVerificationJobs, resolveFinding, rulesPreview, verificationDetails, verificationJob } from './verification.js';
 
 async function readJson(request: Request): Promise<Snapshot> {
@@ -100,7 +100,9 @@ export class SeekerController {
         }
         if (path === '/duplicates') {
           require('admin');
-          return send(200, { pairs: await listDuplicates(pool, vilniusToday()) });
+          const pairs = await listDuplicates(pool, vilniusToday());
+          const conflicts = await pairConflicts(pool, pairs);
+          return send(200, { pairs: pairs.map((pair, index) => ({ ...pair, conflicts: conflicts[index] })) });
         }
         if (path === '/verification/usage') {
           require('admin');
@@ -154,7 +156,13 @@ export class SeekerController {
           require('admin');
           const ids = body.event_ids;
           if (!Array.isArray(ids) || ids.length !== 2) throw fail(400, 'Choose two different events.');
-          return send(200, { ok: true, ...await mergeEvents(pool, Number(ids[0]), Number(ids[1]), access.actor) });
+          return send(200, { ok: true, ...await mergeEvents(pool, Number(ids[0]), Number(ids[1]), access.actor, parseChoices(body.choices)) });
+        }
+        if (path === '/duplicates/preview') {
+          require('admin');
+          const ids = body.event_ids;
+          if (!Array.isArray(ids) || ids.length !== 2) throw fail(400, 'Choose two different events.');
+          return send(200, { ok: true, ...await previewMerge(pool, Number(ids[0]), Number(ids[1]), parseChoices(body.choices)) });
         }
         if (path === '/duplicates/merge-confident') {
           require('admin');

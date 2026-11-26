@@ -31,7 +31,7 @@ export function duplicateVenue(value: string | null): string {
   return value ? words(value) : '';
 }
 
-function venuesMatch(a: string | null, b: string | null): boolean {
+export function venuesMatch(a: string | null, b: string | null): boolean {
   const first = duplicateVenue(a), second = duplicateVenue(b);
   if (!first || !second) return false;
   const [short, long] = first.length <= second.length ? [first, second] : [second, first];
@@ -39,7 +39,7 @@ function venuesMatch(a: string | null, b: string | null): boolean {
 }
 
 // Sources often give a street address where another gives the venue name, so an address never contradicts a name.
-function isAddress(value: string): boolean {
+export function isAddress(value: string): boolean {
   return value.includes(',') || /\b(?:g|gatve|pr|prospektas|al|aleja|skg|skersgatvis|pl|plentas|lithuania|lietuva)\b/.test(duplicateVenue(value));
 }
 

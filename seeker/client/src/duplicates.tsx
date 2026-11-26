@@ -5,8 +5,9 @@ import EventItem from './event-item';
 import { useEventRowEdits, type EventRowEdits } from './event-row-edits';
 import { useSavedEvents } from './saved-events';
 import { Feedback, PageHeading, PanelHeading } from './workspace';
+import { MergePreview } from './merge-preview';
 
-type ServerPair = { level: 'confident' | 'likely'; mergeable: boolean; event_ids: [number, number] };
+type ServerPair = { level: 'confident' | 'likely'; mergeable: boolean; conflicts: boolean; event_ids: [number, number] };
 type Pair = ServerPair & { events: [EventRow, EventRow] };
 const workflow = '/api/workflow/duplicates';
 const todayFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Vilnius', year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -15,6 +16,7 @@ export default function DuplicatesPage() {
   const [events, setEvents] = useState<EventRow[]>([]);
   const [serverPairs, setServerPairs] = useState<ServerPair[]>([]);
   const [merging, setMerging] = useState('');
+  const [previewKey, setPreviewKey] = useState('');
   const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -96,16 +98,16 @@ export default function DuplicatesPage() {
     const [first, second] = pair.event_ids.map(id => byId.get(id));
     return first && second ? [{ ...pair, events: [first, second] as [EventRow, EventRow] }] : [];
   });
-  const confident = pairs.filter(pair => pair.level === 'confident' && pair.mergeable).length;
+  const ready = pairs.filter(pair => pair.level === 'confident' && pair.mergeable && !pair.conflicts).length;
   return <>
     {rowEdits.feedback}
     <PageHeading title="Possible duplicates" description="Upcoming events that look like the same performance. Merging keeps one event with every source listing; the other event's link redirects to it." icon="calendar" />
     <section className="panel">
       <PanelHeading title="Possible duplicate events" end={!loading && <span className="duplicate-actions">
-        <span className="count-label">{pairs.length} pairs</span>
-        {confident > 0 && <button className="primary-button" type="button" disabled={Boolean(merging)}
-          onClick={() => void act('all', 'merge-confident', {}, result => `Merged ${(result.merged as unknown[]).length} events.${(result.skipped as unknown[]).length ? ` ${(result.skipped as unknown[]).length} could not be merged.` : ''}`)}>
-          {merging === 'all' ? 'Merging…' : `Merge ${confident} confident`}
+        <span className="count-label">{pairs.length} {pairs.length === 1 ? 'pair' : 'pairs'}</span>
+        {ready > 0 && <button className="primary-button" type="button" disabled={Boolean(merging)} title="Confident pairs whose values agree. Pairs with differing values need a preview."
+          onClick={() => void act('all', 'merge-confident', {}, result => `Merged ${(result.merged as unknown[]).length} events.${(result.skipped as unknown[]).length ? ` ${(result.skipped as unknown[]).length} need review.` : ''}`)}>
+          {merging === 'all' ? 'Merging…' : `Merge ${ready} without differences`}
         </button>}
       </span>} />
       <div className="catalogue-feedback"><Feedback message={error} error /><Feedback message={notice} /></div>
@@ -115,18 +117,20 @@ export default function DuplicatesPage() {
         const [first, second] = pair.events, key = `${first.id}-${second.id}`;
         return <section className="duplicate-pair" key={key}>
         <div className="duplicate-pair-heading">
-          <h3>{pair.level === 'confident' ? 'Confident match' : 'Likely match'} · {formatDate(first.event_date!)}</h3>
+          <h3>{pair.level === 'confident' ? 'Confident match' : 'Likely match'} · {formatDate(first.event_date!)}{pair.mergeable && pair.conflicts && <span className="merge-preview-flag">Values differ</span>}</h3>
           <div className="duplicate-pair-actions">
             {pair.mergeable
-              ? <button className="secondary-button" type="button" disabled={Boolean(merging)}
-                  onClick={() => void act(key, 'merge', { event_ids: [first.id, second.id] }, result => `Merged #${result.merged_event_id} into #${result.event_id}.`)}>
-                  {merging === key ? 'Merging…' : 'Merge'}
+              ? <button className="secondary-button" type="button" disabled={Boolean(merging)} aria-expanded={previewKey === key}
+                  onClick={() => setPreviewKey(current => current === key ? '' : key)}>
+                  {previewKey === key ? 'Hide preview' : 'Merge…'}
                 </button>
               : <span className="duplicate-note">Same source listed twice. Unpublish the extra listing.</span>}
             <button className="text-button" type="button" disabled={Boolean(merging)}
               onClick={() => void act(`${key}-distinct`, 'dismiss', { event_ids: [first.id, second.id] }, () => 'Marked as different events.')}>Not a duplicate</button>
           </div>
         </div>
+        {previewKey === key && <MergePreview eventIds={pair.event_ids} onCancel={() => setPreviewKey('')}
+          onMerged={message => { setPreviewKey(''); setError(''); setNotice(message); void load(true); }} />}
         <div className="event-list">{[first, second].map(row => {
           const key = `${first.id}-${second.id}-${row.id}`;
           return <EventItem key={key} row={row} today={today} open={openKey === key} toggle={() => setOpenKey(current => current === key ? '' : key)}

@@ -408,7 +408,7 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
       // A listing from a second source joins the existing event; duplicates merge into one event with a redirect.
       {
         const { listDuplicates, dismissDuplicate } = await import('../dist/events/duplicates.js');
-        const { mergeEvents, mergeConfidentDuplicates } = await import('../dist/events/merge.js');
+        const { mergeEvents, mergeConfidentDuplicates, previewMerge } = await import('../dist/events/merge.js');
         const { createCatalogue } = await import('../test-support/nest.ts');
         const catalogue = createCatalogue(pool, 'https://api.example.com');
         const addEvent = async (id: number, title: string, venue: string, sourceKey: string, publication = 'live') => {
@@ -467,7 +467,18 @@ test('MariaDB: authenticated edits, private reads and public pagination', {skip:
         const bulk = await mergeConfidentDuplicates(pool, '2099-12-01', 'Test');
         assert.deepEqual(bulk, { merged: [{ event_id: 20005, merged_event_id: 20006 }], skipped: [] });
         assert.equal((await catalogue.get(20006, '2099-12-01')).id, 20005);
-        await pool.query('DELETE FROM user_saved_events'); await pool.query('DELETE FROM seeker_saved_events');
+        // Differing prices are left for review in bulk, and a chosen value from the other event is protected.
+        await addEvent(20007, 'Jam session', 'Jazz Cellar 11', 'vilnius-events');
+        await addEvent(20008, 'Jam Session', 'Aušros Vartų 11, Vilnius, Lithuania', 'avilys');
+        await pool.execute("INSERT INTO event_prices(event_id,price_text,price_type,manual,checked_at) VALUES(20007,'Nuo 10 €','paid',0,'now'),(20008,NULL,'free',0,'now')");
+        const conflicted = await mergeConfidentDuplicates(pool, '2099-12-01', 'Test');
+        assert.deepEqual(conflicted, { merged: [], skipped: [{ event_ids: [20007, 20008], error: 'Values differ. Review this pair.' }] });
+        const preview = await previewMerge(pool, 20008, 20007);
+        assert.deepEqual([preview.kept.id, preview.kept.sources, preview.removed.sources, preview.conflicts], [20007, ['Vilnius Events'], ['Avilys'], true]);
+        assert.deepEqual(await mergeEvents(pool, 20007, 20008, 'Test', { price: 20008, title: 20008 }), { event_id: 20007, merged_event_id: 20008 });
+        const [[chosen]] = await pool.execute<RowDataPacket[]>('SELECT e.title,e.venue,e.manual_fields,p.price_type,p.manual FROM events e JOIN event_prices p ON p.event_id=e.id WHERE e.id=20007');
+        assert.deepEqual({ ...chosen, manual_fields: JSON.parse(chosen.manual_fields) }, { title: 'Jam Session', venue: 'Jazz Cellar 11', manual_fields: ['title'], price_type: 'free', manual: 1 });
+        await pool.query('DELETE FROM user_saved_events'); await pool.query('DELETE FROM seeker_saved_events'); await pool.query('DELETE FROM event_prices WHERE event_id>=20001');
         await pool.query('DELETE FROM event_artist_decisions WHERE event_id>=20001');
         await pool.query('DELETE FROM event_sources WHERE event_id>=20001'); await pool.query('DELETE FROM events WHERE id>=20001');
       }
