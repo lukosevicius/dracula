@@ -89,8 +89,8 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
   const today = dateFormatter.format(new Date());
   const apiWhen = when === 'newest' ? 'upcoming' : when;
   const invalid = when === 'custom' && (!from || (!!to && to < from));
-  const extraCount = Number(readiness !== 'all') + Number(assistantReview !== 'all') + Number(sourceFilter !== defaultSource) + Number(publication !== 'all') + Number(verification !== 'all');
-  const isFiltered = Boolean(query || when !== defaultWhen || price !== 'all' || time !== 'all' || (review !== 'all' && queue !== 'not-music') || extraCount || savedOnly || sort !== 'date');
+  const extraCount = Number(readiness !== 'all') + Number(assistantReview !== 'all') + Number(sourceFilter !== defaultSource) + Number(verification !== 'all');
+  const isFiltered = Boolean(query || when !== defaultWhen || price !== 'all' || time !== 'all' || publication !== 'all' || (review !== 'all' && queue !== 'not-music') || extraCount || savedOnly || sort !== 'date');
   const sourceSavedEvents = savedEvents.filter(event => all || event.source_key === source);
 
   useEffect(() => {
@@ -345,6 +345,9 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
                 {queue !== 'not-music' && <label className="field">Type <select value={review} onChange={event => updateFilters(setReview, event.target.value)}>
                   <option value="all">All types</option>{reviews.map(status => <option key={status} value={status}>{labels[status]}</option>)}
                 </select></label>}
+                <label className="field">Publication <select value={publication} onChange={event => updateFilters(setPublication, event.target.value)}>
+                  <option value="all">Draft and live</option><option value="draft">{publicationLabels.draft}</option><option value="live">{publicationLabels.live}</option>
+                </select></label>
                 <label className="field">Sort by <select value={sort} onChange={event => {
                   const value = event.target.value as typeof sort;
                   if (when === 'newest' && value !== 'date') setWhen('upcoming');
@@ -389,9 +392,6 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
               <div className="filter-footer">
                 <Disclosure className="filter-disclosure" title={<><Icon name="filter" size={15} /> More filters{extraCount ? ` (${extraCount})` : ''}</>}>
                   <div className="filter-grid">
-                    <label className="field">Publication <select value={publication} onChange={event => updateFilters(setPublication, event.target.value)}>
-                      <option value="all">All events</option><option value="live">{publicationLabels.live}</option><option value="draft">{publicationLabels.draft}</option>
-                    </select></label>
                     <label className="field">AI verification <select value={verification} onChange={event => updateFilters(setVerification, event.target.value)}>
                       <option value="all">All verification statuses</option>{Object.entries(verificationLabels).map(([key, label]) => <option value={key} key={key}>{label}</option>)}
                     </select></label>
