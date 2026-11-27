@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { usePathname } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { cityPickerEnabled } from '../constants/features';
 
 export const cities = ['Visi', 'Vilnius', 'Kaunas', 'Klaipėda', 'Palanga'] as const;
 export type City = typeof cities[number];
@@ -19,7 +20,7 @@ export const useCity = () => useContext(CityContext);
 export function CityPicker() {
   const { city, setCity } = useCity();
   const [open, setOpen] = useState(false);
-  if (usePathname() !== '/') return null;
+  if (usePathname() !== '/' || !cityPickerEnabled) return null;
   return <View style={styles.picker}>
     <Pressable onPress={() => setOpen(value => !value)} accessibilityRole="button" accessibilityLabel={`Miestas: ${city}`} aria-expanded={open} style={[styles.button, city !== 'Visi' && styles.buttonActive]}>
       <View style={styles.pin} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"><View style={styles.pinDot} /></View>
