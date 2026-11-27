@@ -14,6 +14,8 @@ writeFileSync('dist/.htaccess', `<IfModule mod_mime.c>
 </IfModule>
 <IfModule mod_rewrite.c>
   RewriteEngine On
+  RewriteCond %{HTTP_HOST} ^www\\.dracula\\.lt$ [NC]
+  RewriteRule ^ https://dracula.lt%{REQUEST_URI} [R=301,L]
   RewriteRule ^events/([1-9][0-9]{0,11})/?$ event.php?id=$1 [L,QSA]
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d

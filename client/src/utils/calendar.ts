@@ -50,7 +50,7 @@ export function calendarFile(event: DisplayEvent, now = new Date()) {
   const time = hasCalendarTime(event.event_time) ? event.event_time : null;
   const source = eventSource(event.about_url, event.source_url);
   const tickets = eventSource(null, event.ticket_url || '');
-  const eventUrl = `https://app.dracula.lt/events/${event.id}`;
+  const eventUrl = `https://dracula.lt/events/${event.id}`;
   const description = [
     event.description?.trim(),
     artistsEnabled && event.artists?.length ? `Atlikėjai: ${event.artists.map(artist => displayText(artist.name)).join(', ')}` : '',

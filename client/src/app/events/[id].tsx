@@ -52,7 +52,7 @@ export default function EventPage() {
   const when = [day, time].filter(Boolean).join(' · ');
   const price = eventPrice(event);
   const mapsUrl = location ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}` : null;
-  const pageUrl = process.env.EXPO_OS === 'web' && typeof window !== 'undefined' ? window.location.href : `https://app.dracula.lt/events/${event.id}`;
+  const pageUrl = process.env.EXPO_OS === 'web' && typeof window !== 'undefined' ? window.location.href : `https://dracula.lt/events/${event.id}`;
 
   async function openLink(url: string) {
     try { await Linking.openURL(url); }

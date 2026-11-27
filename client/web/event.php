@@ -11,7 +11,7 @@ declare(strict_types=1);
 ini_set('display_errors', '0');
 
 const API_URL = '%API_URL%';
-const APP_URL = 'https://app.dracula.lt';
+const APP_URL = 'https://dracula.lt';
 const CACHE_SECONDS = 600;
 
 header('Content-Type: text/html; charset=utf-8');

@@ -33,7 +33,7 @@ jobs:
     uses: ./.github/workflows/checks.yml
 
   deploy:
-    name: Deploy app.dracula.lt
+    name: Deploy dracula.lt
     needs: checks
     runs-on: ubuntu-latest
     environment: production-web
@@ -90,4 +90,4 @@ jobs:
           rsync -az --delay-updates --exclude=/index.html -e "ssh $ssh_options" client/dist/ "$remote:$DEPLOY_PATH/"
           rsync -az --delay-updates -e "ssh $ssh_options" client/dist/index.html "$remote:$DEPLOY_PATH/index.html"
       - name: Check the public app
-        run: curl --fail --silent --show-error --location --retry 3 https://app.dracula.lt/ --output /dev/null
+        run: curl --fail --silent --show-error --location --retry 3 https://dracula.lt/ --output /dev/null
