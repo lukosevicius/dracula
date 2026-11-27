@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, type Href } from 'expo-router';
 import { useAuth } from '../auth/auth-context';
 import { GoogleSignIn } from '../auth/google-sign-in';
+import { signInEvent } from '../auth/open-sign-in';
 import profileStyles from '../auth/profile.module.css';
 import styles from './web-header.module.css';
 import { artistsEnabled } from '../constants/features';
@@ -39,9 +40,11 @@ export function WebHeader({ children }: { children: ReactNode }) {
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key==='Escape' && menu.current?.open) { menu.current.open=false; menu.current.querySelector('summary')?.focus(); }
     }
+    const openDialog=()=>setSignInOpen(true);
+    window.addEventListener(signInEvent,openDialog);
     document.addEventListener('pointerdown',closeOutside);
     document.addEventListener('keydown',closeOnEscape);
-    return () => { document.removeEventListener('pointerdown',closeOutside); document.removeEventListener('keydown',closeOnEscape); };
+    return () => { window.removeEventListener(signInEvent,openDialog); document.removeEventListener('pointerdown',closeOutside); document.removeEventListener('keydown',closeOnEscape); };
   }, []);
   async function leave() {setBusy(true);setError('');try{await signOut();}catch{setError('Nepavyko atsijungti.');}finally{setBusy(false);}}
   return <div className={styles.header}><div className={styles.content}>
