@@ -22,6 +22,7 @@ function SignInDialog({ onClose }: { onClose: () => void }) {
     <h2 id="sign-in-title" className={profileStyles.heading}>Mano paskyra</h2>
     <p className={profileStyles.secondary}>Prisijunkite prie savo Dracula paskyros.</p>
     <GoogleSignIn />
+    <p className={styles.dialogLegal}>Kaip tvarkome jūsų duomenis: <Link href={'/privatumas' as Href} onPress={() => dialog.current?.close()}>Privatumas</Link></p>
   </dialog>;
 }
 
@@ -51,6 +52,7 @@ export function WebHeader({ children }: { children: ReactNode }) {
         <ProfileIcon /><span className={styles.accountLabel}>Profilis</span>
       </summary><div className={styles.menuPanel}>
         <Link href={'/profile' as Href} className={styles.menuItem} onPress={()=>{if(menu.current)menu.current.open=false;}}>Mano paskyra</Link>
+        <Link href={'/privatumas' as Href} className={styles.menuItem} onPress={()=>{if(menu.current)menu.current.open=false;}}>Privatumas</Link>
         <button className={styles.menuItem} onClick={()=>void leave()} disabled={busy}>{busy?'Atsijungiama...':'Atsijungti'}</button>
         {error && <p role="alert" className={styles.menuError}>{error}</p>}
       </div></details> : state==='unavailable' ? <Link href={'/profile' as Href} className={styles.signIn} aria-label="Profilis"><ProfileIcon /><span className={styles.accountLabel}>Profilis</span></Link> : <button type="button" className={styles.signIn} aria-label="Prisijungti" onClick={()=>setSignInOpen(true)}><ProfileIcon /><span className={styles.accountLabel}>Prisijungti</span></button>}

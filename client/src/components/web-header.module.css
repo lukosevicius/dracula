@@ -58,3 +58,6 @@
 .desktopNav a:hover { color: #fff; }
 .desktopNav a:focus-visible { outline: 3px solid #ff8792; outline-offset: 4px; }
 @media (min-width: 700px) { .desktopNav { display: flex; } }
+.dialogLegal { color: #8f8493; font-size: 13px; margin: 18px 0 0; }
+.dialogLegal a { color: #efb0b8; font-weight: 650; }
+.dialogLegal a:focus-visible { outline: 2px solid #ff8792; outline-offset: 2px; }
