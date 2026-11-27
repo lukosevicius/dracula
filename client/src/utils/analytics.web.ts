@@ -68,6 +68,8 @@ export function startAnalytics() {
   }).catch(() => { loading = false; queue = []; });
 }
 
+export { eventDetails } from './analytics-details';
+
 /** Records a named action, such as "event_saved". Does nothing where statistics are off. */
 export function track(name: string, properties?: Record<string, unknown>) {
   if (client) client.capture(name, properties);
