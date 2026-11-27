@@ -116,6 +116,19 @@ await step('Merge confident duplicates', async () => {
   return `merged ${count(result.merged)}, left for review ${count(result.skipped)}`;
 });
 
+// After merging, so each event is read once. Only new and changed upcoming music events are read.
+await step('Artist matching', async () => {
+  const total = { processed: 0, linked: 0, suggested: 0, new_names: 0, cost_usd: 0 };
+  let remaining = 0;
+  for (let round = 0; round < 120; round++) {
+    const batch = await api.seekerWrite('/artists/extract', { limit: 5 });
+    for (const key of Object.keys(total) as (keyof typeof total)[]) total[key] += Number(batch[key]) || 0;
+    remaining = Number(batch.remaining) || 0;
+    if (!Number(batch.processed) || !remaining) break;
+  }
+  return `read ${total.processed} events: ${total.linked} linked, ${total.suggested} to confirm, ${total.new_names} new names, $${total.cost_usd.toFixed(3)}${remaining ? `, ${remaining} left for the next run` : ''}`;
+});
+
 const report = [`### Scheduled import (${mode}: ${[...sources].join(', ')})`, '', '| Step | Result | Details |', '| --- | --- | --- |',
   ...steps.map(item => `| ${item.name} | ${item.status === 'completed' ? '✅' : item.status === 'failed' ? '❌' : '⏭️'} ${item.status} | ${item.summary.replace(/\|/g, '/')} |`)].join('\n');
 if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, report + '\n');

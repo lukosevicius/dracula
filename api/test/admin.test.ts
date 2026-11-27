@@ -18,7 +18,7 @@ function setup() {
     CREATE TABLE event_images(event_id INTEGER,source_key TEXT,source_id TEXT,source_url TEXT,local_name TEXT,mime_type TEXT,width INTEGER,height INTEGER);
     CREATE TABLE artists(mbid TEXT PRIMARY KEY,name TEXT);
     CREATE TABLE vilnius_event_artists(event_id INTEGER,artist_mbid TEXT,decision TEXT,PRIMARY KEY(event_id,artist_mbid));
-    CREATE TABLE event_artist_decisions(event_id INTEGER,artist_mbid TEXT,decision TEXT,PRIMARY KEY(event_id,artist_mbid));
+    CREATE TABLE event_artist_decisions(event_id INTEGER,artist_mbid TEXT,decision TEXT,role TEXT,evidence TEXT,decided_by TEXT NOT NULL DEFAULT 'editor',PRIMARY KEY(event_id,artist_mbid));
     CREATE TABLE event_prices(event_id INTEGER PRIMARY KEY,price_text TEXT,price_type TEXT,manual INTEGER,checked_at TEXT);
     CREATE TABLE assistant_event_reviews(event_id INTEGER,reviewed_at TEXT,confirmed_at TEXT,notes TEXT);
     CREATE TABLE source_state(source_key TEXT,next_offset INTEGER);

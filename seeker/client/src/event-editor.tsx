@@ -214,7 +214,7 @@ export default function EventEditor({ row, onSaved, onRefresh, refreshing }: {
             {!info.event.artist_suggestions.length && <p className="muted">No suggested artist matches.</p>}
             {info.event.artist_suggestions.map(artist => (
               <div className="artist-match" key={artist.mbid}>
-                <div><a href={artistHref(artist.mbid)}><strong>{artist.name}</strong></a><small className="artist-match-reason">Matched in {artist.reason.toLocaleLowerCase()}</small></div>
+                <div><a href={artistHref(artist.mbid)}><strong>{artist.name}</strong></a><small className="artist-match-reason">{artist.reason === 'AI' ? `Found by AI${artist.excerpt ? `: “${artist.excerpt}”` : ''}` : `Matched in ${artist.reason.toLocaleLowerCase()}`}</small></div>
                 <div className="inline-actions">
                   <button className="secondary-button" type="button" disabled={saving} onClick={() => decideArtist(artist.mbid, 'accepted')}>Accept</button>
                   <button className="text-button" type="button" disabled={saving} onClick={() => decideArtist(artist.mbid, 'dismissed')}>Dismiss</button>

@@ -8,6 +8,7 @@ import { DatabaseService } from '../database/database.service.js';
 import { claimImport, identity, importRequest, listAgents, manageAgent, queueImport, type Scope } from './agents.js';
 import { fail, type Snapshot } from './history.js';
 import { listProviders, manageProvider } from './providers.js';
+import { artistReview, decideNewArtist, extractArtists } from '../artists/extraction.js';
 import { listRules, updateRules } from './rule-settings.js';
 import { verificationUsage } from './usage.js';
 import { vilniusToday } from '../catalogue/catalogue.service.js';
@@ -77,6 +78,10 @@ export class SeekerController {
           if (event[2]) return send(200, details);
           const { available_artists: _artists, ...eventData } = await this.admin.backend.getEvent(id);
           return send(200, { ...eventData, verification: details });
+        }
+        if (path === '/artists/review') {
+          require('events:read');
+          return send(200, await artistReview(pool));
         }
         if (path === '/attention-count') {
           require('events:read');
@@ -173,6 +178,14 @@ export class SeekerController {
           require('admin');
           await dismissDuplicate(pool, body.event_ids);
           return send(200, { ok: true });
+        }
+        if (path === '/artists/extract') {
+          require('admin');
+          return send(200, { ok: true, ...await extractArtists(pool, this.config.aiEncryptionKey, body) });
+        }
+        if (path === '/artists/new') {
+          require('admin');
+          return send(200, { ok: true, ...await decideNewArtist(pool, body) });
         }
         if (path === '/imports/claim') {
           require('admin');

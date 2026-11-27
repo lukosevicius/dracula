@@ -22,7 +22,7 @@ export interface PublicEvent extends Pick<EventDetails, 'event_date' | 'event_en
   artists: Artist[];
 }
 export interface Artist { mbid: string; name: string }
-export interface ArtistSuggestion extends Artist { reason: 'Title' | 'Description'; excerpt: string }
+export interface ArtistSuggestion extends Artist { reason: 'Title' | 'Description' | 'AI'; excerpt: string }
 export interface EventRecord extends EventDetails {
   source_id: number;
   title: string;

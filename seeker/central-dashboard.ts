@@ -22,8 +22,8 @@ export function createCentralDashboard(api:CentralApi, userAgent='Seeker/0.1.0',
     };
     try {
       const workflowPath = url.pathname.replace(/^\/api\/workflow(?=\/)/, '');
-      const workflowRead = request.method === 'GET' && /^(?:\/providers|\/agents|\/attention-count|\/duplicates|\/verification\/(?:usage|rules(?:\/previews\/\d{1,15})?|jobs(?:\/\d{1,12})?)|\/events\/\d{1,12}\/verification)$/.test(workflowPath);
-      const workflowWrite = request.method === 'POST' && /^(?:\/providers|\/agents|\/duplicates\/(?:merge|merge-confident|dismiss|preview)|\/verification\/(?:jobs|rules(?:\/previews)?)|\/events\/\d{1,12}\/(?:publication|remove-listing|findings\/\d{1,12}))$/.test(workflowPath);
+      const workflowRead = request.method === 'GET' && /^(?:\/providers|\/agents|\/attention-count|\/duplicates|\/verification\/(?:usage|rules(?:\/previews\/\d{1,15})?|jobs(?:\/\d{1,12})?)|\/events\/\d{1,12}\/verification|\/artists\/review)$/.test(workflowPath);
+      const workflowWrite = request.method === 'POST' && /^(?:\/providers|\/agents|\/duplicates\/(?:merge|merge-confident|dismiss|preview)|\/verification\/(?:jobs|rules(?:\/previews)?)|\/artists\/(?:extract|new)|\/events\/\d{1,12}\/(?:publication|remove-listing|findings\/\d{1,12}))$/.test(workflowPath);
       if (workflowRead) { send(200, await api.seekerRead(workflowPath + url.search)); return true; }
       if (workflowWrite) {
         const input = await readBody(32_768);
@@ -97,7 +97,8 @@ export function createCentralDashboard(api:CentralApi, userAgent='Seeker/0.1.0',
           const event=result.vilnius_event || {...result.event,content_html:source.content_html,source_timestamp:sourceTimestamp};
           if(typeof event.title!=='string' || typeof event.content_html!=='string')throw new Error('Central event details are invalid.');
           const accepted=result.artist_decisions.filter(a=>a.decision==='accepted');
-          const suggestions=suggestArtists({title:event.title,content_html:event.content_html},result.available_artists,new Set(result.artist_decisions.map(a=>a.artist_mbid)));
+          const fromAi=result.artist_decisions.filter(a=>a.decision==='suggested').map(a=>({mbid:a.artist_mbid,name:a.name,reason:'AI' as const,excerpt:a.evidence||''}));
+          const suggestions=[...fromAi,...suggestArtists({title:event.title,content_html:event.content_html},result.available_artists,new Set(result.artist_decisions.map(a=>a.artist_mbid)))];
           const title=normalize(String(result.event.title || '')),venue=normalize(String(result.event.venue || ''));
           const matches=result.match_candidates.filter(candidate=>{const other=normalize(candidate.title);if(!title||!other)return false;const a=new Set(title.split(' ').filter(v=>v.length>2)),b=new Set(other.split(' ').filter(v=>v.length>2));const shared=[...a].filter(v=>b.has(v)).length;return other===title || (shared>=2 && shared/Math.max(a.size,b.size)>=0.6);}).map(candidate=>({...candidate,venue_matches:Boolean(venue && candidate.venue && normalize(candidate.venue)===venue)})).sort((a,b)=>Number(b.venue_matches)-Number(a.venue_matches));
           if(action==='matches')send(200,{matches});

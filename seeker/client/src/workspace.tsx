@@ -41,6 +41,7 @@ export function Icon({ name, size = 17 }: { name: IconName; size?: number }) {
 const navigation = [
   { label: 'Catalogue', items: [
     { path: '/artists.html', name: 'Artists', icon: 'library' },
+    { path: '/artists-to-confirm.html', name: 'Artists to confirm', icon: 'check' },
   ] },
   { label: 'Event sources', items: [
     { path: '/all-events.html', name: 'All', icon: 'calendar' },

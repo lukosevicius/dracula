@@ -205,7 +205,7 @@ export function createAdmin(pool: Pool, token: string) {
           const [sources]=await conn.execute<RowDataPacket[]>('SELECT * FROM event_sources WHERE event_id=? ORDER BY id',[id]);
           const [prices]=await conn.execute<RowDataPacket[]>('SELECT * FROM event_prices WHERE event_id=?',[id]);
           const [times]=await conn.execute<RowDataPacket[]>('SELECT event_date AS date,event_time AS time,event_end_time AS end_time FROM event_times WHERE event_id=? ORDER BY event_date,event_time',[id]);
-          const [artists]=await conn.execute<RowDataPacket[]>('SELECT d.artist_mbid,d.decision,a.name FROM event_artist_decisions d JOIN artists a ON a.mbid=d.artist_mbid WHERE d.event_id=? ORDER BY a.name',[id]);
+          const [artists]=await conn.execute<RowDataPacket[]>('SELECT d.artist_mbid,d.decision,d.evidence,a.name FROM event_artist_decisions d JOIN artists a ON a.mbid=d.artist_mbid WHERE d.event_id=? ORDER BY a.name',[id]);
           // Editors work on the primary Vilnius Events record; a secondary one still supplies its image.
           const vn=sources.find(source=>source.source_key==='vilnius-events'&&!Number(source.is_secondary))??sources.find(source=>source.source_key==='vilnius-events');
           const [legacy]=vn ? await conn.execute<RowDataPacket[]>('SELECT * FROM vilnius_events WHERE source_id=?',[Number(vn.source_id)]) : [[]];

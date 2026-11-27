@@ -153,6 +153,6 @@ export function suggestArtists(event: {title: string; content_html: string}, art
     const original = textFromHtml(inTitle ? event.title : event.content_html).replace(/\s+/g,' ').trim();
     const sections = original.match(/[^.!?\n]+(?:[.!?]|$)/g) || [original];
     const excerpt = sections.find(part => ` ${normalized(part)} `.includes(needle))?.trim() || original;
-    return {...a, reason:inTitle?'Title' as const:'Description' as const, excerpt:excerpt.length>240 ? excerpt.slice(0,237)+'…' : excerpt};
+    return {...a, reason:(inTitle?'Title':'Description') as ArtistSuggestion['reason'], excerpt:excerpt.length>240 ? excerpt.slice(0,237)+'…' : excerpt};
   }).filter((item): item is ArtistSuggestion => item !== null).sort((a,b)=>(a.reason==='Title'?-1:0)-(b.reason==='Title'?-1:0)||b.name.length-a.name.length).slice(0,8);
 }

@@ -621,3 +621,5 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
 .verification-outcomes blockquote { margin: 0; color: var(--muted); }
 .verification-candidates li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .verification-candidates a, .verification-log a { text-decoration: underline; text-underline-offset: .18em; }
+.minor-names { margin-top: 14px; }
+.minor-names > summary { cursor: pointer; color: var(--muted, inherit); font-weight: 600; padding: 6px 0; }
