@@ -1,8 +1,8 @@
 name: Checks
 
+# Runs only the checks for the parts a change touches: API, Seeker or client. The deploy workflows call this
+# before publishing, so a push to main is checked by the deploys it triggers rather than a separate run.
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
   workflow_call:
@@ -11,30 +11,41 @@ permissions:
   contents: read
 
 jobs:
-  migration-notice:
-    name: Flag database migration changes
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+  changes:
+    name: Find changed parts
     runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.diff.outputs.api }}
+      seeker: ${{ steps.diff.outputs.seeker }}
+      client: ${{ steps.diff.outputs.client }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Remind maintainers to prepare production migrations
+      - id: diff
+        name: Compare with the previous revision and flag migrations
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ || "$BASE_SHA" =~ ^0+$ ]]; then
-            echo "::warning::Cannot determine the previous commit; review API migrations manually."
-            exit 0
+          all() { printf 'api=true\nseeker=true\nclient=true\n' >> "$GITHUB_OUTPUT"; }
+          if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ || "$BASE_SHA" =~ ^0+$ ]] || ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "::warning::Cannot determine the previous commit; running every check. Review API migrations manually."
+            all; exit 0
           fi
-          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
-            echo "::warning::Previous commit is unavailable; review API migrations manually."
-            exit 0
-          fi
-          changes=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- api/migrations/)
+          files=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          has() { grep -qE "$1" <<< "$files" && echo true || echo false; }
+          # Shared workflow and script changes affect every part.
+          shared=$(has '^\.github/(workflows/checks\.yml|scripts/)')
+          api=$(has '^api/'); seeker=$(has '^seeker/')
+          # The client builds with Seeker's date filters and types.
+          client=$(has '^(client/|seeker/public/event-date-filters\.ts$|seeker/types\.ts$)')
+          if [[ "$shared" == true ]]; then api=true; seeker=true; client=true; fi
+          printf 'api=%s\nseeker=%s\nclient=%s\n' "$api" "$seeker" "$client" >> "$GITHUB_OUTPUT"
+          echo "Changed parts: api=$api seeker=$seeker client=$client"
+          changes=$(grep -E '^api/migrations/' <<< "$files" || true)
           if [[ -n "$changes" ]]; then
             echo "::warning::Publish API release applies pending migrations from main after checks pass. Review compatibility and backups before merging."
             {
@@ -49,6 +60,8 @@ jobs:
 
   seeker:
     name: Seeker tests and types
+    needs: changes
+    if: needs.changes.outputs.seeker == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -66,6 +79,9 @@ jobs:
 
   api:
     name: API tests
+    needs: changes
+    # Also runs the client's unit tests, which use the API's TypeScript runner.
+    if: needs.changes.outputs.api == 'true' || needs.changes.outputs.client == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -87,6 +103,8 @@ jobs:
 
   mariadb:
     name: API MariaDB integration
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     services:
       mariadb:
@@ -125,6 +143,8 @@ jobs:
 
   client:
     name: Client types and web build
+    needs: changes
+    if: needs.changes.outputs.client == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:

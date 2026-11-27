@@ -4,6 +4,12 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - 'client/**'
+      - 'seeker/public/event-date-filters.ts'
+      - 'seeker/types.ts'
+      - '.github/workflows/checks.yml'
+      - '.github/workflows/deploy-web.yml'
 
 permissions:
   contents: read

@@ -2,11 +2,10 @@ name: Scheduled import
 
 # Imports Avilys into the production database and merges confident duplicates.
 # Vilnius Events refuses requests from GitHub's servers (HTTP 403), so its import runs from a Mac instead:
-# see seeker/scripts/vn-import.sh. Times are UTC: 05:00 and 12:00 in Vilnius during winter, an hour later in summer.
+# see seeker/scripts/vn-import.sh. Runs once a day at 03:00 UTC: 05:00 in Vilnius during winter, 06:00 in summer.
 on:
   schedule:
     - cron: '0 3 * * *'
-    - cron: '0 10 * * *'
   workflow_dispatch:
 
 permissions:
