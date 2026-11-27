@@ -61,7 +61,7 @@ export default function EventPage() {
   }
 
   const actionButton = action ? <Pressable accessibilityRole="link" accessibilityLabel={`${action.label}${price ? `, ${price}` : ''}`} onPress={() => openLink(action.url)} style={[styles.primary, !desktop && styles.primaryWide]}>
-    <Text style={styles.primaryLabel}>{action.label} ↗</Text>
+    <Text style={styles.primaryLabel}>{action.label}</Text>
     {price ? <Text style={styles.primaryPrice}>{price}</Text> : null}
   </Pressable> : null;
   const poster = image && !imageFailed
@@ -74,7 +74,7 @@ export default function EventPage() {
     : <View style={[styles.poster, desktop && styles.posterDesktop, styles.placeholder]}><Text style={styles.placeholderText}>DRACULA</Text></View>;
 
   return <View style={{ flex: 1 }}>
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={[styles.container, desktop && styles.containerDesktop, { paddingBottom: (!desktop && action ? 96 : 0) + Math.max(insets.bottom, 32) }]}>
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={[styles.container, desktop && styles.containerDesktop, { paddingBottom: Math.max(insets.bottom, 32) }]}>
       <Stack.Screen options={{ title: 'Renginys', headerBackTitle: 'Renginiai' }} />
       {desktop ? <Link href="/" style={styles.back}>← Visi renginiai</Link> : null}
       <View style={[styles.hero, desktop && styles.heroDesktop]}>
@@ -84,18 +84,17 @@ export default function EventPage() {
           <View style={styles.facts}>
             {when ? <Text style={styles.when}>{when}</Text> : null}
             {showings.map(line => <Text key={line} style={styles.fact}>{line}</Text>)}
-            {location && mapsUrl ? <Pressable accessibilityRole="link" accessibilityLabel={`Vieta: ${location}, atidaryti žemėlapyje`} onPress={() => openLink(mapsUrl)}><Text style={styles.fact}>{location} <Text style={styles.mapLink}>Žemėlapis ↗</Text></Text></Pressable> : null}
+            {location && mapsUrl ? <Pressable accessibilityRole="link" accessibilityLabel={`Vieta: ${location}, atidaryti žemėlapyje`} onPress={() => openLink(mapsUrl)} style={styles.placeLink}><Text style={styles.place}>{location}</Text></Pressable> : null}
             {price && !action ? <Text style={styles.fact}>{price}</Text> : null}
           </View>
-          {desktop ? actionButton : null}
+          {actionButton}
           <View style={styles.secondary}><CalendarButton event={event} /><ShareButton title={title} url={pageUrl} /><SaveButton event={event} /></View>
           {artistsEnabled && event.artists.length ? <View style={styles.section}><Text style={styles.label}>ATLIKĖJAI</Text>{event.artists.map(artist => <Link key={artist.mbid} href={{pathname:'/artists/[id]',params:{id:artist.mbid}}} style={styles.link}>{displayText(artist.name)} →</Link>)}</View> : null}
         </View>
       </View>
       {event.description ? <View style={[styles.section, desktop && styles.descriptionDesktop]}><Text style={styles.label}>APIE RENGINĮ</Text><Text selectable style={styles.value}>{event.description}</Text></View> : null}
-      {tickets && source ? <View style={[styles.section, desktop && { maxWidth: 760 }]}><Text style={styles.label}>RENGINIO NUORODA</Text><Pressable accessibilityRole="link" accessibilityLabel={`Atidaryti renginio nuorodą: ${source.label}`} onPress={() => openLink(source.url)}><Text style={styles.link}>{source.label} ↗</Text></Pressable></View> : null}
+      {tickets && source ? <View style={[styles.section, desktop && { maxWidth: 760 }]}><Text style={styles.label}>RENGINIO NUORODA</Text><Pressable accessibilityRole="link" accessibilityLabel={`Atidaryti renginio nuorodą: ${source.label}`} onPress={() => openLink(source.url)}><Text style={styles.link}>{source.label}</Text></Pressable></View> : null}
     </ScrollView>
-    {!desktop && actionButton ? <View style={[styles.stickyBar, { paddingBottom: width >= 700 ? Math.max(insets.bottom, 12) : 12 }]}>{actionButton}</View> : null}
   </View>;
 }
 
@@ -117,13 +116,13 @@ const styles = StyleSheet.create({
   facts: { gap: 6 },
   when: { color: '#ee969b', fontSize: 17, lineHeight: 24, fontWeight: '700' },
   fact: { color: '#e4dbe3', fontSize: 16, lineHeight: 23 },
-  mapLink: { color: '#f1c6c7', fontSize: 14, fontWeight: '700' },
+  placeLink: { alignSelf: 'flex-start' },
+  place: { color: '#e4dbe3', fontSize: 16, lineHeight: 23, textDecorationLine: 'underline', textDecorationColor: '#6d5f70' },
   primary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16, minHeight: 52, paddingHorizontal: 22, borderRadius: 26, backgroundColor: '#ed7d83', alignSelf: 'flex-start' },
   primaryWide: { alignSelf: 'stretch' },
   primaryLabel: { color: '#1b121b', fontSize: 16, fontWeight: '800' },
   primaryPrice: { color: '#1b121b', fontSize: 15, fontWeight: '600' },
   secondary: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10 },
-  stickyBar: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 18, paddingTop: 12, backgroundColor: '#100e15ee', borderTopWidth: 1, borderTopColor: '#2a232d' },
   descriptionDesktop: { maxWidth: 760, paddingTop: 24, borderTopWidth: 1, borderTopColor: '#413742', gap: 16 },
   section: { gap: 7, paddingTop: 8 },
   label: { color: '#ed7d83', fontSize: 11, fontWeight: '800', letterSpacing: 1.5 },
