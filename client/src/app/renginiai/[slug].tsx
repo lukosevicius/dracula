@@ -13,6 +13,7 @@ import { fetchEvent, type DisplayEvent } from '../../utils/events-api';
 import { artistsEnabled } from '../../constants/features';
 import { SiteFooter } from '../../components/site-footer';
 import { eventIdFromSegment, eventSegment, eventUrl } from '../../utils/event-url';
+import { track } from '../../utils/analytics';
 
 export default function EventPage() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
@@ -92,7 +93,7 @@ export default function EventPage() {
             {price || tickets ? <View style={styles.priceRow}>
               {price ? <Text style={styles.fact}>{price}</Text> : null}
               {price && tickets ? <Text style={styles.fact}>·</Text> : null}
-              {tickets ? <Pressable accessibilityRole="link" accessibilityLabel={`Bilietai${price ? `, ${price}` : ''}`} onPress={() => openLink(event.ticket_url!)}><Text style={styles.place}>Bilietai</Text></Pressable> : null}
+              {tickets ? <Pressable accessibilityRole="link" accessibilityLabel={`Bilietai${price ? `, ${price}` : ''}`} onPress={() => { track('tickets_clicked', { event_id: event.id }); void openLink(event.ticket_url!); }}><Text style={styles.place}>Bilietai</Text></Pressable> : null}
             </View> : null}
           </View>
           <View style={styles.secondary}><CalendarButton event={event} /><ShareButton title={title} url={pageUrl} /><SaveButton event={event} /></View>
@@ -100,7 +101,7 @@ export default function EventPage() {
         </View>
       </View>
       {event.description ? <View style={[styles.section, desktop && styles.descriptionDesktop]}><Text style={styles.label}>APIE RENGINĮ</Text><Text selectable style={styles.value}>{event.description}</Text></View> : null}
-      {source ? <View style={[styles.section, desktop && { maxWidth: 760 }]}><Text style={styles.label}>RENGINIO NUORODA</Text><Pressable accessibilityRole="link" accessibilityLabel={`Atidaryti renginio nuorodą: ${source.label}`} onPress={() => openLink(source.url)}><Text style={styles.link}>{source.label}</Text></Pressable></View> : null}
+      {source ? <View style={[styles.section, desktop && { maxWidth: 760 }]}><Text style={styles.label}>RENGINIO NUORODA</Text><Pressable accessibilityRole="link" accessibilityLabel={`Atidaryti renginio nuorodą: ${source.label}`} onPress={() => { track('source_clicked', { event_id: event.id }); void openLink(source.url); }}><Text style={styles.link}>{source.label}</Text></Pressable></View> : null}
       <SiteFooter />
     </ScrollView>
   </View>;

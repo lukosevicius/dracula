@@ -31,6 +31,12 @@ export default function PrivacyPage() {
       <P>Paskyrą galite ištrinti bet kada paskyros puslapyje. Kartu ištriname jūsų vardą, nuotraukos nuorodą, išsaugotus renginius ir prisijungimo sesijas, o jūs atsijungiate visuose įrenginiuose. Atsarginėse kopijose duomenys gali išlikti ribotą laiką, kol kopijos pakeičiamos naujomis.</P>
     </Section>
 
+    <Section title="Lankomumo statistika">
+      <P>Kad žinotume, kurie renginiai ir svetainės dalys naudingi, skaičiuojame apsilankymus su „PostHog“ (duomenys saugomi Europos Sąjungoje). Matome, kurie puslapiai atidaromi, kiek laiko juose praleidžiama, kur spaudžiama ir ko ieškoma – pavyzdžiui, kad renginys buvo išsaugotas ar atidaryta bilietų nuoroda.</P>
+      <P>Statistika anoniminė: jūsų naršyklėje nieko nesaugome ir slapukų tam nenaudojame. Apsilankymai atskiriami tik tos pačios dienos ribose pagal kodą, kurį „PostHog“ sukuria iš IP adreso ir naršyklės duomenų; pats IP adresas nesaugomas. Statistikos nesiejame su jūsų paskyra ir neįrašinėjame, ką darote ekrane.</P>
+      <P>Jei nenorite, kad jūsų apsilankymai būtų skaičiuojami, atidarykite <Link href="/?nostats" style={styles.link}>dracula.lt/?nostats</Link> – toje naršyklėje statistika bus išjungta.</P>
+    </Section>
+
     <Section title="Slapukai">
       <P>Naudojame tik būtinus slapukus: vienas prisijungimo metu kelioms minutėms apsaugo prisijungimą, kitas iki 30 dienų atsimena, kad esate prisijungę. Stebėjimo, reklamos ar lankomumo statistikos slapukų nenaudojame.</P>
       <P>Prisijungimo mygtuką įkelia „Google“, todėl paskyros puslapyje „Google“ gali naudoti savo slapukus pagal savo privatumo politiką.</P>

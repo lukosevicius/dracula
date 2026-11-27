@@ -10,6 +10,7 @@ import type { DisplayEvent } from '../utils/events-api';
 import { selectedDates, vilniusDate } from '../shared/event-date-filters';
 import { artistsEnabled } from '../constants/features';
 import { useCity } from '../components/city-picker';
+import { track } from '../utils/analytics';
 
 const filters: { id: DateFilter; label: string }[] = [
   { id: 'upcoming', label: 'Visi' }, { id: 'today', label: 'Šiandien' },
@@ -39,6 +40,17 @@ export default function Home() {
   const [filter, setFilter] = useState<DateFilter>(initial?.filter ?? 'upcoming');
   const [from, setFrom] = useState(initial?.from ?? '');
   const [to, setTo] = useState(initial?.to ?? '');
+  // Statistics: a search counts once the text has stayed the same for a while, so typing "jazz" is one search, not four.
+  useEffect(() => {
+    if (debouncedSearch.length < 2) return;
+    const timer = setTimeout(() => track('searched', { query: debouncedSearch.toLocaleLowerCase('lt') }), 1500);
+    return () => clearTimeout(timer);
+  }, [debouncedSearch]);
+  const filtersTracked = useRef(false);
+  useEffect(() => {
+    if (!filtersTracked.current) { filtersTracked.current = true; return; }
+    track('filter_changed', { filter, free_only: freeOnly });
+  }, [filter, freeOnly]);
   const focused = useRef(false);
   const list = useRef<FlatList<ListItem>>(null);
   const scrollOffset = useRef(initial?.offset ?? 0);

@@ -39,6 +39,7 @@ jobs:
     environment: production-web
     env:
       EXPO_PUBLIC_API_URL: https://api.dracula.lt
+      EXPO_PUBLIC_POSTHOG_KEY: ${{ vars.POSTHOG_PROJECT_KEY }}
       DEPLOY_HOST: ${{ vars.HOSTINGER_SSH_HOST }}
       DEPLOY_PORT: ${{ vars.HOSTINGER_SSH_PORT }}
       DEPLOY_USER: ${{ vars.HOSTINGER_SSH_USER }}

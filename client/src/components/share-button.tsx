@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Pressable, Share, StyleSheet, Text } from 'react-native';
+import { track } from '../utils/analytics';
 
 /** Copies on the web: the Clipboard API first, then the older selection copy where that is blocked. */
 async function copy(text: string) {
@@ -20,9 +21,10 @@ export function ShareButton({ title, url }: { title: string; url: string }) {
   async function share() {
     const nav = typeof navigator === 'undefined' ? undefined : navigator as Navigator & { share?: unknown };
     if (process.env.EXPO_OS === 'web' && !nav?.share) {
-      if (await copy(url)) { setCopied(true); setTimeout(() => setCopied(false), 2000); }
+      if (await copy(url)) { track('event_shared', { url, method: 'copy' }); setCopied(true); setTimeout(() => setCopied(false), 2000); }
       return;
     }
+    track('event_shared', { url, method: 'share' });
     try { await Share.share(process.env.EXPO_OS === 'ios' ? { title, url } : { title, message: process.env.EXPO_OS === 'web' ? url : `${title}\n${url}`, url }); }
     catch { /* Closing the share sheet is not an error worth showing. */ }
   }
