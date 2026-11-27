@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "client", "run", "web", "--", "--port", "8091"],
       "port": 8091
+    },
+    {
+      "name": "client-dist-php",
+      "runtimeExecutable": "php",
+      "runtimeArgs": ["-S", "127.0.0.1:8099", "-t", "client/dist", "client/dist/router.php"],
+      "port": 8099
     }
   ]
 }
