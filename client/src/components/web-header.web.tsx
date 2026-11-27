@@ -46,7 +46,7 @@ export function WebHeader({ children }: { children: ReactNode }) {
   async function leave() {setBusy(true);setError('');try{await signOut();}catch{setError('Nepavyko atsijungti.');}finally{setBusy(false);}}
   return <div className={styles.header}><div className={styles.content}>
     {children}
-    <nav className={styles.desktopNav} aria-label="Pagrindinė navigacija"><Link href="/">Visi renginiai</Link><Link href={'/saved' as Href}>Išsaugoti</Link>{artistsEnabled ? <Link href={'/following' as Href}>Seku</Link> : null}</nav>
+    <nav className={styles.desktopNav} aria-label="Pagrindinė navigacija"><Link href="/">Visi renginiai</Link><Link href={'/issaugoti' as Href}>Išsaugoti</Link>{artistsEnabled ? <Link href={'/following' as Href}>Seku</Link> : null}</nav>
     {state==='loading' ? <span className={styles.status}>Kraunama...</span> : state==='signed-in' && user ?
       <details className={styles.menu} ref={menu}><summary className={styles.account} aria-label={`Mano paskyra: ${user.displayName}`}>
         <ProfileIcon /><span className={styles.accountLabel}>Profilis</span>

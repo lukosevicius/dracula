@@ -20,7 +20,7 @@ test('calendar export includes useful event details and escapes calendar text', 
   assert.match(unfolded, /LOCATION:Klubas\\, Vilnius/);
   assert.match(unfolded, /DESCRIPTION:Gyva muzika\\;\\nAntra eilutė\\, čia\./);
   assert.equal(unfolded.includes('Atlikėjai: Atlikėjas'), artistsEnabled);
-  for (const detail of ['Kaina: Nuo 10 €', 'https://dracula.lt/events/42', 'https://example.com/event', 'https://tickets.example/buy']) assert.ok(unfolded.includes(detail));
+  for (const detail of ['Kaina: Nuo 10 €', 'https://dracula.lt/renginiai/koncertas-vilnius-42', 'https://example.com/event', 'https://tickets.example/buy']) assert.ok(unfolded.includes(detail));
   for (const line of file.split('\r\n')) assert.ok(Buffer.byteLength(line) <= 75);
 });
 

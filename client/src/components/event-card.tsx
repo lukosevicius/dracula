@@ -6,6 +6,7 @@ import { displayText, eventLocation, eventPrice, sameDayTimes, shortDate, showti
 import type { DisplayEvent } from '../utils/events-api';
 import { SaveButton } from './save-button';
 import { artistsEnabled } from '../constants/features';
+import { eventSegment } from '../utils/event-url';
 
 type Props = {
   event: DisplayEvent;
@@ -36,7 +37,7 @@ export function EventCard({ event, width, variant = 'large', hideDate = false }:
     ? <Image source={source} style={compact ? styles.thumb : [styles.image, { height: imageHeight }]} contentFit="cover" onError={() => setFailed(true)} accessibilityLabel={`Renginio ${title} nuotrauka`} />
     : <View style={[compact ? styles.thumb : [styles.image, { height: imageHeight }], styles.placeholder]}><Text style={compact ? styles.placeholderSmall : styles.placeholderText}>{compact ? 'D' : 'DRACULA'}</Text></View>;
   const priceChip = price ? <View style={[styles.price, price === 'Nemokamai' && styles.free]}><Text style={[styles.priceText, price === 'Nemokamai' && styles.freeText]}>{price}</Text></View> : null;
-  const link = (children: React.ReactNode, style?: object) => <Link href={{ pathname: '/events/[id]', params: { id: String(event.id) } }} asChild>
+  const link = (children: React.ReactNode, style?: object) => <Link href={{ pathname: '/renginiai/[slug]', params: { slug: eventSegment(event) } }} asChild>
     <Pressable accessibilityRole="link" accessibilityLabel={`${title}, atidaryti renginio puslapį`} onHoverIn={() => setHovered(true)} onHoverOut={() => setHovered(false)} style={style}>{children}</Pressable>
   </Link>;
 

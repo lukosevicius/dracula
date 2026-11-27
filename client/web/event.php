@@ -1,6 +1,6 @@
 <?php
 /*
- * Serves an event page (/events/123) as the normal app page with that event's own link preview tags, because
+ * Serves an event page (/renginiai/some-name-123) as the normal app page with that event's own link preview tags, because
  * Messenger, Facebook and other link previews read the HTML without running the app's JavaScript.
  * Anything unexpected serves the app page unchanged, so visitors are never affected.
  * The build copies this file into dist/ and fills in the API address (scripts/configure-web-output.ts).
@@ -61,7 +61,7 @@ function with_preview(string $page, array $event): string
     $summary = shorten(clean((string) ($event['description'] ?? '')), 160);
     $description = $details . ($details && $summary ? '. ' : '') . $summary;
     $image = is_string($event['image_url'] ?? null) && str_starts_with($event['image_url'], 'https://') ? $event['image_url'] : APP_URL . '/share.jpg';
-    $url = APP_URL . '/events/' . (int) $event['id'];
+    $url = APP_URL . '/renginiai/' . segment($event);
     $tags = [
         ['name', 'description', $description],
         ['property', 'og:site_name', 'Dracula'],
@@ -95,6 +95,23 @@ function when(array $event): string
     }
     $time = (string) ($event['event_time'] ?? '');
     return preg_match('/^\d{2}:\d{2}$/', $time) ? $text . ', ' . $time : $text;
+}
+
+/** "some-name-123", built the same way as eventSegment() in src/utils/event-url.ts. */
+function segment(array $event): string
+{
+    $id = (string) (int) $event['id'];
+    $text = clean(preg_replace(['/<[^>]*>/', '/&[a-z]+;/i'], ' ', (string) $event['title']) ?? '');
+    if (class_exists('Normalizer')) {
+        $text = (string) preg_replace('/\p{M}/u', '', (string) Normalizer::normalize($text, Normalizer::FORM_D));
+    }
+    $slug = trim((string) preg_replace('/[^a-z0-9]+/', '-', strtolower($text)), '-');
+    if (strlen($slug) > 60) {
+        $cut = substr($slug, 0, 61);
+        $dash = strrpos($cut, '-');
+        $slug = rtrim($dash ? substr($cut, 0, $dash) : substr($cut, 0, 60), '-');
+    }
+    return $slug === '' ? $id : $slug . '-' . $id;
 }
 
 function place(array $event): string

@@ -141,7 +141,7 @@ export default function EventEditor({ row, onSaved, onRefresh, refreshing }: {
       <div className="editor-top">
         <h3>Event details</h3>
         <div className="link-list">
-          {publicEvent && <a href={`https://dracula.lt/events/${row.id}`} target="_blank" rel="noreferrer">View in Dracula <Icon name="external" size={13} /></a>}
+          {publicEvent && <a href={`https://dracula.lt/renginiai/${row.id}`} target="_blank" rel="noreferrer">View in Dracula <Icon name="external" size={13} /></a>}
           {tickets && <a href={tickets} target="_blank" rel="noreferrer"><Icon name="ticket" size={15} /> Tickets <Icon name="external" size={13} /></a>}
           {about && <a href={about} target="_blank" rel="noreferrer">Event information <Icon name="external" size={13} /></a>}
           {original && !info?.sources.length && <a href={original} target="_blank" rel="noreferrer">Original listing <Icon name="external" size={13} /></a>}

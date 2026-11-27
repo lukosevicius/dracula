@@ -1,6 +1,7 @@
 import type { DisplayEvent } from './events-api';
 import { displayText, eventSource } from './event-format';
 import { artistsEnabled } from '../constants/features';
+import { eventUrl } from './event-url';
 
 function escapeText(value: string) {
   return value.replace(/\\/g, '\\\\').replace(/\r\n|\r|\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;');
@@ -50,12 +51,12 @@ export function calendarFile(event: DisplayEvent, now = new Date()) {
   const time = hasCalendarTime(event.event_time) ? event.event_time : null;
   const source = eventSource(event.about_url, event.source_url);
   const tickets = eventSource(null, event.ticket_url || '');
-  const eventUrl = `https://dracula.lt/events/${event.id}`;
+  const pageUrl = eventUrl(event);
   const description = [
     event.description?.trim(),
     artistsEnabled && event.artists?.length ? `Atlikėjai: ${event.artists.map(artist => displayText(artist.name)).join(', ')}` : '',
     event.price_text ? `Kaina: ${displayText(event.price_text)}` : event.price_type === 'free' ? 'Kaina: Nemokamas' : '',
-    `Renginys Dracula: ${eventUrl}`,
+    `Renginys Dracula: ${pageUrl}`,
     source ? `Renginio nuoroda: ${source.url}` : '',
     tickets ? `Bilietai: ${tickets.url}` : '',
   ].filter(Boolean).join('\n\n');
@@ -70,7 +71,7 @@ export function calendarFile(event: DisplayEvent, now = new Date()) {
     lines.push(`DTEND;VALUE=DATE:${compactDate(nextDate(event.event_end_date || event.event_date))}`);
   }
   if (event.venue) lines.push(`LOCATION:${escapeText(displayText(event.venue))}`);
-  lines.push(`URL:${eventUrl}`);
+  lines.push(`URL:${pageUrl}`);
   lines.push(`DESCRIPTION:${escapeText(description)}`);
   lines.push('END:VEVENT', 'END:VCALENDAR');
   return lines.map(foldLine).join('\r\n') + '\r\n';

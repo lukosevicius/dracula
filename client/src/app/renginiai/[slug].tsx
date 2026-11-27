@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Image } from 'expo-image';
-import { Link, Stack, useLocalSearchParams } from 'expo-router';
+import { Link, Stack, router, useLocalSearchParams } from 'expo-router';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SaveButton } from '../../components/save-button';
@@ -12,9 +12,11 @@ import { ShareButton } from '../../components/share-button';
 import { fetchEvent, type DisplayEvent } from '../../utils/events-api';
 import { artistsEnabled } from '../../constants/features';
 import { SiteFooter } from '../../components/site-footer';
+import { eventIdFromSegment, eventSegment, eventUrl } from '../../utils/event-url';
 
 export default function EventPage() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { slug } = useLocalSearchParams<{ slug: string }>();
+  const id = eventIdFromSegment(slug);
   const [remoteEvent, setRemoteEvent] = useState<DisplayEvent | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -27,11 +29,17 @@ export default function EventPage() {
   useEffect(() => {
     setImageFailed(false);
     const controller = new AbortController(); setRemoteEvent(null); setFailed(false); setLoading(true);
-    fetchEvent(id || '', controller.signal).then(result => { if (!controller.signal.aborted) setRemoteEvent(result); })
+    if (!id) { setLoading(false); return () => controller.abort(); }
+    fetchEvent(id, controller.signal).then(result => { if (!controller.signal.aborted) setRemoteEvent(result); })
       .catch(() => { if (!controller.signal.aborted) setFailed(true); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [id, retry]);
+  // An outdated or missing name in the address is swapped for the current one, without a new history entry.
+  const canonical = event ? eventSegment(event) : null;
+  useEffect(() => {
+    if (canonical && slug !== canonical) router.setParams({ slug: canonical });
+  }, [canonical, slug]);
 
   if (loading) return <View style={styles.empty}><Stack.Screen options={{ title: 'Renginys' }} /><Text style={styles.value}>Kraunamas renginys...</Text></View>;
   if (failed) return <View style={styles.empty}><Stack.Screen options={{ title: 'Renginys' }} /><Text accessibilityRole="alert" style={styles.value}>Nepavyko įkelti renginio.</Text><Pressable accessibilityRole="button" onPress={() => setRetry(value => value + 1)}><Text style={styles.link}>Bandyti dar kartą</Text></Pressable><Link href="/" style={styles.link}>Grįžti į renginius</Link></View>;
@@ -52,7 +60,7 @@ export default function EventPage() {
   const when = [day, time].filter(Boolean).join(' · ');
   const price = eventPrice(event);
   const mapsUrl = location ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}` : null;
-  const pageUrl = process.env.EXPO_OS === 'web' && typeof window !== 'undefined' ? window.location.href : `https://dracula.lt/events/${event.id}`;
+  const pageUrl = eventUrl(event);
 
   async function openLink(url: string) {
     try { await Linking.openURL(url); }

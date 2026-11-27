@@ -18,7 +18,7 @@ export const startPages = [
 export type StartPage = typeof startPages[number]['path'];
 export const defaultStartPage: StartPage = '/avilys.html';
 
-const bookmarklet = "javascript:(()=>{const m=/^(www\\.)?dracula\\.lt$/.test(location.hostname)&&location.pathname.match(/^\\/events\\/([1-9]\\d{0,11})\\/?$/);if(m)window.open('https://seeker.dracula.lt/event.html?id='+m[1],'_blank','noopener');else alert('Open an event on dracula.lt first.');})()";
+const bookmarklet = "javascript:(()=>{const m=/^(www\\.)?dracula\\.lt$/.test(location.hostname)&&location.pathname.match(/^\\/renginiai\\/(?:[a-z0-9-]*-)?([1-9]\\d{0,11})\\/?$/);if(m)window.open('https://seeker.dracula.lt/event.html?id='+m[1],'_blank','noopener');else alert('Open an event on dracula.lt first.');})()";
 
 export function validStartPage(value: unknown): value is StartPage {
   return startPages.some(page => page.path === value);
