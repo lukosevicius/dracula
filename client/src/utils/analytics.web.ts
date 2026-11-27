@@ -7,7 +7,6 @@
  * here means PostHog is never loaded at all.
  */
 import type { PostHog } from 'posthog-js';
-import { notify } from './notify';
 
 const key = process.env.EXPO_PUBLIC_POSTHOG_KEY || '';
 const liveHosts = new Set(['dracula.lt']);
@@ -28,14 +27,7 @@ function applySwitch() {
   const off = url.searchParams.has('nostats');
   const on = url.searchParams.has('stats');
   if (!off && !on) return;
-  try {
-    if (off) localStorage.setItem(optOutKey, '1'); else localStorage.removeItem(optOutKey);
-    const message = off ? 'Statistika šioje naršyklėje išjungta.' : 'Statistika šioje naršyklėje įjungta.';
-    // The header that shows notices appears with the first screen, a moment after this runs.
-    setTimeout(() => notify(message), 800);
-  } catch {
-    setTimeout(() => notify('Nepavyko pakeisti statistikos nustatymo šioje naršyklėje.'), 800);
-  }
+  try { if (off) localStorage.setItem(optOutKey, '1'); else localStorage.removeItem(optOutKey); } catch { /* Storage blocked: nothing to remember. */ }
   url.searchParams.delete('nostats');
   url.searchParams.delete('stats');
   // After the router has settled, or it writes the original address back.

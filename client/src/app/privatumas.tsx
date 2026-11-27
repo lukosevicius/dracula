@@ -1,6 +1,6 @@
 import { Link, Stack } from 'expo-router';
 import type { ReactNode } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 /** Plain-language privacy policy. Keep it in step with what the API and app actually store. */
 const privacyEmail = 'info@dracula.lt';
@@ -10,6 +10,10 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   return <View style={styles.section}><Text accessibilityRole="header" style={styles.subheading}>{title}</Text>{children}</View>;
 }
 function P({ children }: { children: ReactNode }) { return <Text style={styles.text}>{children}</Text>; }
+/** A full page load, not an in-app move: the statistics switch is read only when the site starts, also in the home-screen app. */
+function StatsOffLink() {
+  return <Text accessibilityRole="link" style={styles.link} onPress={() => { if (Platform.OS === 'web') window.location.assign('/?nostats'); }}>dracula.lt/?nostats</Text>;
+}
 function Email() { return <Link href={`mailto:${privacyEmail}`} style={styles.link}>{privacyEmail}</Link>; }
 
 export default function PrivacyPage() {
@@ -34,7 +38,7 @@ export default function PrivacyPage() {
     <Section title="Lankomumo statistika">
       <P>Kad žinotume, kurie renginiai ir svetainės dalys naudingi, skaičiuojame apsilankymus su „PostHog“ (duomenys saugomi Europos Sąjungoje). Matome, kurie puslapiai atidaromi, kiek laiko juose praleidžiama, kur spaudžiama ir ko ieškoma – pavyzdžiui, kad renginys buvo išsaugotas ar atidaryta bilietų nuoroda.</P>
       <P>Statistika anoniminė: jūsų naršyklėje nieko nesaugome ir slapukų tam nenaudojame. Apsilankymai atskiriami tik tos pačios dienos ribose pagal kodą, kurį „PostHog“ sukuria iš IP adreso ir naršyklės duomenų; pats IP adresas nesaugomas. Statistikos nesiejame su jūsų paskyra ir neįrašinėjame, ką darote ekrane.</P>
-      <P>Jei nenorite, kad jūsų apsilankymai būtų skaičiuojami, atidarykite <Link href="/?nostats" style={styles.link}>dracula.lt/?nostats</Link> – toje naršyklėje statistika bus išjungta.</P>
+      <P>Jei nenorite, kad jūsų apsilankymai būtų skaičiuojami, atidarykite <StatsOffLink /> – toje naršyklėje statistika bus išjungta.</P>
     </Section>
 
     <Section title="Slapukai">
