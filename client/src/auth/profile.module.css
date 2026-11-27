@@ -21,7 +21,14 @@
 .error { color: #ff939c; line-height: 1.5; }
 .success { color: #a4dda9; }
 .signIn { margin-top: 24px; min-height: 46px; }
-.googleButton { width: 280px; max-width: 100%; }
+.googleSlot { position: relative; width: 280px; max-width: 100%; height: 44px; }
+.googleSlot[hidden] { display: none; }
+.googlePlaceholder { position: absolute; inset: 2px 0; border-radius: 999px; background: #2a232f; animation: googlePulse 1.2s ease-in-out infinite alternate; }
+@keyframes googlePulse { from { opacity: .55; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .googlePlaceholder { animation: none; } }
+/* Kept laid out but invisible while Google draws it, so its iframe can load and be measured. */
+.googleButton { position: absolute; inset: 0; display: flex; align-items: center; opacity: 0; pointer-events: none; transition: opacity .18s ease; }
+.googleButtonShown { opacity: 1; pointer-events: auto; }
 .deleteSection { border-top: 1px solid #403541; margin-top: 32px; padding-top: 22px; color: #beb3c1; line-height: 1.6; font-size: 14px; }
 .deleteSection h2 { color: #f9f6fa; font-size: 18px; }
 .deleteActions { display: flex; flex-wrap: wrap; gap: 10px; }
