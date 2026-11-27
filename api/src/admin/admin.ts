@@ -84,7 +84,7 @@ export function createAdmin(pool: Pool, token: string) {
         params.push(after,vilniusToday(),new Date(Date.now()-20*3600_000).toISOString());
       }
       const order=mode==='oldest'?'v.details_checked_at ASC,v.published_at DESC':'s.event_id ASC';
-      const [rows]=await pool.execute(`SELECT s.event_id,s.source_id,s.source_url,s.content_html FROM event_sources s JOIN vilnius_events v ON v.source_id=CAST(s.source_id AS UNSIGNED) JOIN events e ON e.id=s.event_id WHERE ${clauses.join(' AND ')} ORDER BY ${order} LIMIT 10`,params);return rows;
+      const [rows]=await pool.execute(`SELECT s.event_id,s.source_id,s.source_url,s.content_html,e.publication_status,e.event_date,e.event_end_date FROM event_sources s JOIN vilnius_events v ON v.source_id=CAST(s.source_id AS UNSIGNED) JOIN events e ON e.id=s.event_id WHERE ${clauses.join(' AND ')} ORDER BY ${order} LIMIT 10`,params);return rows;
     },
     async listMedia(after: number,limit: number){
       if(!Number.isSafeInteger(after)||after<0||!Number.isSafeInteger(limit)||limit<1||limit>100)throw error(400,'Invalid media pagination.');

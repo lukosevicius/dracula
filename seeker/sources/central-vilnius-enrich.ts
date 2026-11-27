@@ -6,7 +6,8 @@ export async function runCentralEnrichment(api:Api,action:'details'|'refresh-det
   let after=0,checked=0,enriched=0,failed=0;
   const mode=action==='details'?'missing':action==='refresh-details'?'oldest':action==='details-event'?'event':action==='refresh-upcoming-details'?'upcoming':'all';
   // Listings Vilnius Events took down redirect to its home page. Only the scheduled upcoming refresh acts on them.
-  const gone:{event_id:number;source_id:string}[]=[];
+  const gone:{event_id:number;source_id:string;finished:boolean}[]=[];
+  const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Europe/Vilnius'});
   do {
     const events=await api.enrichmentCandidates(mode,after,eventId);if(!events.length){if(mode==='event')throw new Error('Event not found.');break;}
     for(const event of events){
@@ -16,7 +17,7 @@ export async function runCentralEnrichment(api:Api,action:'details'|'refresh-det
         while(true){const wait=await api.reserveVilniusRequest();if(!wait)break;await pause(wait);}
         try{response=await request(url,{headers:{'user-agent':userAgent,accept:'text/html'},redirect:'manual',signal:AbortSignal.timeout(20000)});}catch(error){if(attempt===3)throw error;await pause((attempt+1)*5000);continue;}
         if(response.ok)break;
-        if(response.status>=300&&response.status<400){if(mode==='event')throw new Error(`Event page redirected (HTTP ${response.status}).`);if(event.source_id&&redirectsHome(response,url))gone.push({event_id:event.event_id,source_id:String(event.source_id)});failed++;response=undefined;break;}
+        if(response.status>=300&&response.status<400){if(mode==='event')throw new Error(`Event page redirected (HTTP ${response.status}).`);if(event.source_id&&redirectsHome(response,url))gone.push({event_id:event.event_id,source_id:String(event.source_id),finished:event.publication_status==='draft'&&(!event.event_date||(event.event_end_date||event.event_date)<today)});failed++;response=undefined;break;}
         if(![429,500,502,503,504].includes(response.status)||attempt===3)throw new Error(`Event page returned HTTP ${response.status}.`);
         const retry=response.headers.get('retry-after'),seconds=Number(retry),ms=retry&&Number.isFinite(seconds)?seconds*1000:Math.max(0,Date.parse(retry||'')-Date.now())||0;
         if(ms>120000)throw new Error('Vilnius Events requested a longer pause.');await pause(Math.max(ms,[5000,15000,30000][attempt]));
@@ -34,14 +35,18 @@ export async function runCentralEnrichment(api:Api,action:'details'|'refresh-det
     if((mode!=='all'&&mode!=='upcoming')||events.length<10)break;
   }while(true);
   if(mode!=='upcoming')return {fetched:checked+failed,added:enriched,updated:failed};
-  // A burst of removals more likely means the site changed or is misbehaving, so nothing is removed then.
+  // Vilnius Events sends a finished event's page to its home page. A draft that is past or has no date was never
+  // shown to visitors, so removing it is always safe. A burst of other removals more likely means the site changed
+  // or is misbehaving, so those are left alone then.
+  const finished=gone.filter(listing=>listing.finished),others=gone.filter(listing=>!listing.finished);
   const limit=Math.max(3,Math.ceil((checked+failed)*0.1));
-  if(gone.length>limit)throw new Error(`${gone.length} of ${checked+failed} Vilnius Events listings look removed, more than the ${limit} allowed in one run. Nothing was removed; check the site.`);
+  const blocked=others.length>limit;
   const outcomes={deleted:0,detached:0,unpublished:0,kept:0};
-  for(const listing of gone){
+  for(const listing of blocked?finished:gone){
     const result=await api.seekerWrite(`/events/${listing.event_id}/listing-gone`,{source_key:'vilnius-events',source_id:listing.source_id}) as {outcome?:keyof typeof outcomes};
     if(result.outcome&&result.outcome in outcomes)outcomes[result.outcome]++;
   }
+  if(blocked)throw new Error(`${others.length} of ${checked+failed} upcoming or live Vilnius Events listings look removed, more than the ${limit} allowed in one run. Only ${finished.length} past or undated drafts were removed; check the site.`);
   return {fetched:checked+failed,added:enriched,updated:failed,removed:outcomes.deleted+outcomes.detached,unpublished:outcomes.unpublished};
 }
 

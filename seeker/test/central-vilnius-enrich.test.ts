@@ -30,6 +30,20 @@ test('a burst of removed listings stops the run without removing anything',async
   const api={enrichmentCandidates:async(_mode:string,after:number)=>listings.filter(item=>item.event_id>after),reserveVilniusRequest:async()=>0,enrichEvent:async()=>undefined,
     seekerWrite:async()=>{writes++;return {ok:true};}} as unknown as ReturnType<typeof createCentralApi>;
   const request=async()=>new Response(null,{status:302,headers:{location:'/'}});
-  await assert.rejects(runCentralEnrichment(api,'refresh-upcoming-details',undefined,'Test/1',()=>{},request as typeof fetch,async()=>{}),/Nothing was removed/);
+  await assert.rejects(runCentralEnrichment(api,'refresh-upcoming-details',undefined,'Test/1',()=>{},request as typeof fetch,async()=>{}),/look removed/);
   assert.equal(writes,0);
+});
+
+test('past or undated drafts are removed even in a burst, while other removals stay behind the limit',async()=>{
+  const listings=[1,2,3,4,5,6,7,8].map(id=>({event_id:id,source_id:String(id),source_url:`https://www.vilnius-events.lt/renginiai/e${id}/`,content_html:'description',
+    publication_status:id<=4?'live':'draft',event_date:id<=4?'2099-12-01':id===5?'2020-01-01':null,event_end_date:null}));
+  const written:number[]=[];
+  const api={enrichmentCandidates:async(_mode:string,after:number)=>listings.filter(item=>item.event_id>after),reserveVilniusRequest:async()=>0,enrichEvent:async()=>undefined,
+    seekerWrite:async(path:string)=>{written.push(Number(path.split('/')[2]));return {ok:true,outcome:'deleted'};}} as unknown as ReturnType<typeof createCentralApi>;
+  const request=async()=>new Response(null,{status:302,headers:{location:'https://www.vilnius-events.lt/'}});
+  await assert.rejects(runCentralEnrichment(api,'refresh-upcoming-details',undefined,'Test/1',()=>{},request as typeof fetch,async()=>{}),/Only 4 past or undated drafts were removed/);
+  assert.deepEqual(written,[5,6,7,8]);
+  written.length=0;listings.splice(0,4);
+  const result=await runCentralEnrichment(api,'refresh-upcoming-details',undefined,'Test/1',()=>{},request as typeof fetch,async()=>{});
+  assert.deepEqual(written,[5,6,7,8]);assert.equal((result as {removed?:number}).removed,4);
 });
