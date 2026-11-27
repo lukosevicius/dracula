@@ -54,7 +54,8 @@ const ticketPage = (value: string) => urlKey(value).replace(bilietaiSeatmap, '$1
 
 /**
  * Decides each field of the merged event. Equal values need no decision. When only one event has a value it is used.
- * A venue name beats a street address, a known price beats an unknown one and a stated price beats a plain "paid".
+ * A venue name beats a street address, a known price beats an unknown one, a stated price beats a plain "paid" and two free
+ * prices agree whatever their wording.
  * Ticket links that differ only by a trailing slash count as equal, a bilietai.lt event page link beats its seat map link, and a title in normal case beats the same title in capitals. Other disagreements are conflicts that
  * keep the kept event's value unless a choice (an event ID per field) says otherwise.
  */
@@ -65,6 +66,8 @@ export function planMerge({ survivor, removed, keptPrice, removedPrice }: Pair, 
     let kept: string | null, other: string | null, preferOther = false, conflict = false;
     if (field === 'price') {
       kept = priceText(keptPrice); other = priceText(removedPrice);
+      // Two free prices agree however each source words it ("Free", "Nemokamas").
+      if (keptPrice?.price_type === 'free' && removedPrice?.price_type === 'free') other = kept;
       if (kept !== other) {
         if (!knownPrice(keptPrice)) preferOther = knownPrice(removedPrice);
         else if (barePaid(keptPrice) && statedPrice(removedPrice)) preferOther = true;

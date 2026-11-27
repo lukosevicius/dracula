@@ -67,6 +67,10 @@ test('a merge plan prefers venue names and known prices, and flags real disagree
   const kept = planMerge({ ...pair, keptPrice: price(28, 'paid', 'Nuo 12.90 €'), removedPrice: price(184, 'paid', null) });
   const keptPrice = kept.fields.find((entry: { field: string }) => entry.field === 'price')!;
   assert.deepEqual([keptPrice.choice, keptPrice.conflict], [28, false]);
+  // Two free prices agree whatever their wording: "Free" from one source, "Nemokamas" from the other.
+  const free = planMerge({ ...pair, keptPrice: price(28, 'free', null), removedPrice: price(184, 'free', 'Nemokamas') });
+  const freePrice = free.fields.find((entry: { field: string }) => entry.field === 'price')!;
+  assert.deepEqual([freePrice.conflict, freePrice.kept === freePrice.other], [false, true]);
   // The same title in normal case wins over capitals, from either event.
   const caps = (survivor: string, removed: string) => planMerge({ ...pair, survivor: row(28, 'Jazz Cellar 11', survivor), removed: row(184, 'Jazz Cellar 11', removed) })
     .fields.find((entry: { field: string }) => entry.field === 'title')!;
