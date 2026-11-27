@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'expo-router';
 import { GoogleSignIn } from './google-sign-in';
+import { notify } from '../utils/notify';
 import { useAuth } from './auth-context';
 import styles from './profile.module.css';
 
@@ -17,7 +18,7 @@ export function ProfileScreen() {
     if(!value || Array.from(value).length>191){setError('Įveskite vardą (iki 191 simbolio).');return;}
     setBusy(true);try{await saveName(value);setMessage('Vardas išsaugotas.');}catch{setError('Nepavyko išsaugoti vardo. Bandykite dar kartą.');}finally{setBusy(false);}
   }
-  async function leave() { setBusy(true);setError('');try{await signOut();}catch{setError('Nepavyko atsijungti. Bandykite dar kartą.');}finally{setBusy(false);} }
+  async function leave() { setBusy(true);setError('');try{await signOut();notify('Atsijungėte.');}catch{setError('Nepavyko atsijungti. Bandykite dar kartą.');}finally{setBusy(false);} }
   async function remove() {setBusy(true);setError('');try{await removeAccount();setConfirmDelete(false);setMessage('Paskyra ištrinta.');}catch{setError('Nepavyko ištrinti paskyros. Bandykite dar kartą.');}finally{setBusy(false);}}
   return <main className={styles.page}><Link href="/" className={styles.back}>← Visi renginiai</Link>
     <section className={styles.card}>

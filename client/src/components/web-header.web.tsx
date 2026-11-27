@@ -4,12 +4,33 @@ import { Link, type Href } from 'expo-router';
 import { useAuth } from '../auth/auth-context';
 import { GoogleSignIn } from '../auth/google-sign-in';
 import { signInEvent } from '../auth/open-sign-in';
+import { notify, notifyEvent } from '../utils/notify';
 import profileStyles from '../auth/profile.module.css';
 import styles from './web-header.module.css';
 import { artistsEnabled } from '../constants/features';
 
 function ProfileIcon() {
   return <svg className={styles.profileIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5" /><path d="M4.5 20c.5-4 3.3-6 7.5-6s7 2 7.5 6" /></svg>;
+}
+
+/** Brief messages at the bottom of the screen; a new one replaces the current one. */
+function Notice() {
+  const [notice, setNotice] = useState<{ message: string; key: number } | null>(null);
+  useEffect(() => {
+    let timer = 0;
+    function show(event: Event) {
+      const message = (event as CustomEvent<string>).detail;
+      if (!message) return;
+      window.clearTimeout(timer);
+      setNotice({ message, key: Date.now() });
+      timer = window.setTimeout(() => setNotice(null), 3500);
+    }
+    window.addEventListener(notifyEvent, show);
+    return () => { window.removeEventListener(notifyEvent, show); window.clearTimeout(timer); };
+  }, []);
+  return <div className={styles.noticeArea} role="status" aria-live="polite">
+    {notice && <p key={notice.key} className={styles.notice}>{notice.message}</p>}
+  </div>;
 }
 
 function SignInDialog({ onClose }: { onClose: () => void }) {
@@ -46,7 +67,7 @@ export function WebHeader({ children }: { children: ReactNode }) {
     document.addEventListener('keydown',closeOnEscape);
     return () => { window.removeEventListener(signInEvent,openDialog); document.removeEventListener('pointerdown',closeOutside); document.removeEventListener('keydown',closeOnEscape); };
   }, []);
-  async function leave() {setBusy(true);setError('');try{await signOut();}catch{setError('Nepavyko atsijungti.');}finally{setBusy(false);}}
+  async function leave() {setBusy(true);setError('');try{await signOut();if(menu.current)menu.current.open=false;notify('Atsijungėte.');}catch{setError('Nepavyko atsijungti.');}finally{setBusy(false);}}
   return <div className={styles.header}><div className={styles.content}>
     {children}
     <nav className={styles.desktopNav} aria-label="Pagrindinė navigacija"><Link href="/">Visi renginiai</Link><Link href={'/issaugoti' as Href}>Išsaugoti</Link>{artistsEnabled ? <Link href={'/following' as Href}>Seku</Link> : null}</nav>
@@ -60,5 +81,6 @@ export function WebHeader({ children }: { children: ReactNode }) {
         {error && <p role="alert" className={styles.menuError}>{error}</p>}
       </div></details> : state==='unavailable' ? <Link href={'/profile' as Href} className={styles.signIn} aria-label="Profilis"><ProfileIcon /><span className={styles.accountLabel}>Profilis</span></Link> : <button type="button" className={styles.signIn} aria-label="Prisijungti" onClick={()=>setSignInOpen(true)}><ProfileIcon /><span className={styles.accountLabel}>Prisijungti</span></button>}
     {signInOpen && <SignInDialog onClose={()=>setSignInOpen(false)} />}
+    <Notice />
   </div></div>;
 }
