@@ -18,6 +18,8 @@ type Props = {
 
 export function EventCard({ event, width, variant = 'large', hideDate = false }: Props) {
   const [failed, setFailed] = useState(false);
+  // A pointer hovering a card lifts it slightly, so it reads as clickable on desktop.
+  const [hovered, setHovered] = useState(false);
   const compact = variant === 'compact';
   const title = displayText(event.title);
   const location = eventLocation(event.venue, event.city);
@@ -33,10 +35,10 @@ export function EventCard({ event, width, variant = 'large', hideDate = false }:
     : <View style={[compact ? styles.thumb : styles.image, styles.placeholder]}><Text style={compact ? styles.placeholderSmall : styles.placeholderText}>{compact ? 'D' : 'DRACULA'}</Text></View>;
   const priceChip = price ? <View style={[styles.price, price === 'Nemokamai' && styles.free]}><Text style={[styles.priceText, price === 'Nemokamai' && styles.freeText]}>{price}</Text></View> : null;
   const link = (children: React.ReactNode, style?: object) => <Link href={{ pathname: '/events/[id]', params: { id: String(event.id) } }} asChild>
-    <Pressable accessibilityRole="link" accessibilityLabel={`${title}, atidaryti renginio puslapį`} style={style}>{children}</Pressable>
+    <Pressable accessibilityRole="link" accessibilityLabel={`${title}, atidaryti renginio puslapį`} onHoverIn={() => setHovered(true)} onHoverOut={() => setHovered(false)} style={style}>{children}</Pressable>
   </Link>;
 
-  if (compact) return <View style={[styles.card, styles.compactCard, width != null && { width }]}>
+  if (compact) return <View style={[styles.card, styles.compactCard, hovered && styles.hovered, width != null && { width }]}>
     {link(<>
       {image}
       <View style={styles.compactBody}>
@@ -48,7 +50,7 @@ export function EventCard({ event, width, variant = 'large', hideDate = false }:
     <SaveButton event={event} compact />
   </View>;
 
-  return <View style={[styles.card, width != null && { width }]}>{link(<>
+  return <View style={[styles.card, hovered && styles.hovered, hovered && styles.lifted, width != null && { width }]}>{link(<>
     {image}
     <View style={styles.cardBody}>
       {meta || priceChip ? <View style={styles.metaRow}>{meta ? <Text style={styles.date}>{meta}</Text> : null}{priceChip}</View> : null}
@@ -60,7 +62,10 @@ export function EventCard({ event, width, variant = 'large', hideDate = false }:
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: '#201b24', borderRadius: 18, overflow: 'hidden' },
+  // The transition is a web-only style; native platforms do not accept it.
+  card: { backgroundColor: '#201b24', borderRadius: 18, overflow: 'hidden', ...(process.env.EXPO_OS === 'web' ? { transitionDuration: '150ms', transitionProperty: 'transform, background-color' } : {}) },
+  hovered: { backgroundColor: '#2a232f' },
+  lifted: { transform: [{ translateY: -3 }] },
   image: { width: '100%', height: 220, backgroundColor: '#302631' },
   placeholder: { alignItems: 'center', justifyContent: 'center' },
   placeholderText: { color: '#80616a', fontWeight: '900', letterSpacing: 4, fontSize: 20 },
