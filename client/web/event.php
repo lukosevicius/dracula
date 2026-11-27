@@ -11,6 +11,8 @@ declare(strict_types=1);
 require __DIR__ . '/common.php';
 
 const CACHE_SECONDS = 600;
+// Days after an event's last day that its page stays in search results; searchDaysAfterEnd in src/utils/event-url.ts.
+const SEARCH_DAYS_AFTER_END = 3;
 
 header('Content-Type: text/html; charset=utf-8');
 header('Cache-Control: no-cache');
@@ -58,9 +60,33 @@ function with_preview(string $page, array $event): string
     ];
     $block = implode("\n    ", array_map(fn ($tag) => sprintf('<meta %s="%s" content="%s" />', $tag[0], $tag[1], escape($tag[2])), $tags))
         . "\n    " . sprintf('<link rel="canonical" href="%s" />', escape($url))
+        . (hidden_from_search($event) ? "\n    " . '<meta name="robots" content="noindex" />' : '')
         . structured_data($event, $url, $image, $summary);
     $page = preg_replace('/<!-- preview:.*?<!-- \/preview -->/s', $block, $page, 1) ?? $page;
     return preg_replace('/<title>.*?<\/title>/s', '<title>' . escape($title . ' · Dracula') . '</title>', $page, 1) ?? $page;
+}
+
+/**
+ * Whether search engines should drop the page: the event's last day (end date or last showing) was more than
+ * SEARCH_DAYS_AFTER_END days ago in Vilnius. The page itself keeps working for saved and shared links. Same rule as
+ * hiddenFromSearch() in src/utils/event-url.ts.
+ */
+function hidden_from_search(array $event): bool
+{
+    $days = [$event['event_date'] ?? null, $event['event_end_date'] ?? null];
+    foreach (is_array($event['times'] ?? null) ? $event['times'] : [] as $slot) {
+        $days[] = is_array($slot) ? ($slot['date'] ?? null) : null;
+    }
+    $days = array_filter($days, fn ($day) => is_string($day) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $day));
+    if (!$days) {
+        return false;
+    }
+    try {
+        $until = (new DateTimeImmutable(max($days)))->modify('+' . SEARCH_DAYS_AFTER_END . ' days')->format('Y-m-d');
+    } catch (Exception) {
+        return false;
+    }
+    return (new DateTimeImmutable('now', new DateTimeZone('Europe/Vilnius')))->format('Y-m-d') > $until;
 }
 
 /** "Gruodžio 8 d., 20:00", the way the app writes dates. */

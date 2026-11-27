@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { eventIdFromSegment, eventPath, eventSlug, eventUrl } from '../src/utils/event-url';
+import { eventIdFromSegment, eventPath, eventSlug, eventUrl, hiddenFromSearch } from '../src/utils/event-url';
 
 test('event addresses use plain Lithuanian words and end with the id', () => {
   assert.equal(eventPath({ id: 423, title: 'Kariuomenės dienos minėjimas/koncertas su grupe DELČIA' }), '/renginiai/kariuomenes-dienos-minejimas-koncertas-su-grupe-delcia-423');
@@ -22,4 +22,13 @@ test('the id comes from the end of the address, whatever the words say', () => {
   assert.equal(eventIdFromSegment('be-numerio'), null);
   assert.equal(eventIdFromSegment('renginys-0'), null);
   assert.equal(eventIdFromSegment(undefined), null);
+});
+
+test('past events leave search results three days after their last day', () => {
+  const event = { event_date: '2026-11-20', event_end_date: '2026-11-22', times: [] };
+  assert.equal(hiddenFromSearch(event, '2026-11-25'), false);
+  assert.equal(hiddenFromSearch(event, '2026-11-26'), true);
+  assert.equal(hiddenFromSearch({ event_date: '2026-11-28', times: [{ date: '2026-12-30' }] }, '2027-01-02'), false);
+  assert.equal(hiddenFromSearch({ event_date: '2026-12-30' }, '2027-01-03'), true);
+  assert.equal(hiddenFromSearch({ event_date: null }, '2030-01-01'), false);
 });

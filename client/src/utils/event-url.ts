@@ -38,3 +38,20 @@ export function eventUrl(event: { id: number | string; title: string }): string 
 export function eventIdFromSegment(segment: string | undefined): string | null {
   return /(?:^|-)([1-9]\d{0,11})$/.exec(segment ?? '')?.[1] ?? null;
 }
+
+/** Days after an event's last day that its page stays in search results; web/event.php uses the same number. */
+export const searchDaysAfterEnd = 3;
+
+/**
+ * Whether search engines should drop the event's page: its last day (end date or last showing) was more than
+ * searchDaysAfterEnd days before `today` (YYYY-MM-DD in Vilnius). The page itself keeps working for saved and shared links.
+ * Events without a date stay listed.
+ */
+export function hiddenFromSearch(event: { event_date?: string | null; event_end_date?: string | null; times?: { date: string }[] | null }, today: string): boolean {
+  const days = [event.event_date, event.event_end_date, ...(event.times ?? []).map(slot => slot.date)].filter((day): day is string => typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day));
+  if (!days.length) return false;
+  const last = days.reduce((a, b) => (a > b ? a : b));
+  const until = new Date(`${last}T00:00:00Z`);
+  until.setUTCDate(until.getUTCDate() + searchDaysAfterEnd);
+  return today > until.toISOString().slice(0, 10);
+}

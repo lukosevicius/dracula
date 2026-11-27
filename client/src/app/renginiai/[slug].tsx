@@ -13,7 +13,7 @@ import { fetchEvent, type DisplayEvent } from '../../utils/events-api';
 import { artistsEnabled } from '../../constants/features';
 import { SiteFooter } from '../../components/site-footer';
 import { PageTitle } from '../../components/page-title';
-import { eventIdFromSegment, eventSegment, eventUrl } from '../../utils/event-url';
+import { eventIdFromSegment, eventPath, eventSegment, eventUrl, hiddenFromSearch } from '../../utils/event-url';
 import { eventDetails, track } from '../../utils/analytics';
 
 export default function EventPage() {
@@ -81,7 +81,7 @@ export default function EventPage() {
   return <View style={{ flex: 1 }}>
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={[styles.container, desktop && styles.containerDesktop, { paddingBottom: Math.max(insets.bottom, 32) }]}>
       <Stack.Screen options={{ title: 'Renginys', headerBackTitle: 'Renginiai' }} />
-      <PageTitle title={`${title} · Dracula`} description={[event.event_date ? shortDate(event.event_date) : null, time, location, price].filter(Boolean).join(' · ') || undefined} />
+      <PageTitle title={`${title} · Dracula`} path={eventPath(event)} noindex={hiddenFromSearch(event, vilniusDate())} description={[event.event_date ? shortDate(event.event_date) : null, time, location, price].filter(Boolean).join(' · ') || undefined} />
       {desktop ? <Link href="/" style={styles.back}>← Visi renginiai</Link> : null}
       <View style={[styles.hero, desktop && styles.heroDesktop]}>
         {poster}
