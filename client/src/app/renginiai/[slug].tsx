@@ -12,6 +12,7 @@ import { ShareButton } from '../../components/share-button';
 import { fetchEvent, type DisplayEvent } from '../../utils/events-api';
 import { artistsEnabled } from '../../constants/features';
 import { SiteFooter } from '../../components/site-footer';
+import { PageTitle } from '../../components/page-title';
 import { eventIdFromSegment, eventSegment, eventUrl } from '../../utils/event-url';
 import { eventDetails, track } from '../../utils/analytics';
 
@@ -45,7 +46,7 @@ export default function EventPage() {
   if (loading) return <View style={styles.empty}><Stack.Screen options={{ title: 'Renginys' }} /><Text style={styles.value}>Kraunamas renginys...</Text></View>;
   if (failed) return <View style={styles.empty}><Stack.Screen options={{ title: 'Renginys' }} /><Text accessibilityRole="alert" style={styles.value}>Nepavyko įkelti renginio.</Text><Pressable accessibilityRole="button" onPress={() => setRetry(value => value + 1)}><Text style={styles.link}>Bandyti dar kartą</Text></Pressable><Link href="/" style={styles.link}>Grįžti į renginius</Link></View>;
 
-  if (!event) return <View style={styles.empty}><Stack.Screen options={{ title: 'Renginys' }} /><Text style={styles.title}>Renginio neradome</Text><Link href="/" style={styles.link}>Grįžti į renginius</Link></View>;
+  if (!event) return <View style={styles.empty}><Stack.Screen options={{ title: 'Renginys' }} /><Text role="heading" aria-level={1} style={styles.title}>Renginio neradome</Text><Link href="/" style={styles.link}>Grįžti į renginius</Link></View>;
 
   const title = displayText(event.title);
   const location = eventLocation(event.venue, event.city);
@@ -80,11 +81,12 @@ export default function EventPage() {
   return <View style={{ flex: 1 }}>
     <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={[styles.container, desktop && styles.containerDesktop, { paddingBottom: Math.max(insets.bottom, 32) }]}>
       <Stack.Screen options={{ title: 'Renginys', headerBackTitle: 'Renginiai' }} />
+      <PageTitle title={`${title} · Dracula`} description={[event.event_date ? shortDate(event.event_date) : null, time, location, price].filter(Boolean).join(' · ') || undefined} />
       {desktop ? <Link href="/" style={styles.back}>← Visi renginiai</Link> : null}
       <View style={[styles.hero, desktop && styles.heroDesktop]}>
         {poster}
         <View style={[styles.summary, desktop && styles.summaryDesktop]}>
-          <Text style={[styles.title, desktop && styles.titleDesktop]}>{title}</Text>
+          <Text role="heading" aria-level={1} style={[styles.title, desktop && styles.titleDesktop]}>{title}</Text>
           <View style={styles.facts}>
             {when ? <Text style={styles.when}>{when}</Text> : null}
             {showings.map(line => <Text key={line} style={styles.fact}>{line}</Text>)}
@@ -97,11 +99,11 @@ export default function EventPage() {
             </View> : null}
           </View>
           <View style={styles.secondary}><CalendarButton event={event} /><ShareButton title={title} url={pageUrl} /><SaveButton event={event} /></View>
-          {artistsEnabled && event.artists.length ? <View style={styles.section}><Text style={styles.label}>ATLIKĖJAI</Text>{event.artists.map(artist => <Link key={artist.mbid} href={{pathname:'/artists/[id]',params:{id:artist.mbid}}} style={styles.link}>{displayText(artist.name)} →</Link>)}</View> : null}
+          {artistsEnabled && event.artists.length ? <View style={styles.section}><Text role="heading" aria-level={2} style={styles.label}>ATLIKĖJAI</Text>{event.artists.map(artist => <Link key={artist.mbid} href={{pathname:'/artists/[id]',params:{id:artist.mbid}}} style={styles.link}>{displayText(artist.name)} →</Link>)}</View> : null}
         </View>
       </View>
-      {event.description ? <View style={[styles.section, desktop && styles.descriptionDesktop]}><Text style={styles.label}>APIE RENGINĮ</Text><Text selectable style={styles.value}>{event.description}</Text></View> : null}
-      {source ? <View style={[styles.section, desktop && { maxWidth: 760 }]}><Text style={styles.label}>RENGINIO NUORODA</Text><Pressable accessibilityRole="link" accessibilityLabel={`Atidaryti renginio nuorodą: ${source.label}`} onPress={() => { track('source_clicked', eventDetails(event)); void openLink(source.url); }}><Text style={styles.link}>{source.label}</Text></Pressable></View> : null}
+      {event.description ? <View style={[styles.section, desktop && styles.descriptionDesktop]}><Text role="heading" aria-level={2} style={styles.label}>APIE RENGINĮ</Text><Text selectable style={styles.value}>{event.description}</Text></View> : null}
+      {source ? <View style={[styles.section, desktop && { maxWidth: 760 }]}><Text role="heading" aria-level={2} style={styles.label}>RENGINIO NUORODA</Text><Pressable accessibilityRole="link" accessibilityLabel={`Atidaryti renginio nuorodą: ${source.label}`} onPress={() => { track('source_clicked', eventDetails(event)); void openLink(source.url); }}><Text style={styles.link}>{source.label}</Text></Pressable></View> : null}
       <SiteFooter />
     </ScrollView>
   </View>;

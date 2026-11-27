@@ -46,7 +46,7 @@ export function EventCard({ event, width, variant = 'large', hideDate = false }:
       {image}
       <View style={styles.compactBody}>
         {meta || priceChip ? <View style={styles.metaRow}>{meta ? <Text style={styles.date} numberOfLines={1}>{meta}</Text> : null}{priceChip}</View> : null}
-        <Text style={styles.compactTitle} numberOfLines={2}>{title}</Text>
+        <Text role="heading" aria-level={3} style={styles.compactTitle} numberOfLines={2}>{title}</Text>
         {location ? <Text style={styles.compactVenue} numberOfLines={1}>{location}</Text> : null}
       </View>
     </>, styles.compactLink)}
@@ -57,7 +57,7 @@ export function EventCard({ event, width, variant = 'large', hideDate = false }:
     {image}
     <View style={styles.cardBody}>
       {meta || priceChip ? <View style={styles.metaRow}>{meta ? <Text style={styles.date}>{meta}</Text> : null}{priceChip}</View> : null}
-      <Text style={styles.title}>{title}</Text>
+      <Text role="heading" aria-level={3} style={styles.title}>{title}</Text>
       {location ? <Text style={styles.venue}>{location}</Text> : null}
       {artistsEnabled && event.artists.length ? <Text style={styles.artists}>{event.artists.map(a => displayText(a.name)).join(' · ')}</Text> : null}
     </View>

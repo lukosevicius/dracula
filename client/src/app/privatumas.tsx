@@ -1,4 +1,5 @@
 import { Link, Stack } from 'expo-router';
+import { PageTitle } from '../components/page-title';
 import type { ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -7,7 +8,7 @@ const privacyEmail = 'info@dracula.lt';
 const updated = '2026 m. lapkričio 27 d.';
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
-  return <View style={styles.section}><Text accessibilityRole="header" style={styles.subheading}>{title}</Text>{children}</View>;
+  return <View style={styles.section}><Text role="heading" aria-level={2} style={styles.subheading}>{title}</Text>{children}</View>;
 }
 function P({ children }: { children: ReactNode }) { return <Text style={styles.text}>{children}</Text>; }
 function Email() { return <Link href={`mailto:${privacyEmail}`} style={styles.link}>{privacyEmail}</Link>; }
@@ -15,9 +16,10 @@ function Email() { return <Link href={`mailto:${privacyEmail}`} style={styles.li
 export default function PrivacyPage() {
   return <ScrollView style={styles.scroll} contentContainerStyle={styles.page}>
     <Stack.Screen options={{ title: 'Privatumas', headerBackTitle: 'Renginiai' }} />
+    <PageTitle title="Privatumas · Dracula" description="Kaip Dracula tvarko jūsų duomenis: paskyra, išsaugoti renginiai, slapukai ir lankomumo statistika." />
     <Link href="/" style={styles.link}>← Visi renginiai</Link>
     <Text style={styles.eyebrow}>DRACULA</Text>
-    <Text accessibilityRole="header" style={styles.heading}>Privatumas</Text>
+    <Text role="heading" aria-level={1} style={styles.heading}>Privatumas</Text>
     <P>Dracula – gyvos muzikos renginių Vilniuje sąrašas. Renkame tik tiek duomenų, kiek reikia, kad svetainė veiktų, ir jų niekam neparduodame. Klausimus apie privatumą siųskite <Email />.</P>
 
     <Section title="Kai naršote be paskyros">

@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+# Personal pages: empty for search engines.
+Disallow: /issaugoti
+Disallow: /profile
+
+Sitemap: https://dracula.lt/sitemap.xml

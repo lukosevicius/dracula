@@ -3,15 +3,13 @@
  * Serves an event page (/renginiai/some-name-123) as the normal app page with that event's own link preview tags, because
  * Messenger, Facebook and other link previews read the HTML without running the app's JavaScript.
  * Anything unexpected serves the app page unchanged, so visitors are never affected.
- * The build copies this file into dist/ and fills in the API address (scripts/configure-web-output.ts).
+ * It also adds the event's details in the schema.org format search engines read for event listings.
+ * The build copies this file and common.php into dist/ (scripts/configure-web-output.ts).
  */
 declare(strict_types=1);
 
-// A PHP notice printed into the page would break both the app and the preview.
-ini_set('display_errors', '0');
+require __DIR__ . '/common.php';
 
-const API_URL = '%API_URL%';
-const APP_URL = 'https://dracula.lt';
 const CACHE_SECONDS = 600;
 
 header('Content-Type: text/html; charset=utf-8');
@@ -39,21 +37,6 @@ function load_event(string $id): ?array
     return $event;
 }
 
-function fetch(string $url): ?string
-{
-    if (function_exists('curl_init')) {
-        $curl = curl_init($url);
-        curl_setopt_array($curl, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 3, CURLOPT_CONNECTTIMEOUT => 2, CURLOPT_FOLLOWLOCATION => false]);
-        $body = curl_exec($curl);
-        $status = curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
-        return is_string($body) && $status === 200 ? $body : null;
-    }
-    $context = stream_context_create(['http' => ['timeout' => 3, 'follow_location' => 0, 'ignore_errors' => true]]);
-    $body = @file_get_contents($url, false, $context);
-    $headers = function_exists('http_get_last_response_headers') ? (http_get_last_response_headers() ?? []) : ($http_response_header ?? []);
-    return is_string($body) && isset($headers[0]) && str_contains($headers[0], ' 200') ? $body : null;
-}
-
 function with_preview(string $page, array $event): string
 {
     $title = clean((string) $event['title']);
@@ -61,7 +44,7 @@ function with_preview(string $page, array $event): string
     $summary = shorten(clean((string) ($event['description'] ?? '')), 160);
     $description = $details . ($details && $summary ? '. ' : '') . $summary;
     $image = is_string($event['image_url'] ?? null) && str_starts_with($event['image_url'], 'https://') ? $event['image_url'] : APP_URL . '/share.jpg';
-    $url = APP_URL . '/renginiai/' . segment($event);
+    $url = event_url($event);
     $tags = [
         ['name', 'description', $description],
         ['property', 'og:site_name', 'Dracula'],
@@ -74,7 +57,8 @@ function with_preview(string $page, array $event): string
         ['name', 'twitter:card', 'summary_large_image'],
     ];
     $block = implode("\n    ", array_map(fn ($tag) => sprintf('<meta %s="%s" content="%s" />', $tag[0], $tag[1], escape($tag[2])), $tags))
-        . "\n    " . sprintf('<link rel="canonical" href="%s" />', escape($url));
+        . "\n    " . sprintf('<link rel="canonical" href="%s" />', escape($url))
+        . structured_data($event, $url, $image, $summary);
     $page = preg_replace('/<!-- preview:.*?<!-- \/preview -->/s', $block, $page, 1) ?? $page;
     return preg_replace('/<title>.*?<\/title>/s', '<title>' . escape($title . ' · Dracula') . '</title>', $page, 1) ?? $page;
 }
@@ -97,34 +81,11 @@ function when(array $event): string
     return preg_match('/^\d{2}:\d{2}$/', $time) ? $text . ', ' . $time : $text;
 }
 
-/** "some-name-123", built the same way as eventSegment() in src/utils/event-url.ts. */
-function segment(array $event): string
-{
-    $id = (string) (int) $event['id'];
-    $text = clean(preg_replace(['/<[^>]*>/', '/&[a-z]+;/i'], ' ', (string) $event['title']) ?? '');
-    if (class_exists('Normalizer')) {
-        $text = (string) preg_replace('/\p{M}/u', '', (string) Normalizer::normalize($text, Normalizer::FORM_D));
-    }
-    $slug = trim((string) preg_replace('/[^a-z0-9]+/', '-', strtolower($text)), '-');
-    if (strlen($slug) > 60) {
-        $cut = substr($slug, 0, 61);
-        $dash = strrpos($cut, '-');
-        $slug = rtrim($dash ? substr($cut, 0, $dash) : substr($cut, 0, 60), '-');
-    }
-    return $slug === '' ? $id : $slug . '-' . $id;
-}
-
 function place(array $event): string
 {
     $venue = clean((string) ($event['venue'] ?? ''));
     $city = clean((string) ($event['city'] ?? ''));
     return $venue && $city && !str_contains(mb_strtolower($venue), mb_strtolower($city)) ? "$venue, $city" : ($venue ?: $city);
-}
-
-/** Plain text: no markup, decoded entities, single spaces. */
-function clean(string $text): string
-{
-    return trim((string) preg_replace('/\s+/u', ' ', html_entity_decode(strip_tags($text), ENT_QUOTES | ENT_HTML5, 'UTF-8')));
 }
 
 function shorten(string $text, int $length): string
@@ -137,7 +98,66 @@ function shorten(string $text, int $length): string
     return rtrim($space ? mb_substr($cut, 0, $space) : $cut, " ,.;:–-") . '…';
 }
 
-function escape(string $text): string
+/**
+ * The event as schema.org data, which search engines use for event listings (date, place, price, image).
+ * Left out when the event has no date, since a date is required.
+ */
+function structured_data(array $event, string $url, string $image, string $summary): string
 {
-    return htmlspecialchars($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $start = moment((string) ($event['event_date'] ?? ''), first_time($event));
+    if ($start === null) {
+        return '';
+    }
+    $endDate = (string) ($event['event_end_date'] ?? '') ?: (string) ($event['event_date'] ?? '');
+    $end = moment($endDate, (string) ($event['event_end_time'] ?? ''));
+    $venue = clean((string) ($event['venue'] ?? ''));
+    $city = clean((string) ($event['city'] ?? '')) ?: 'Vilnius';
+    $offer = ['@type' => 'Offer', 'url' => is_string($event['ticket_url'] ?? null) && str_starts_with($event['ticket_url'], 'https://') ? $event['ticket_url'] : $url, 'priceCurrency' => 'EUR'];
+    if (($event['price_type'] ?? '') === 'free') {
+        $offer['price'] = 0;
+    }
+    $data = array_filter([
+        '@context' => 'https://schema.org',
+        '@type' => 'MusicEvent',
+        'name' => clean((string) $event['title']),
+        'startDate' => $start,
+        'endDate' => $end !== null && $end > $start ? $end : null,
+        'eventStatus' => 'https://schema.org/EventScheduled',
+        'eventAttendanceMode' => 'https://schema.org/OfflineEventAttendanceMode',
+        'location' => ['@type' => 'Place', 'name' => $venue ?: $city, 'address' => ['@type' => 'PostalAddress', 'addressLocality' => $city, 'addressCountry' => 'LT']],
+        'image' => [$image],
+        'description' => $summary ?: null,
+        'url' => $url,
+        'offers' => $offer,
+    ], fn ($value) => $value !== null);
+    $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP);
+    return $json === false ? '' : "\n    <script type=\"application/ld+json\">" . $json . '</script>';
+}
+
+/** The first start time on the event's first day: a listed showing, or the event's own time. */
+function first_time(array $event): string
+{
+    $date = (string) ($event['event_date'] ?? '');
+    foreach (is_array($event['times'] ?? null) ? $event['times'] : [] as $slot) {
+        if (is_array($slot) && ($slot['date'] ?? '') === $date && preg_match('/^\d{2}:\d{2}$/', (string) ($slot['time'] ?? ''))) {
+            return (string) $slot['time'];
+        }
+    }
+    return (string) ($event['event_time'] ?? '');
+}
+
+/** "2026-12-08T20:00:00+02:00" in Vilnius time, "2026-12-08" without a time, or null without a valid date. */
+function moment(string $date, string $time): ?string
+{
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        return null;
+    }
+    if (!preg_match('/^\d{2}:\d{2}$/', $time)) {
+        return $date;
+    }
+    try {
+        return (new DateTimeImmutable("$date $time", new DateTimeZone('Europe/Vilnius')))->format('c');
+    } catch (Exception) {
+        return $date;
+    }
 }
