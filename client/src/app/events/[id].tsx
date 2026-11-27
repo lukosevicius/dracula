@@ -52,18 +52,12 @@ export default function EventPage() {
   const price = eventPrice(event);
   const mapsUrl = location ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}` : null;
   const pageUrl = process.env.EXPO_OS === 'web' && typeof window !== 'undefined' ? window.location.href : `https://app.dracula.lt/events/${event.id}`;
-  // Tickets are the main action; without a ticket link the organiser's page takes its place.
-  const action = tickets ? { url: event.ticket_url!, label: 'Įsigyti bilietus' } : source ? { url: source.url, label: 'Renginio puslapis' } : null;
 
   async function openLink(url: string) {
     try { await Linking.openURL(url); }
     catch { Alert.alert('Nepavyko atidaryti nuorodos', 'Bandykite dar kartą.'); }
   }
 
-  const actionButton = action ? <Pressable accessibilityRole="link" accessibilityLabel={`${action.label}${price ? `, ${price}` : ''}`} onPress={() => openLink(action.url)} style={[styles.primary, !desktop && styles.primaryWide]}>
-    <Text style={styles.primaryLabel}>{action.label}</Text>
-    {price ? <Text style={styles.primaryPrice}>{price}</Text> : null}
-  </Pressable> : null;
   const poster = image && !imageFailed
     ? <View style={[styles.poster, desktop && styles.posterDesktop]}>
         {/* The blurred copy fills the frame, so the poster itself is shown whole rather than cropped. */}
@@ -85,15 +79,19 @@ export default function EventPage() {
             {when ? <Text style={styles.when}>{when}</Text> : null}
             {showings.map(line => <Text key={line} style={styles.fact}>{line}</Text>)}
             {location && mapsUrl ? <Pressable accessibilityRole="link" accessibilityLabel={`Vieta: ${location}, atidaryti žemėlapyje`} onPress={() => openLink(mapsUrl)} style={styles.placeLink}><Text style={styles.place}>{location}</Text></Pressable> : null}
-            {price && !action ? <Text style={styles.fact}>{price}</Text> : null}
+            {/* Price, with the ticket link kept as quiet as the address link. */}
+            {price || tickets ? <View style={styles.priceRow}>
+              {price ? <Text style={styles.fact}>{price}</Text> : null}
+              {price && tickets ? <Text style={styles.fact}>·</Text> : null}
+              {tickets ? <Pressable accessibilityRole="link" accessibilityLabel={`Bilietai${price ? `, ${price}` : ''}`} onPress={() => openLink(event.ticket_url!)}><Text style={styles.place}>Bilietai</Text></Pressable> : null}
+            </View> : null}
           </View>
-          {actionButton}
           <View style={styles.secondary}><CalendarButton event={event} /><ShareButton title={title} url={pageUrl} /><SaveButton event={event} /></View>
           {artistsEnabled && event.artists.length ? <View style={styles.section}><Text style={styles.label}>ATLIKĖJAI</Text>{event.artists.map(artist => <Link key={artist.mbid} href={{pathname:'/artists/[id]',params:{id:artist.mbid}}} style={styles.link}>{displayText(artist.name)} →</Link>)}</View> : null}
         </View>
       </View>
       {event.description ? <View style={[styles.section, desktop && styles.descriptionDesktop]}><Text style={styles.label}>APIE RENGINĮ</Text><Text selectable style={styles.value}>{event.description}</Text></View> : null}
-      {tickets && source ? <View style={[styles.section, desktop && { maxWidth: 760 }]}><Text style={styles.label}>RENGINIO NUORODA</Text><Pressable accessibilityRole="link" accessibilityLabel={`Atidaryti renginio nuorodą: ${source.label}`} onPress={() => openLink(source.url)}><Text style={styles.link}>{source.label}</Text></Pressable></View> : null}
+      {source ? <View style={[styles.section, desktop && { maxWidth: 760 }]}><Text style={styles.label}>RENGINIO NUORODA</Text><Pressable accessibilityRole="link" accessibilityLabel={`Atidaryti renginio nuorodą: ${source.label}`} onPress={() => openLink(source.url)}><Text style={styles.link}>{source.label}</Text></Pressable></View> : null}
     </ScrollView>
   </View>;
 }
@@ -118,10 +116,7 @@ const styles = StyleSheet.create({
   fact: { color: '#e4dbe3', fontSize: 16, lineHeight: 23 },
   placeLink: { alignSelf: 'flex-start' },
   place: { color: '#e4dbe3', fontSize: 16, lineHeight: 23, textDecorationLine: 'underline', textDecorationColor: '#6d5f70' },
-  primary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16, minHeight: 52, paddingHorizontal: 22, borderRadius: 26, backgroundColor: '#ed7d83', alignSelf: 'flex-start' },
-  primaryWide: { alignSelf: 'stretch' },
-  primaryLabel: { color: '#1b121b', fontSize: 16, fontWeight: '800' },
-  primaryPrice: { color: '#1b121b', fontSize: 15, fontWeight: '600' },
+  priceRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 8 },
   secondary: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 10 },
   descriptionDesktop: { maxWidth: 760, paddingTop: 24, borderTopWidth: 1, borderTopColor: '#413742', gap: 16 },
   section: { gap: 7, paddingTop: 8 },
