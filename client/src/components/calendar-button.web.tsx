@@ -16,6 +16,6 @@ export function CalendarButton({ event }: { event: DisplayEvent }) {
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  return <Pressable accessibilityRole="button" onPress={download} style={styles.button}><Text style={styles.label}>Pridėti į kalendorių</Text></Pressable>;
+  return <Pressable accessibilityRole="button" onPress={download} accessibilityLabel="Pridėti į kalendorių" style={styles.button}><Text style={styles.label}>Į kalendorių</Text></Pressable>;
 }
-const styles = StyleSheet.create({ button: { backgroundColor: '#f0e8e7', borderRadius: 30, paddingHorizontal: 18, paddingVertical: 12 }, label: { color: '#1b121b', fontSize: 15, fontWeight: '700' } });
+const styles = StyleSheet.create({ button: { height: 44, justifyContent: 'center', borderRadius: 22, borderWidth: 1, borderColor: '#554a57', paddingHorizontal: 16 }, label: { color: '#f4e9ed', fontSize: 14, fontWeight: '700' } });
