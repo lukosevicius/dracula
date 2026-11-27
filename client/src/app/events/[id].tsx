@@ -11,6 +11,7 @@ import { vilniusDate } from '../../shared/event-date-filters';
 import { ShareButton } from '../../components/share-button';
 import { fetchEvent, type DisplayEvent } from '../../utils/events-api';
 import { artistsEnabled } from '../../constants/features';
+import { SiteFooter } from '../../components/site-footer';
 
 export default function EventPage() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -92,6 +93,7 @@ export default function EventPage() {
       </View>
       {event.description ? <View style={[styles.section, desktop && styles.descriptionDesktop]}><Text style={styles.label}>APIE RENGINĮ</Text><Text selectable style={styles.value}>{event.description}</Text></View> : null}
       {source ? <View style={[styles.section, desktop && { maxWidth: 760 }]}><Text style={styles.label}>RENGINIO NUORODA</Text><Pressable accessibilityRole="link" accessibilityLabel={`Atidaryti renginio nuorodą: ${source.label}`} onPress={() => openLink(source.url)}><Text style={styles.link}>{source.label}</Text></Pressable></View> : null}
+      <SiteFooter />
     </ScrollView>
   </View>;
 }

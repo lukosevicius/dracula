@@ -35,3 +35,6 @@
 .deleteButton { cursor: pointer; border: 1px solid #d16a76; border-radius: 999px; padding: 11px 20px; background: transparent; color: #ff9fa9; font: inherit; font-weight: 700; }
 .deleteButton:disabled { opacity: .55; cursor: default; }
 .deleteButton:focus-visible { outline: 3px solid #ff8792; outline-offset: 3px; }
+.legal { color: #8f8493; font-size: 14px; text-align: center; margin-top: 18px; }
+.legal a { color: #efb0b8; font-weight: 650; }
+.legal a:focus-visible { outline: 3px solid #ff8792; outline-offset: 3px; }

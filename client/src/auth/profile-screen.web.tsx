@@ -37,5 +37,6 @@ export function ProfileScreen() {
         </div>
       </>}
     </section>
+    <p className={styles.legal}>Kaip tvarkome jūsų duomenis: <Link href="/privatumas">Privatumas</Link></p>
   </main>;
 }
