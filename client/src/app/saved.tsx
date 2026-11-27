@@ -7,7 +7,7 @@ import { vilniusDate } from '../shared/event-date-filters';
 export default function SavedPage() {
   const { events, error, loading } = useSavedEvents();
   const { width } = useWindowDimensions();
-  const columns = width >= 1100 ? 3 : width >= 700 ? 2 : 1;
+  const columns = width >= 1400 ? 4 : width >= 1100 ? 3 : width >= 700 ? 2 : 1;
   const padding = columns > 1 ? 32 : 18;
   const cardWidth = Math.max(0, (Math.min(width, 1264) - padding * 2 - (columns - 1) * 20) / columns);
   const rows = savedEventRows(events, columns, vilniusDate());

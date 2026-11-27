@@ -21,6 +21,8 @@ export function EventCard({ event, width, variant = 'large', hideDate = false }:
   // A pointer hovering a card lifts it slightly, so it reads as clickable on desktop.
   const [hovered, setHovered] = useState(false);
   const compact = variant === 'compact';
+  // Narrower cards (four columns on wide screens) get a shorter image, so a row is not all poster.
+  const imageHeight = width != null ? Math.min(220, Math.max(170, Math.round(width * 0.62))) : 220;
   const title = displayText(event.title);
   const location = eventLocation(event.venue, event.city);
   const source = event.image_url ? { uri: event.image_url } : undefined;
@@ -31,8 +33,8 @@ export function EventCard({ event, width, variant = 'large', hideDate = false }:
   const date = hideDate ? (ends ? `iki ${shortDate(ends)}` : '') : `${shortDate(event.event_date)}${ends ? ` – ${shortDate(ends)}` : ''}`;
   const meta = [date, times].filter(Boolean).join(' · ');
   const image = source && !failed
-    ? <Image source={source} style={compact ? styles.thumb : styles.image} contentFit="cover" onError={() => setFailed(true)} accessibilityLabel={`Renginio ${title} nuotrauka`} />
-    : <View style={[compact ? styles.thumb : styles.image, styles.placeholder]}><Text style={compact ? styles.placeholderSmall : styles.placeholderText}>{compact ? 'D' : 'DRACULA'}</Text></View>;
+    ? <Image source={source} style={compact ? styles.thumb : [styles.image, { height: imageHeight }]} contentFit="cover" onError={() => setFailed(true)} accessibilityLabel={`Renginio ${title} nuotrauka`} />
+    : <View style={[compact ? styles.thumb : [styles.image, { height: imageHeight }], styles.placeholder]}><Text style={compact ? styles.placeholderSmall : styles.placeholderText}>{compact ? 'D' : 'DRACULA'}</Text></View>;
   const priceChip = price ? <View style={[styles.price, price === 'Nemokamai' && styles.free]}><Text style={[styles.priceText, price === 'Nemokamai' && styles.freeText]}>{price}</Text></View> : null;
   const link = (children: React.ReactNode, style?: object) => <Link href={{ pathname: '/events/[id]', params: { id: String(event.id) } }} asChild>
     <Pressable accessibilityRole="link" accessibilityLabel={`${title}, atidaryti renginio puslapį`} onHoverIn={() => setHovered(true)} onHoverOut={() => setHovered(false)} style={style}>{children}</Pressable>

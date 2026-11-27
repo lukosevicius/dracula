@@ -62,7 +62,7 @@ export default function Home() {
   useEffect(() => { if (previousCity.current !== city) { previousCity.current = city; setExpandedDates([]); } }, [city]);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const columns = width >= 1100 ? 3 : width >= 700 ? 2 : 1;
+  const columns = width >= 1400 ? 4 : width >= 1100 ? 3 : width >= 700 ? 2 : 1;
   const desktop = columns > 1;
   const horizontalPadding = desktop ? 32 : 18;
   const contentWidth = Math.max(0, Math.min(width, 1264) - horizontalPadding * 2);
