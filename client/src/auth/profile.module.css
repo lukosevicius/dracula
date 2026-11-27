@@ -27,7 +27,8 @@
 @keyframes googlePulse { from { opacity: .55; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .googlePlaceholder { animation: none; } }
 /* Kept laid out but invisible while Google draws it, so its iframe can load and be measured. */
-.googleButton { position: absolute; inset: 0; display: flex; align-items: center; opacity: 0; pointer-events: none; transition: opacity .18s ease; }
+/* Google's button is a light iframe; in a dark page browsers paint such an iframe on an opaque white box unless its frame is light too. */
+.googleButton { position: absolute; inset: 0; display: flex; align-items: center; opacity: 0; pointer-events: none; transition: opacity .18s ease; color-scheme: light; }
 .googleButtonShown { opacity: 1; pointer-events: auto; }
 .deleteSection { border-top: 1px solid #403541; margin-top: 32px; padding-top: 22px; color: #beb3c1; line-height: 1.6; font-size: 14px; }
 .deleteSection h2 { color: #f9f6fa; font-size: 18px; }
