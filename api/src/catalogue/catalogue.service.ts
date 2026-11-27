@@ -40,6 +40,15 @@ export class CatalogueService {
       times: times.get(row.id) ?? [],
     }));
   }
+  /** Cities with upcoming live events, most events first, counted the way the "upcoming" list counts them. */
+  async cities(today = vilniusToday()): Promise<{ city: string; events: number }[]> {
+    const end = "COALESCE(NULLIF(e.event_end_date,''),e.event_date)";
+    const showing = `(NOT EXISTS (SELECT 1 FROM event_times t WHERE t.event_id=e.id) OR EXISTS (SELECT 1 FROM event_times t WHERE t.event_id=e.id AND t.event_date>=?))`;
+    const [rows] = await this.db.pool.execute<RowDataPacket[]>(`SELECT TRIM(e.city) AS city, COUNT(DISTINCT e.id) AS events ${joins}
+      WHERE ${ready} AND NULLIF(e.event_date,'') IS NOT NULL AND ${end}>=? AND ${showing} AND NULLIF(TRIM(e.city),'') IS NOT NULL
+      GROUP BY TRIM(e.city) ORDER BY events DESC, city`, [today, today, today]);
+    return rows.map(row => ({ city: String(row.city), events: Number(row.events) }));
+  }
   async page({offset, limit, filter, from, to, artists, city}: PageOptions, today = vilniusToday()) {
     const shift = (date: string, days: number) => { const d = new Date(`${date}T00:00:00Z`); d.setUTCDate(d.getUTCDate()+days); return d.toISOString().slice(0,10); };
     const end = "COALESCE(NULLIF(e.event_end_date,''),e.event_date)";

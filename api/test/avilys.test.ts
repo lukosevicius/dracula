@@ -71,7 +71,14 @@ test('Avilys imports are idempotent, reviewable, and preserve edits on refresh',
     assert.equal(refreshed.venue,'Edited');
     assert.equal(db.prepare('SELECT price_text FROM event_prices').get()!.price_text,'5 €');
     assert.match(String(db.prepare('SELECT content_html FROM event_sources').get()!.content_html),/&lt;script&gt;/);
-    await assert.rejects(importAvilysPage(pool,{verify_after_import:false,items:[{...event,city:'Kaunas'}],job}),{status:400});
+    await importAvilysPage(pool,{verify_after_import:false,items:[{...event,id:11,title:'Kaunas concert',city:'KAUNAS'}],job});
+    assert.equal(db.prepare("SELECT e.city FROM events e JOIN event_sources s ON s.event_id=e.id WHERE s.source_id='11'").get()!.city,'Kaunas');
+    await assert.rejects(importAvilysPage(pool,{verify_after_import:false,items:[{...event,id:12,city:'  '}],job}),{status:400});
     await assert.rejects(importAvilysPage(pool,{verify_after_import:false,items:[event],job:{id:1,owner:'b'.repeat(64)}}),{status:409});
   } finally {db.close();}
+});
+
+test('city names are tidied, not guessed', async () => {
+  const { cityName } = await import('../dist/imports/avilys.js');
+  assert.deepEqual(['vilnius', 'KLAIPĖDA', ' Kaunas  ', 'Birštonas', '', 7].map(cityName), ['Vilnius', 'Klaipėda', 'Kaunas', 'Birštonas', '', '']);
 });

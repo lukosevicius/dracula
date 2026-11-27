@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { Request, Response } from 'express';
 import { APP_CONFIG, type AppConfig } from '../config/config.js';
 import { CatalogueService, type DateFilter } from './catalogue.service.js';
+import { clientIp, guessCity } from '../geo/locate.js';
 
 const filters = new Set(['upcoming','today','tomorrow','weekend','custom','all','past','unknown']);
 const artistId = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -41,6 +42,20 @@ export class CatalogueController {
       const after=params.get('after') ?? '0', limit=params.get('limit') ?? '30';
       if (!/^\d{1,12}$/.test(after) || !/^\d{1,3}$/.test(limit) || Number(limit)<1 || Number(limit)>100) return json(res,400,{error:'Invalid pagination'});
       return json(res,200,await this.catalogue.list(Number(after),Number(limit)));
+    } catch (error) { console.error('Request failed:', error); return json(res,500,{error:'Service unavailable'}); }
+  }
+
+  /**
+   * Cities with upcoming events, plus a guess at the visitor's city from their IP address (a local table; the
+   * address is neither stored nor sent anywhere). Not cached, since the guess differs per visitor.
+   */
+  @All('v1/cities')
+  async cities(@Req() req: Request, @Res() res: Response): Promise<void> {
+    if (req.method !== 'GET') return json(res,405,{error:'Method not allowed'});
+    try {
+      const cities = await this.catalogue.cities();
+      const guess = guessCity(clientIp(req.headers['x-forwarded-for'], req.socket.remoteAddress), cities.map(entry => entry.city));
+      return json(res,200,{cities,guess});
     } catch (error) { console.error('Request failed:', error); return json(res,500,{error:'Service unavailable'}); }
   }
 

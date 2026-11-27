@@ -9,7 +9,14 @@ import {publishIfDated} from '../events/auto-publish.js';
 interface AvilysEvent { id: number; title: string; city: string; categories: {id: number}[]; description?: string; startTime?: string; endTime?: string; venueName?: string; ticketUrl?: string; sourceUrl?: string; priceFrom?: number | string; priceTo?: number | string; free?: boolean }
 interface ImportInput { verify_after_import?: boolean; publish_after_verification?: boolean; items: AvilysEvent[]; job: {id: number; owner: string} }
 interface Lease extends RowDataPacket { job_id: number; owner_hash: string; expires_at: number | string }
-const city = 'Vilnius';
+/** "vilnius" or "VILNIUS" → "Vilnius"; a city spelled with its own capitals (e.g. "Birštonas") is kept as it is. Empty when unusable. */
+export function cityName(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const name = value.replace(/\s+/g, ' ').trim().slice(0, 191);
+  if (!name) return '';
+  const plain = name === name.toLocaleLowerCase('lt') || name === name.toLocaleUpperCase('lt');
+  return plain ? name.charAt(0).toLocaleUpperCase('lt') + name.slice(1).toLocaleLowerCase('lt') : name;
+}
 const fail=(status: number,message: string)=>Object.assign(new Error(message),{status});
 const esc=(value: string | undefined)=>String(value||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
 const url=(value: string | undefined)=>{try{const u=new URL(value ?? '');return ['http:','https:'].includes(u.protocol)&&!u.username&&!u.password?u.href:null;}catch{return null;}};
@@ -33,7 +40,7 @@ export async function importAvilysPage(pool: Pool, data: unknown){
   if(!Array.isArray(input?.items)||input.items.length>20||!Number.isSafeInteger(input.job?.id)||typeof input.job?.owner!=='string'||!/^[a-f0-9]{64}$/.test(input.job.owner))throw fail(400,'Invalid Avilys import.');
   const ids=new Set<number>();
   for(const e of input.items){
-    if(!e||!Number.isSafeInteger(e.id)||e.id<1||ids.has(e.id)||typeof e.title!=='string'||!e.title.trim()||e.title.length>2000||typeof e.city!=='string'||e.city.toLowerCase()!==city.toLowerCase()||!Array.isArray(e.categories)||!e.categories.some(c=>c?.id===1)||typeof (e.description??'')!=='string'||(e.description?.length||0)>100000)throw fail(400,'Invalid Avilys event.');
+    if(!e||!Number.isSafeInteger(e.id)||e.id<1||ids.has(e.id)||typeof e.title!=='string'||!e.title.trim()||e.title.length>2000||!cityName(e.city)||!Array.isArray(e.categories)||!e.categories.some(c=>c?.id===1)||typeof (e.description??'')!=='string'||(e.description?.length||0)>100000)throw fail(400,'Invalid Avilys event.');
     ids.add(e.id);
   }
   const conn=await pool.getConnection();let added=0,updated=0,attached=0,skipped=0;
@@ -48,6 +55,7 @@ export async function importAvilysPage(pool: Pool, data: unknown){
     for(const price of legacyPrices)await conn.execute('UPDATE event_prices SET price_type=?,price_text=NULL,checked_at=? WHERE event_id=? AND manual=0',[
       price.price_text==='Avilys: free (verify)'?'free':'paid',now,price.event_id]);
     for(const e of input.items){
+      const city=cityName(e.city);
       const [links]=await conn.execute<RowDataPacket[]>("SELECT * FROM event_sources WHERE source_key='avilys' AND source_id=? FOR UPDATE",[String(e.id)]);
       const sourceUrl=`https://avilys.app/event/${e.id}`, description=esc(e.description), metadata=JSON.stringify(e), original=url(e.sourceUrl);
       if(!links.length){

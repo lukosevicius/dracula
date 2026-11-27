@@ -20,10 +20,11 @@ export default function PrivacyPage() {
     <Link href="/" style={styles.link}>← Visi renginiai</Link>
     <Text style={styles.eyebrow}>DRACULA</Text>
     <Text role="heading" aria-level={1} style={styles.heading}>Privatumas</Text>
-    <P>Dracula – gyvos muzikos renginių Vilniuje sąrašas. Renkame tik tiek duomenų, kiek reikia, kad svetainė veiktų, ir jų niekam neparduodame. Klausimus apie privatumą siųskite <Email />.</P>
+    <P>Dracula – gyvos muzikos renginių Lietuvoje sąrašas. Renkame tik tiek duomenų, kiek reikia, kad svetainė veiktų, ir jų niekam neparduodame. Klausimus apie privatumą siųskite <Email />.</P>
 
     <Section title="Kai naršote be paskyros">
       <P>Renginius galite peržiūrėti neprisijungę – nieko apie jus neprašome. Jei išsaugote renginį neprisijungę, jis lieka tik jūsų naršyklėje ir į mūsų serverį nesiunčiamas.</P>
+      <P>Pirmą kartą apsilankius, pagal jūsų IP adresą apytiksliai nustatome miestą, kad iš karto rodytume jo renginius. Tam naudojame IP adresų duomenų bazę, esančią mūsų pačių serveryje (<Link href="https://db-ip.com" style={styles.link}>IP Geolocation by DB-IP</Link>), todėl IP adreso niekam nesiunčiame ir šiam tikslui nesaugome. Miestą galite bet kada pakeisti – pasirinkimas įsimenamas tik jūsų naršyklėje.</P>
       <P>Kaip ir dauguma svetainių, serveris trumpą laiką saugo techninius užklausų įrašus (pavyzdžiui, IP adresą, laiką ir atidarytą puslapį). Jie reikalingi, kad svetainė veiktų ir būtų apsaugota nuo piktnaudžiavimo.</P>
     </Section>
 

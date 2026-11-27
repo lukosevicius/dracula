@@ -2,8 +2,8 @@ import { useCallback } from 'react';
 import { Platform } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 
-export const siteTitle = 'Dracula – gyvos muzikos renginiai Vilniuje';
-export const siteDescription = 'Gyvos muzikos renginiai Vilniuje: koncertai, festivaliai ir vakarai, kuriuos verta atrasti.';
+export const siteTitle = 'Dracula – gyvos muzikos renginiai Lietuvoje';
+export const siteDescription = 'Gyvos muzikos renginiai Vilniuje, Kaune, Klaipėdoje ir visoje Lietuvoje: koncertai, festivaliai ir vakarai, kuriuos verta atrasti.';
 
 /**
  * Sets the browser tab title and search description for the current page, each time the page comes into focus

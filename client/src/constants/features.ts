@@ -4,8 +4,5 @@
  */
 export const artistsEnabled = false;
 
-/**
- * The city picker is hidden while events come from Vilnius only; the list shows every city meanwhile.
- * Set this to true to show it again, once the API can say which cities have events.
- */
-export const cityPickerEnabled = false;
+/** The city picker next to the logo; set to false to hide it (the list then shows the default city). */
+export const cityPickerEnabled = true;

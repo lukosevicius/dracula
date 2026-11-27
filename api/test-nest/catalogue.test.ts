@@ -90,7 +90,7 @@ test('Nest public endpoints preserve the existing API contract', async () => {
   await symlink(join(directory,'secret.jpg'),join(directory,'link.jpg'));
   const config=loadConfig({...env,IMAGE_DIR:directory});
   const nestCatalogue=new CatalogueService({pool} as unknown as DatabaseService,config);
-  const fixed=(c: CatalogueService)=>({list:(after: number,limit: number)=>c.list(after,limit,'2026-11-15'),page:(options: import('../dist/catalogue/catalogue.service.js').PageOptions)=>c.page(options,'2026-11-15'),get:(id: number)=>c.get(id,'2026-11-15'),hasImage:(name: string)=>c.hasImage(name,'2026-11-15')});
+  const fixed=(c: CatalogueService)=>({list:(after: number,limit: number)=>c.list(after,limit,'2026-11-15'),page:(options: import('../dist/catalogue/catalogue.service.js').PageOptions)=>c.page(options,'2026-11-15'),get:(id: number)=>c.get(id,'2026-11-15'),cities:()=>c.cities('2026-11-15'),hasImage:(name: string)=>c.hasImage(name,'2026-11-15')});
   const module=await Test.createTestingModule({imports:[AppModule]}).overrideProvider(APP_CONFIG).useValue(config)
     .overrideProvider(DatabaseService).useValue({pool}).overrideProvider(CatalogueService).useValue(fixed(nestCatalogue)).compile();
   const app=module.createNestApplication({logger:false});
@@ -130,5 +130,12 @@ test('Nest public endpoints preserve the existing API contract', async () => {
     const palanga=await (await fetch(current+'/v1/events?city=Palanga')).json();
     assert.deepEqual(palanga,{items:[],total:0,nextOffset:null});
     assert.equal((await fetch(current+'/v1/events?city=')).status,400);
+    // Cities list: only upcoming, dated, live events count; spaces around a name do not split a city.
+    db.exec(`INSERT INTO events(id,title,event_date,city,review_status,publication_status) VALUES
+        (7,'Future Kaunas','2099-01-02','Kaunas','music','live'),(8,'Future Kaunas 2','2099-01-03',' Kaunas ','music','live'),
+        (9,'Future Vilnius','2099-01-02','Vilnius','music','live'),(10,'Draft','2099-01-02','Šiauliai','music','draft');
+      INSERT INTO event_sources(id,event_id,source_key,source_id,source_url,about_url,content_html,source_data_json) SELECT id,id,'avilys',CAST(id AS TEXT),'https://example.com',NULL,'',NULL FROM events WHERE id BETWEEN 7 AND 10;`);
+    assert.deepEqual(await (await fetch(current+'/v1/cities')).json(),{cities:[{city:'Kaunas',events:3},{city:'Vilnius',events:2},{city:'Klaipėda',events:1}],guess:null});
+    assert.equal((await fetch(current+'/v1/cities',{method:'POST'})).status,405);
   } finally { await app.close(); db.close(); await rm(directory,{recursive:true,force:true}); }
 });

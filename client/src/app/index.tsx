@@ -9,7 +9,7 @@ import { endedToday, eventGroupLabel, eventsWord, groupEventRows, vilniusTime, t
 import type { DisplayEvent } from '../utils/events-api';
 import { selectedDates, vilniusDate } from '../shared/event-date-filters';
 import { artistsEnabled } from '../constants/features';
-import { useCity } from '../components/city-picker';
+import { allCities, useCity } from '../components/city-picker';
 import { track } from '../utils/analytics';
 import { PageTitle, siteDescription, siteTitle } from '../components/page-title';
 
@@ -81,9 +81,11 @@ export default function Home() {
   const contentWidth = Math.max(0, Math.min(width, 1264) - horizontalPadding * 2);
   const cardWidth = desktop ? (contentWidth - (columns - 1) * 20) / columns : undefined;
   const error = filter === 'custom' && (!validDate(from) || (to !== '' && !validDate(to))) ? 'Įveskite galiojančią datą formatu MMMM-MM-DD.' : filter === 'custom' && to && to < from ? 'Pabaigos data turi būti ne ankstesnė nei pradžios data.' : '';
-  const remote = useEvents(filter, from, to, Boolean(error), debouncedSearch, freeOnly, city === 'Visi' ? '' : city);
+  // On a first visit the city is decided a moment after start (see CityProvider); wait rather than load all of Lithuania first.
+  const waitingForCity = city === null;
+  const remote = useEvents(filter, from, to, Boolean(error) || waitingForCity, debouncedSearch, freeOnly, !city || city === allCities ? '' : city);
   const searching = search.trim() !== debouncedSearch;
-  const emptyHint = city !== 'Visi' ? 'Pabandykite pasirinkti kitą miestą arba pakeisti filtrus.'
+  const emptyHint = city && city !== allCities ? 'Pabandykite pasirinkti kitą miestą arba pakeisti filtrus.'
     : debouncedSearch || freeOnly ? 'Pabandykite pakeisti paiešką arba filtrus.' : 'Išbandykite kitą datų filtrą.';
   const today = vilniusDate();
   // Today's finished events drop off so "Šiandien" shows what is still ahead; re-checked every minute.
@@ -112,9 +114,9 @@ export default function Home() {
     </View>
     {filtersOpen ? <View style={[styles.filterPanel, desktop && { maxWidth: 600 }]}><Text style={styles.filterPanelTitle}>Filtrai</Text><Pressable accessibilityRole="checkbox" accessibilityState={{ checked: freeOnly }} onPress={() => { setExpandedDates([]); setFreeOnly(value => !value); }} style={styles.filterOption}><View style={[styles.checkbox, freeOnly && styles.checkboxChecked]}>{freeOnly ? <Text style={styles.checkmark}>✓</Text> : null}</View><View style={{ flex: 1 }}><Text style={styles.optionTitle}>Nemokami renginiai</Text><Text style={styles.optionDescription}>Rodyti tik nemokamus renginius</Text></View></Pressable></View> : null}
     {filter === 'custom' ? <View style={[styles.dateInputs, desktop && { maxWidth: 520 }]}><View style={styles.inputGroup}><Text style={styles.label}>Nuo</Text><TextInput value={from} onChangeText={setFrom} placeholder="MMMM-MM-DD" placeholderTextColor="#8c8494" accessibilityLabel="Data nuo, metai mėnuo diena" style={styles.input} /></View><View style={styles.inputGroup}><Text style={styles.label}>Iki (nebūtina)</Text><TextInput value={to} onChangeText={setTo} placeholder="MMMM-MM-DD" placeholderTextColor="#8c8494" accessibilityLabel="Data iki, metai mėnuo diena" style={styles.input} /></View></View> : null}
-    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : <Text style={styles.count}>{!searching && !remote.transitioning && !remote.error && (!remote.loading || remote.items.length) ? eventsWord(total) : '\u00a0'}</Text>}
+    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : <Text style={styles.count}>{!waitingForCity && !searching && !remote.transitioning && !remote.error && (!remote.loading || remote.items.length) ? eventsWord(total) : '\u00a0'}</Text>}
   </View>;
-  const emptyView = !error && !searching && !remote.loading && !remote.error && !rows.length ? <View style={styles.empty}><Text style={styles.emptyTitle}>{allEnded ? 'Šiandienos renginiai jau baigėsi' : 'Renginių neradome'}</Text><Text style={styles.venue}>{allEnded ? 'Pažiūrėkite, kas vyks rytoj.' : emptyHint}</Text></View> : null;
+  const emptyView = !waitingForCity && !error && !searching && !remote.loading && !remote.error && !rows.length ? <View style={styles.empty}><Text style={styles.emptyTitle}>{allEnded ? 'Šiandienos renginiai jau baigėsi' : 'Renginių neradome'}</Text><Text style={styles.venue}>{allEnded ? 'Pažiūrėkite, kas vyks rytoj.' : emptyHint}</Text></View> : null;
   // The headline (desktop only) and the filter bar are list items, so the bar's sticky index is unambiguous.
   const data: ListItem[] = [{ type: 'headline', key: 'headline' }, { type: 'filters', key: 'filters' }, ...rows];
   return <><PageTitle title={siteTitle} description={siteDescription} /><FlatList ref={list} key={columns} data={data} stickyHeaderIndices={[1]} onLayout={(event: LayoutChangeEvent) => { viewportHeight.current=event.nativeEvent.layout.height; restoreScroll(); }} onContentSizeChange={(_width,height) => { contentHeight.current=height; restoreScroll(); }} onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) => { if (!focused.current || restoreOffset.current) return; scrollOffset.current=event.nativeEvent.contentOffset.y; if(homeState) homeState.offset=scrollOffset.current; }} scrollEventThrottle={100} keyExtractor={item => item.key} renderItem={({ item }) => {
