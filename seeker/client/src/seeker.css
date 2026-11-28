@@ -641,3 +641,11 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
 .unlinked-event > div > small { display: block; }
 .unlinked-search { margin-top: 8px; display: grid; gap: 6px; }
 .unlinked-search input { max-width: 360px; font: inherit; }
+
+.log-toggle { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; justify-content: space-between; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.log-toggle:hover strong { text-decoration: underline; }
+.log-toggle:focus-visible { outline: 2px solid var(--accent, #f07a9a); outline-offset: 2px; border-radius: 4px; }
+.added-events { margin-top: 6px; }
+.added-events ul { margin: 4px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; max-height: 420px; overflow-y: auto; }
+.added-events li { display: grid; gap: 1px; padding: 4px 0; border-top: 1px solid var(--border); }
+.added-events li a { font-size: 13px; }

@@ -9,7 +9,7 @@ import { claimImport, identity, importRequest, listAgents, manageAgent, queueImp
 import { fail, type Snapshot } from './history.js';
 import { listProviders, manageProvider } from './providers.js';
 import { addArtistToEvent, artistReview, decideNewArtist, eventsWithoutArtists, extractArtists, fillNewNameCountries } from '../artists/extraction.js';
-import { listScheduledRuns, saveScheduledRun } from '../imports/scheduled-runs.js';
+import { addedEvents, listScheduledRuns, saveScheduledRun } from '../imports/scheduled-runs.js';
 import { listRules, updateRules } from './rule-settings.js';
 import { verificationUsage } from './usage.js';
 import { vilniusToday } from '../catalogue/catalogue.service.js';
@@ -83,6 +83,10 @@ export class SeekerController {
         if (path === '/scheduled-runs') {
           require('events:read');
           return send(200, { runs: await listScheduledRuns(pool) });
+        }
+        if (path === '/imports/added') {
+          require('events:read');
+          return send(200, await addedEvents(pool, url.searchParams));
         }
         if (path === '/artists/unlinked') {
           require('events:read');
