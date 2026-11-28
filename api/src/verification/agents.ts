@@ -41,6 +41,7 @@ export async function queueImport(pool: Pool, body: Snapshot, actor: string, may
   const integer = (value: unknown, max: number) => Number.isInteger(value) && Number(value) >= 1 && Number(value) <= max;
   if (typeof request_key !== 'string' || !/^[\w.-]{1,100}$/.test(request_key) || typeof include_images !== 'boolean' || typeof verify_after_import !== 'boolean' ||
       (source === 'avilys' ? action !== 'import' || !integer(limit, 200) || !integer(start_page, 10_000) :
+        source === 'kakava' ? action !== 'import' || !integer(limit, 1000) :
         source !== 'vilnius-events' || !['next','start','sample','refresh'].includes(String(action)) || !integer(pages, 10))) throw fail(400, 'Invalid event import options or request key.');
   const options = { source, action, limit, start_page, pages, include_images, verify_after_import, publish_after_verification: mayPublish };
   return transaction(pool, async conn => {

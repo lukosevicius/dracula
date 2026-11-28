@@ -1,6 +1,6 @@
 name: Scheduled import
 
-# Imports Avilys into the production database and merges confident duplicates.
+# Imports Avilys and Kakava into the production database and merges confident duplicates.
 # Vilnius Events refuses requests from GitHub's servers (HTTP 403), so its import runs from a Mac instead:
 # see seeker/scripts/vn-import.sh. Runs once a day at 03:00 UTC: 05:00 in Vilnius during winter, 06:00 in summer.
 on:
@@ -37,4 +37,4 @@ jobs:
         env:
           CENTRAL_API_URL: ${{ vars.CENTRAL_API_URL || 'https://api.dracula.lt' }}
           CENTRAL_API_TOKEN: ${{ secrets.CENTRAL_API_TOKEN }}
-        run: node dist/scheduled-import.js daily --sources=avilys
+        run: node dist/scheduled-import.js daily --sources=avilys,kakava

@@ -41,9 +41,9 @@ export function createJobs(pool: Pool) {
   return {
     async list() { const [rows]=await pool.execute<RowDataPacket[]>('SELECT * FROM jobs ORDER BY id DESC LIMIT 20',[]);return rows; },
     async start(action: unknown, kind: unknown='vilnius-events', limit: unknown=0, request?: unknown) {
-      if(typeof kind!=='string'||!['vilnius-events','avilys','musicbrainz','ai-evaluation'].includes(kind))throw fail(400,'Invalid job source.');
+      if(typeof kind!=='string'||!['vilnius-events','avilys','kakava','musicbrainz','ai-evaluation'].includes(kind))throw fail(400,'Invalid job source.');
       const source=kind==='musicbrainz'?artistSource:eventSource;
-      if(typeof action!=='string'||(kind==='musicbrainz'?(!['next','start','all'].includes(action)||(action!=='all'&&(typeof limit!=='number'||!Number.isInteger(limit)||limit<1||limit>1000))):kind==='ai-evaluation'?action!=='analyze':kind==='avilys'?(action!=='import'||typeof limit!=='number'||!Number.isInteger(limit)||limit<1||limit>200):!['next','start','sample','refresh','download-images','details','refresh-details','details-event','refresh-all-details','refresh-upcoming-details'].includes(action)))throw fail(400,'Invalid job action.');
+      if(typeof action!=='string'||(kind==='musicbrainz'?(!['next','start','all'].includes(action)||(action!=='all'&&(typeof limit!=='number'||!Number.isInteger(limit)||limit<1||limit>1000))):kind==='ai-evaluation'?action!=='analyze':kind==='avilys'?(action!=='import'||typeof limit!=='number'||!Number.isInteger(limit)||limit<1||limit>200):kind==='kakava'?(action!=='import'||typeof limit!=='number'||!Number.isInteger(limit)||limit<1||limit>1000):!['next','start','sample','refresh','download-images','details','refresh-details','details-event','refresh-all-details','refresh-upcoming-details'].includes(action)))throw fail(400,'Invalid job action.');
       return locked(source,async conn=>{
         const [existing]=await conn.execute<Lease[]>('SELECT * FROM job_leases WHERE source_key=? FOR UPDATE',[source]);
         const now=Date.now(),date=new Date(now).toISOString();

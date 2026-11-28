@@ -5,7 +5,7 @@ import { duplicateTitle, isAddress, listDuplicates, venuesMatch } from './duplic
 
 type Value = string | number | null;
 const blank = (value: unknown) => value == null || (typeof value === 'string' && !value.trim());
-const sourceNames: Record<string, string> = { 'vilnius-events': 'Vilnius Events', avilys: 'Avilys' };
+const sourceNames: Record<string, string> = { 'vilnius-events': 'Vilnius Events', avilys: 'Avilys', kakava: 'Kakava' };
 const priceLabels: Record<string, string> = { free: 'Free', paid: 'Paid', unknown: 'Unknown' };
 const classificationLabels: Record<string, string> = eventTypeLabels;
 

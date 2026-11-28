@@ -45,7 +45,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Examples are avilys and vilnius-events."
+            "description": "Examples are avilys, kakava and vilnius-events."
           },
           {
             "name": "search",
@@ -440,7 +440,7 @@
     "/imports": {
       "post": {
         "operationId": "start_import",
-        "description": "Queue an event source import. Use action=import for Avilys. Vilnius Events supports next, start, sample, and refresh. Optional post-import verification defaults to on and requires verification:run. Credentials with imports:run alone must set verify_after_import=false.",
+        "description": "Queue an event source import. Use action=import for Avilys and Kakava (Kakava takes limit up to 1000). Vilnius Events supports next, start, sample, and refresh. Optional post-import verification defaults to on and requires verification:run. Credentials with imports:run alone must set verify_after_import=false.",
         "x-seeker-scope": "imports:run",
         "requestBody": {
           "required": true,
@@ -459,6 +459,7 @@
                     "type": "string",
                     "enum": [
                       "avilys",
+                      "kakava",
                       "vilnius-events"
                     ]
                   },
@@ -475,7 +476,7 @@
                   "limit": {
                     "type": "integer",
                     "minimum": 1,
-                    "maximum": 200
+                    "maximum": 1000
                   },
                   "start_page": {
                     "type": "integer",

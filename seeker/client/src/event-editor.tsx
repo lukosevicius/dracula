@@ -235,7 +235,7 @@ export default function EventEditor({ row, onSaved, onRefresh, refreshing }: {
             <Description html={info.event.content_html} sourceUrl={row.source_url} />
             {image && (
               <figure className="event-image">
-                <img src={image.source_key === 'avilys' ? `/api/avilys-images/${encodeURIComponent(image.source_id || row.source_id)}` : `/api/vilnius-images/${image.media_id}`} alt="" loading="lazy" />
+                <img src={image.source_key === 'avilys' || image.source_key === 'kakava' ? `/api/${image.source_key}-images/${encodeURIComponent(image.source_id || row.source_id)}` : `/api/vilnius-images/${image.media_id}`} alt="" loading="lazy" />
                 <figcaption>Downloaded source image{image.width && image.height ? ` · ${image.width} × ${image.height}` : ''} · <a href={safeUrl(image.source_url)} target="_blank" rel="noreferrer">Open original</a></figcaption>
               </figure>
             )}

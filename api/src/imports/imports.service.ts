@@ -1,8 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { importVilniusPage } from './vilnius.js';
 import { importAvilysPage } from './avilys.js';
+import { importKakavaPage } from './kakava.js';
 import { importMusicBrainzPage, reserveMusicBrainz } from './musicbrainz.js';
-import { saveImage, saveAvilysImage } from './images.js';
+import { saveImage, saveSourceImage, type ImageSourceKey } from './images.js';
 import { enrichEvent } from './enrich.js';
 import { createJobs } from '../jobs/jobs.js';
 import { createAi } from '../admin/ai.js';
@@ -24,9 +25,10 @@ export class ImportsService {
   }
   vilnius(input: Input): Promise<Result> { return importVilniusPage(this.db.pool,input); }
   avilys(input: Input): Promise<Result> { return importAvilysPage(this.db.pool,input); }
+  kakava(input: Input): Promise<Result> { return importKakavaPage(this.db.pool,input); }
   musicbrainz(input: Input): Promise<Result> { return importMusicBrainzPage(this.db.pool,input); }
   reserveMusicBrainz(): Promise<Result> { return reserveMusicBrainz(this.db.pool); }
   saveImage(input: Input): Promise<Result> { return saveImage(this.db.pool,this.config.imageDir,input); }
-  saveAvilysImage(input: Input): Promise<Result> { return saveAvilysImage(this.db.pool,this.config.imageDir,input); }
+  saveSourceImage(key: ImageSourceKey, input: Input): Promise<Result> { return saveSourceImage(this.db.pool,this.config.imageDir,input,key); }
   enrich(id: number,input: Input): Promise<void> { return enrichEvent(this.db.pool,id,input); }
 }

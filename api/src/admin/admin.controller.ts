@@ -59,38 +59,39 @@ export class AdminController {
         res.writeHead(200,{'Content-Type':types[ext],'Content-Length':info.size,'Cache-Control':'private, no-store'});
         const stream=createReadStream(file);stream.on('error',()=>res.destroy());stream.pipe(res);return;
       }
-      const avilysImageInfo=/^\/v1\/admin\/event-images\/avilys\/(\d{1,12})\/info$/.exec(path);
-      if(req.method==='GET' && avilysImageInfo){const record=await admin.getAvilysImage(Number(avilysImageInfo[1]));if(!record||!/^[A-Za-z0-9._-]+\.(jpg|png|webp|gif)$/.test(record.local_name))return json(res,200,{image:null});const info=await lstat(join(this.config.imageDir,record.local_name)).catch(()=>null);return json(res,200,{image:info?.isFile()?{source_url:record.source_url,width:record.width,height:record.height}:null});}
-      const avilysImage=/^\/v1\/admin\/event-images\/avilys\/(\d{1,12})$/.exec(path);
-      if(req.method==='GET' && avilysImage){const record=await admin.getAvilysImage(Number(avilysImage[1]));if(!record||!/^[A-Za-z0-9._-]+\.(jpg|png|webp|gif)$/.test(record.local_name))return json(res,404,{error:'Not found'});const ext=record.local_name.slice(record.local_name.lastIndexOf('.'));if(record.mime_type!==types[ext])return json(res,404,{error:'Not found'});const file=join(this.config.imageDir,record.local_name),info=await lstat(file).catch(()=>null);if(!info?.isFile())return json(res,404,{error:'Not found'});res.writeHead(200,{'Content-Type':types[ext],'Content-Length':info.size,'Cache-Control':'private, no-store'});const stream=createReadStream(file);stream.on('error',()=>res.destroy());stream.pipe(res);return;}
+      const avilysImageInfo=/^\/v1\/admin\/event-images\/(avilys|kakava)\/(\d{1,12})\/info$/.exec(path);
+      if(req.method==='GET' && avilysImageInfo){const record=await admin.getSourceImage(avilysImageInfo[1],Number(avilysImageInfo[2]));if(!record||!/^[A-Za-z0-9._-]+\.(jpg|png|webp|gif)$/.test(record.local_name))return json(res,200,{image:null});const info=await lstat(join(this.config.imageDir,record.local_name)).catch(()=>null);return json(res,200,{image:info?.isFile()?{source_url:record.source_url,width:record.width,height:record.height}:null});}
+      const avilysImage=/^\/v1\/admin\/event-images\/(avilys|kakava)\/(\d{1,12})$/.exec(path);
+      if(req.method==='GET' && avilysImage){const record=await admin.getSourceImage(avilysImage[1],Number(avilysImage[2]));if(!record||!/^[A-Za-z0-9._-]+\.(jpg|png|webp|gif)$/.test(record.local_name))return json(res,404,{error:'Not found'});const ext=record.local_name.slice(record.local_name.lastIndexOf('.'));if(record.mime_type!==types[ext])return json(res,404,{error:'Not found'});const file=join(this.config.imageDir,record.local_name),info=await lstat(file).catch(()=>null);if(!info?.isFile())return json(res,404,{error:'Not found'});res.writeHead(200,{'Content-Type':types[ext],'Content-Length':info.size,'Cache-Control':'private, no-store'});const stream=createReadStream(file);stream.on('error',()=>res.destroy());stream.pipe(res);return;}
       if(req.method==='GET' && path==='/v1/admin/events') return json(res,200,await admin.listEvents(url.searchParams));
       const event=/^\/v1\/admin\/events\/(\d{1,12})$/.exec(path);
       if(req.method==='GET' && event && Number(event[1])>0) return json(res,200,await admin.getEvent(Number(event[1])));
       if(req.method!=='POST')return json(res,405,{error:'Method not allowed'});
-      const isVilnius=path==='/v1/admin/imports/vilnius-events/page', isAvilys=path==='/v1/admin/imports/avilys/page';
+      const isVilnius=path==='/v1/admin/imports/vilnius-events/page', isAvilys=path==='/v1/admin/imports/avilys/page', isKakava=path==='/v1/admin/imports/kakava/page';
       const isReservation=path==='/v1/admin/imports/vilnius-events/reserve-request';
       const isArtistImport=path==='/v1/admin/imports/musicbrainz/page', isArtistReservation=path==='/v1/admin/imports/musicbrainz/reserve-request';
       const isAiSave=path==='/v1/admin/ai/results', aiDecision=/^\/v1\/admin\/ai\/results\/(\d{1,12})\/decision$/.exec(path);
       const isSeekerSave=path==='/v1/admin/seeker/saved-events',isSeekerSettings=path==='/v1/admin/seeker/settings';
       const isJobStart=path==='/v1/admin/jobs/start', isImageUpload=path==='/v1/admin/images';
-      const isAvilysImageUpload=path==='/v1/admin/event-images/avilys';
+      const sourceImageUpload=/^\/v1\/admin\/event-images\/(avilys|kakava)$/.exec(path)?.[1] as 'avilys'|'kakava'|undefined, isAvilysImageUpload=!!sourceImageUpload;
       const jobUpdate=/^\/v1\/admin\/jobs\/(\d{1,12})$/.exec(path);
       const route=/^\/v1\/admin\/events\/(\d{1,12})\/(review|details|artist|price|interest-score|confirm-assistant-review|enrich)$/.exec(path);
-      if (!isVilnius && !isAvilys && !isReservation && !isArtistImport && !isArtistReservation && !isAiSave && !aiDecision && !isJobStart && !isImageUpload && !isAvilysImageUpload && !isSeekerSave && !isSeekerSettings && !jobUpdate && (!route || !Number.isSafeInteger(Number(route[1])) || Number(route[1])<1)) return json(res,404,{error:'Not found'});
+      if (!isVilnius && !isAvilys && !isKakava && !isReservation && !isArtistImport && !isArtistReservation && !isAiSave && !aiDecision && !isJobStart && !isImageUpload && !isAvilysImageUpload && !isSeekerSave && !isSeekerSettings && !jobUpdate && (!route || !Number.isSafeInteger(Number(route[1])) || Number(route[1])<1)) return json(res,404,{error:'Not found'});
       if(!/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || ''))return json(res,415,{error:'Expected JSON'});
-      const max=isImageUpload||isAvilysImageUpload?17*1024*1024:isVilnius||isAvilys||isArtistImport?6*1024*1024:isAiSave||route?.[2]==='enrich'?512*1024:isSeekerSettings?65536:isSeekerSave?8192:8192;
+      const max=isImageUpload||isAvilysImageUpload?17*1024*1024:isVilnius||isAvilys||isKakava||isArtistImport?6*1024*1024:isAiSave||route?.[2]==='enrich'?512*1024:isSeekerSettings?65536:isSeekerSave?8192:8192;
       let size=0;const chunks: Buffer[]=[];
       for await (const chunk of req) { const bytes=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);size+=bytes.length;if(size>max)return json(res,413,{error:'Request too large'});chunks.push(bytes); }
       let body: Record<string, unknown>;
       try { body=JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string,unknown>; } catch { return json(res,400,{error:'Invalid JSON'}); }
       if(isAvilys)return json(res,200,{ok:true,...await this.imports.avilys(body)});
+      if(isKakava)return json(res,200,{ok:true,...await this.imports.kakava(body)});
       if(isVilnius)return json(res,200,{ok:true,...await this.imports.vilnius(body)});
       if(isArtistImport)return json(res,200,{ok:true,...await this.imports.musicbrainz(body)});
       if(isReservation)return json(res,200,{ok:true,...await admin.reserveVilniusRequest()});
       if(isArtistReservation)return json(res,200,{ok:true,...await this.imports.reserveMusicBrainz()});
       if(isJobStart)return json(res,200,{ok:true,...await this.imports.jobs.start(body.action,body.source,body.limit,body.import_request)});
       if(isImageUpload)return json(res,200,{ok:true,...await this.imports.saveImage(body)});
-      if(isAvilysImageUpload)return json(res,200,{ok:true,...await this.imports.saveAvilysImage(body)});
+      if(sourceImageUpload)return json(res,200,{ok:true,...await this.imports.saveSourceImage(sourceImageUpload,body)});
       if(isSeekerSave){await admin.saveEvents(body.ids as number[]);return json(res,200,{ok:true});}
       if(isSeekerSettings){await admin.saveSeekerSetting(body.key as string,body.value);return json(res,200,{ok:true});}
       if(isAiSave){await this.imports.ai.save(body);return json(res,200,{ok:true});}

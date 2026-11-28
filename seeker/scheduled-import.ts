@@ -7,12 +7,12 @@ import { createCentralJobs } from './central-jobs.js';
 
 /**
  * Runs the source imports without the Seeker UI:
- *   node dist/scheduled-import.js daily [--sources=vilnius-events,avilys]
- *   node dist/scheduled-import.js quick [--sources=vilnius-events,avilys]
- *   node dist/scheduled-import.js full  [--sources=vilnius-events,avilys]   (one-off catch-up: ten VN list pages)
+ *   node dist/scheduled-import.js daily [--sources=vilnius-events,avilys,kakava]
+ *   node dist/scheduled-import.js quick [--sources=vilnius-events,avilys,kakava]
+ *   node dist/scheduled-import.js full  [--sources=vilnius-events,avilys,kakava]   (one-off catch-up: ten VN list pages)
  * daily reads the two newest Vilnius Events list pages (100 listings), quick only the newest. VN lists new events
  * first, so older pages hold only past listings; upcoming ones are re-checked by the details step every run. Both refresh upcoming VN details, handle
- * removed VN listings, import Avilys and merge confident duplicates. Vilnius Events refuses GitHub's servers, so
+ * removed VN listings, import Avilys and Kakava and merge confident duplicates. Vilnius Events refuses GitHub's servers, so
  * the GitHub workflow runs Avilys and a Mac schedule runs Vilnius Events (scripts/vn-import.sh).
  * Jobs use the same leases as Seeker, so a run never overlaps a job started from Seeker.
  */
@@ -27,9 +27,9 @@ for (const name of ['.env.central', '.env']) {
 
 const mode = process.argv[2];
 const sourceArg = process.argv.slice(3).find(arg => arg.startsWith('--sources='))?.slice('--sources='.length);
-const sources = new Set((sourceArg ?? 'vilnius-events,avilys').split(',').filter(Boolean));
-if ((mode !== 'daily' && mode !== 'quick' && mode !== 'full') || !sources.size || [...sources].some(source => source !== 'vilnius-events' && source !== 'avilys')) {
-  console.error('Usage: node dist/scheduled-import.js daily|quick|full [--sources=vilnius-events,avilys]');
+const sources = new Set((sourceArg ?? 'vilnius-events,avilys,kakava').split(',').filter(Boolean));
+if ((mode !== 'daily' && mode !== 'quick' && mode !== 'full') || !sources.size || [...sources].some(source => !['vilnius-events', 'avilys', 'kakava'].includes(source))) {
+  console.error('Usage: node dist/scheduled-import.js daily|quick|full [--sources=vilnius-events,avilys,kakava]');
   process.exit(2);
 }
 const { CENTRAL_API_URL, CENTRAL_API_TOKEN } = process.env;
@@ -100,6 +100,9 @@ if (sources.has('avilys')) await step('Avilys', async () => {
   }
   return describe(totals);
 });
+
+// Kakava sends every show in one listing request, so one job covers the whole source.
+if (sources.has('kakava')) await step('Kakava', async () => describe(await runJob({ source: 'kakava', action: 'import', limit: 1000, verify_after_import: false })));
 
 // Removals are only judged when Vilnius Events answered normally in this run.
 if (sources.has('vilnius-events')) {

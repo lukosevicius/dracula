@@ -1,7 +1,7 @@
 import type { Pool, RowDataPacket } from 'mysql2/promise';
 import { fail, history, lockEvent, setPublication, transaction } from '../verification/history.js';
 
-const sourceNames: Record<string, string> = { 'vilnius-events': 'Vilnius Events', avilys: 'Avilys' };
+const sourceNames: Record<string, string> = { 'vilnius-events': 'Vilnius Events', avilys: 'Avilys', kakava: 'Kakava' };
 
 /**
  * Removes one source listing, for example one the source has taken down. An event with no other listing is deleted

@@ -7,7 +7,7 @@ import { useSavedEvents } from './saved-events';
 import EventItem from './event-item';
 import { useEventRowEdits } from './event-row-edits';
 import EventEditor from './event-editor';
-import { AvilysImport, VilniusImport, VilniusNotes } from './imports';
+import { AvilysImport, KakavaImport, VilniusImport, VilniusNotes } from './imports';
 import { Disclosure, Feedback, Icon, Metrics, PageHeading, Pagination, PanelHeading, SearchField } from './workspace';
 
 const pageSize = 25;
@@ -48,9 +48,9 @@ function dateRange(filter: DateFilter, from: string, to: string, today: string) 
   return null;
 }
 
-export default function EventsPage({ avilys = false, all = false, queue }: { avilys?: boolean; all?: boolean; queue?: 'attention' | 'not-music' }) {
-  const name = queue === 'attention' ? 'Needs attention' : queue === 'not-music' ? 'Other events' : all ? 'All events' : avilys ? 'Avilys' : 'Vilnius Events';
-  const source = all ? 'all' : avilys ? 'avilys' : 'vilnius-events';
+export default function EventsPage({ avilys = false, kakava = false, all = false, queue }: { avilys?: boolean; kakava?: boolean; all?: boolean; queue?: 'attention' | 'not-music' }) {
+  const name = queue === 'attention' ? 'Needs attention' : queue === 'not-music' ? 'Other events' : all ? 'All events' : avilys ? 'Avilys' : kakava ? 'Kakava' : 'Vilnius Events';
+  const source = all ? 'all' : avilys ? 'avilys' : kakava ? 'kakava' : 'vilnius-events';
   const defaultSource = source;
   const [data, setData] = useState<EventPage | null>(null);
   const [query, setQuery] = useState('');
@@ -150,9 +150,9 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
 
   const verificationJobs = useVerificationJobs(() => { void loadCurrent.current(true); });
   const { jobs, start, startingSource } = useJobs(finished => {
-    if (finished.some(job => ['avilys', 'vilnius-events'].includes(job.source))) void load();
+    if (finished.some(job => ['avilys', 'kakava', 'vilnius-events'].includes(job.source))) void load();
   });
-  const busy = startingSource !== null || jobs.some(job => ['vilnius-events', 'avilys'].includes(job.source) && isActive(job));
+  const busy = startingSource !== null || jobs.some(job => ['vilnius-events', 'avilys', 'kakava'].includes(job.source) && isActive(job));
 
   function updateFilters<T>(setter: (value: T) => void, value: T) {
     setLoading(true);
@@ -319,7 +319,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
   return (
     <>
       {rowEdits.feedback}
-      <PageHeading title={name} description={queue === 'attention' ? 'Review findings before publishing drafts.' : queue === 'not-music' ? 'Browse events whose type is Other.' : all ? 'Review events from all sources.' : avilys ? 'Import and review Vilnius music events from Avilys.' : 'Review imported events and manage the Go Vilnius feed.'} icon={avilys ? 'avilys' : 'calendar'} href={all ? undefined : avilys ? 'https://avilys.app/paieska' : 'https://www.vilnius-events.lt/'} linkLabel={`Open ${name}`} tools={!all} />
+      <PageHeading title={name} description={queue === 'attention' ? 'Review findings before publishing drafts.' : queue === 'not-music' ? 'Browse events whose type is Other.' : all ? 'Review events from all sources.' : avilys ? 'Import and review Vilnius music events from Avilys.' : kakava ? 'Import and review Lithuanian concerts sold on Kakava.' : 'Review imported events and manage the Go Vilnius feed.'} icon={avilys ? 'avilys' : kakava ? 'ticket' : 'calendar'} href={all ? undefined : avilys ? 'https://avilys.app/paieska' : kakava ? 'https://kakava.lt/renginiai/1/koncertai' : 'https://www.vilnius-events.lt/'} linkLabel={`Open ${name}`} tools={!all} />
       {all && !queue && <Metrics items={[
         { label: 'Events across all sources', value: data?.counts.total.toLocaleString() ?? '—', icon: 'calendar' },
         { label: 'Live and eligible for the feed', value: data?.readyCount.toLocaleString() ?? '—', icon: 'check' },
@@ -446,11 +446,13 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
               catalogue.current?.scrollIntoView({ block: 'start' });
             }} />}
           </section>
-          {!avilys && !all && <VilniusNotes />}
+          {!avilys && !kakava && !all && <VilniusNotes />}
         </div>
         {!all && <aside className="context-column" id="import-tools" tabIndex={-1} aria-label="Event source tools">
           {avilys
             ? <AvilysImport jobs={jobs} busy={busy} start={start} verifyAfterImport={verifyAfterImport} setVerifyAfterImport={setVerifyAfterImport} />
+            : kakava
+            ? <KakavaImport jobs={jobs} busy={busy} start={start} verifyAfterImport={verifyAfterImport} setVerifyAfterImport={setVerifyAfterImport} />
             : <VilniusImport pages={pages} setPages={setPages} includeImages={includeImages} setIncludeImages={setIncludeImages} verifyAfterImport={verifyAfterImport} setVerifyAfterImport={setVerifyAfterImport} nextPage={data?.nextPage} jobs={jobs} busy={busy} run={action => void startVilnius(action)} runs={data?.runs ?? []} />}
           <Feedback message={importDefaultError} error />
           <VerificationJobs jobs={verificationJobs.jobs} />

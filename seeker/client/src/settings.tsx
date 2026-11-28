@@ -5,6 +5,7 @@ import { Feedback, PageHeading } from './workspace';
 
 export const startPages = [
   { path: '/avilys.html', label: 'Avilys' },
+  { path: '/kakava.html', label: 'Kakava' },
   { path: '/all-events.html', label: 'All events' },
   { path: '/needs-attention.html', label: 'Needs attention' },
   { path: '/not-music.html', label: 'Other events' },

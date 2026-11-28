@@ -49,6 +49,7 @@ const page = path === '/' ? <StartupPage />
   : path === '/not-music.html' ? <EventsPage all queue="not-music" />
   : path === '/possible-duplicates.html' ? <DuplicatesPage />
   : path === '/avilys.html' ? <EventsPage avilys />
+  : path === '/kakava.html' ? <EventsPage kakava />
   : path === '/vilnius-events.html' ? <EventsPage />
   : path === '/saved-events.html' ? <SavedEventsPage />
   : <ArtistsPage />;

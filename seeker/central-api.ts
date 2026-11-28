@@ -1,4 +1,6 @@
 import type {AvilysEvent} from './sources/avilys.js';
+import type {KakavaEvent} from './sources/kakava.js';
+export type ImageSourceKey='avilys'|'kakava';
 import type { ArtistDecision, ArtistsDashboard, EventDetails, ReviewStatus, SeekerArtistDetail } from './types.js';
 
 export type ImportClaim = { id: number; claim: string };
@@ -105,19 +107,19 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
     async uploadImage(image:{media_id:number;source_url:string;mime_type:string;width:number|null;height:number|null;source_modified:string|null;data:string;job?:{id:number;owner:string}}):Promise<void> {
       await post('/v1/admin/images',image);
     },
-    async getAvilysImageInfo(sourceId:number):Promise<{source_url:string;width:number|null;height:number|null}|null>{
-      if(!Number.isSafeInteger(sourceId)||sourceId<1)throw new Error('Invalid Avilys image ID.');
-      const value=await get(`/v1/admin/event-images/avilys/${sourceId}/info`);
+    async getSourceImageInfo(key:ImageSourceKey,sourceId:number):Promise<{source_url:string;width:number|null;height:number|null}|null>{
+      if(!Number.isSafeInteger(sourceId)||sourceId<1)throw new Error('Invalid source image ID.');
+      const value=await get(`/v1/admin/event-images/${key}/${sourceId}/info`);
       if(value.image===null)return null;
-      if(!value.image||typeof value.image.source_url!=='string')throw new Error('Central API returned invalid Avilys image metadata.');
+      if(!value.image||typeof value.image.source_url!=='string')throw new Error('Central API returned invalid source image metadata.');
       return {source_url:value.image.source_url,width:Number.isSafeInteger(value.image.width)?value.image.width:null,height:Number.isSafeInteger(value.image.height)?value.image.height:null};
     },
-    async uploadAvilysImage(image:{source_id:number;source_url:string;mime_type:string;width:number|null;height:number|null;data:string;job?:{id:number;owner:string}}):Promise<void>{
-      await post('/v1/admin/event-images/avilys',image);
+    async uploadSourceImage(key:ImageSourceKey,image:{source_id:number;source_url:string;mime_type:string;width:number|null;height:number|null;data:string;job?:{id:number;owner:string}}):Promise<void>{
+      await post(`/v1/admin/event-images/${key}`,image);
     },
-    async getAvilysImage(sourceId:number):Promise<{bytes:Uint8Array;type:string}|null>{
-      if(!Number.isSafeInteger(sourceId)||sourceId<1)throw new Error('Invalid Avilys image ID.');
-      let response:Response;try{response=await fetch(new URL(`/v1/admin/event-images/avilys/${sourceId}`,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch(error){throw new Error(`Central API request ${unreachable(error)}.`);}
+    async getSourceImage(key:ImageSourceKey,sourceId:number):Promise<{bytes:Uint8Array;type:string}|null>{
+      if(!Number.isSafeInteger(sourceId)||sourceId<1)throw new Error('Invalid source image ID.');
+      let response:Response;try{response=await fetch(new URL(`/v1/admin/event-images/${key}/${sourceId}`,base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch(error){throw new Error(`Central API request ${unreachable(error)}.`);}
       if(response.status===404)return null;if(!response.ok)throw Object.assign(new Error(`Central API image read failed (HTTP ${response.status}).`),{status:response.status});
       const type=response.headers.get('content-type')||'';if(!['image/jpeg','image/png','image/webp','image/gif'].includes(type))throw new Error('Central API returned an invalid image.');
       const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>12*1024*1024)throw new Error('Central API image is too large.');const bytes=new Uint8Array(await response.arrayBuffer());if(bytes.length>12*1024*1024)throw new Error('Central API image is too large.');return {bytes,type};
@@ -128,12 +130,12 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
       if(!response.ok)throw new Error(`Central API read failed (HTTP ${response.status}).`);
       const body=await response.json() as {jobs?:CentralJob[]};if(!Array.isArray(body.jobs))throw new Error('Central API returned invalid jobs.');return body.jobs;
     },
-    async startJob(action:string,source:'vilnius-events'|'avilys'|'musicbrainz'|'ai-evaluation'='vilnius-events',limit=0,import_request?:ImportClaim):Promise<{id:number;owner:string}> {
+    async startJob(action:string,source:'vilnius-events'|'avilys'|'kakava'|'musicbrainz'|'ai-evaluation'='vilnius-events',limit=0,import_request?:ImportClaim):Promise<{id:number;owner:string}> {
       const body=await post('/v1/admin/jobs/start',{action,source,limit,import_request});
       if(!Number.isSafeInteger(body.id)||typeof body.owner!=='string'||!/^[a-f0-9]{64}$/.test(body.owner))throw new Error('Central API returned an invalid job; check before retrying.');
       return {id:body.id as number,owner:body.owner};
     },
-    async updateJob(id:number,owner:string,status:'running'|'completed'|'failed',progress:{fetched:number;added:number;updated:number;images?:number;image_failed?:number},error?:string,source:'vilnius-events'|'avilys'|'musicbrainz'|'ai-evaluation'='vilnius-events'):Promise<void>{
+    async updateJob(id:number,owner:string,status:'running'|'completed'|'failed',progress:{fetched:number;added:number;updated:number;images?:number;image_failed?:number},error?:string,source:'vilnius-events'|'avilys'|'kakava'|'musicbrainz'|'ai-evaluation'='vilnius-events'):Promise<void>{
       validateId(id);await post(`/v1/admin/jobs/${id}`,{owner,status,progress,error,source});
     },
     async reserveVilniusRequest():Promise<number> {
@@ -142,6 +144,7 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
       return Number(body.waitMs);
     },
     async importAvilysPage(items:AvilysEvent[],job:{id:number;owner:string},verification?:ImportVerification):Promise<{added:number;updated:number}>{const body=await post('/v1/admin/imports/avilys/page',{items,job,...verification});if(!Number.isSafeInteger(body.added)||!Number.isSafeInteger(body.updated))throw new Error('Invalid import response; check before retrying.');return {added:Number(body.added),updated:Number(body.updated)+attachedCount(body)};},
+    async importKakavaPage(items:KakavaEvent[],job:{id:number;owner:string},verification?:ImportVerification):Promise<{added:number;updated:number}>{const body=await post('/v1/admin/imports/kakava/page',{items,job,...verification});if(!Number.isSafeInteger(body.added)||!Number.isSafeInteger(body.updated))throw new Error('Invalid import response; check before retrying.');return {added:Number(body.added),updated:Number(body.updated)+attachedCount(body)};},
     async importVilniusPage(page:VilniusImportPage):Promise<{added:number;updated:number;changedEventIds?:number[]}> {
       const body=await post('/v1/admin/imports/vilnius-events/page',page);
       if(!Number.isSafeInteger(body.added) || !Number.isSafeInteger(body.updated)) throw new Error('Central API returned an invalid response; check the import before retrying.');

@@ -97,7 +97,7 @@ export function SavedEventsPage() {
   const [noticeError, setNoticeError] = useState(false);
   const today = vilniusDateFormatter.format(new Date());
   const { jobs, start, startingSource } = useJobs(() => {});
-  const refreshing = startingSource !== null || jobs.some(job => ['avilys', 'vilnius-events'].includes(job.source) && isActive(job));
+  const refreshing = startingSource !== null || jobs.some(job => ['avilys', 'kakava', 'vilnius-events'].includes(job.source) && isActive(job));
   const rowEdits = useEventRowEdits((id, patch) => {
     update(id, patch);
     void refresh(id);

@@ -205,3 +205,73 @@ export function AvilysImport({ jobs, busy, start, verifyAfterImport, setVerifyAf
     </section>
   );
 }
+
+type KakavaPreview = {
+  data: { id: number; title: string; startTime: string; venueName: string | null; city: string | null; sourceUrl: string }[];
+  total: number;
+};
+
+/** Kakava sends every show in one listing, so an import makes one request; images then download one at a time. */
+export function KakavaImport({ jobs, busy, start, verifyAfterImport, setVerifyAfterImport }: {
+  jobs: Job[]; busy: boolean;
+  start: (source: string, action: string, params: Record<string, unknown>) => Promise<void>;
+  verifyAfterImport: boolean | null; setVerifyAfterImport: (value: boolean) => void;
+}) {
+  const [limit, setLimit] = useState(1000);
+  const [includeImages, setIncludeImages] = useState(true);
+  const [page, setPage] = useState(1);
+  const [preview, setPreview] = useState<KakavaPreview | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const valid = Number.isInteger(limit) && limit >= 1 && limit <= 1000;
+
+  async function load(next: number) {
+    setLoading(true);
+    setError('');
+    try {
+      setPreview(await api<KakavaPreview>(`/api/kakava/preview?page=${next}`));
+      setPage(next);
+    } catch (error) {
+      setError(errorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function run() {
+    setError('');
+    try {
+      await start('kakava', 'import', { limit, include_images: includeImages, verify_after_import: verifyAfterImport === true });
+    } catch (error) {
+      setError(errorMessage(error));
+    }
+  }
+
+  return (
+    <section className="panel import-panel">
+      <PanelHeading icon="download" title="Import events" description="Upcoming concerts in Lithuania" />
+      <div className="panel-body stack">
+        <label className="field">Events (soonest first) <input type="number" min="1" max="1000" value={limit || ''} onChange={event => setLimit(Number(event.target.value))} /></label>
+        <label className="checkbox-label"><input type="checkbox" checked={includeImages} onChange={event => setIncludeImages(event.target.checked)} /> Download new images (about 2 seconds apart)</label>
+        <ImportVerificationOption checked={verifyAfterImport} onChange={setVerifyAfterImport} />
+        <button className="primary-button" disabled={busy || !valid || verifyAfterImport === null} onClick={() => void run()}><Icon name="download" />{busy ? 'Source job running…' : 'Import events'}</button>
+        <button className="secondary-button" disabled={loading} onClick={() => void load(1)}>{loading ? 'Loading preview…' : 'Preview source events'}</button>
+        <p className="muted">Kakava's listing is fetched at most once every 10 minutes; the preview and imports share it.</p>
+        <Feedback message={error} error />
+        {preview && (
+          <div className="source-preview" aria-busy={loading}>
+            <p>Verify dates and times against the event source.</p>
+            <ul>{preview.data.map(event => (
+              <li key={event.id}>
+                <a href={safeUrl(event.sourceUrl)} target="_blank" rel="noreferrer">{event.title}<Icon name="external" size={13} /></a>
+                <small>{event.startTime.replace('T', ' ')} · {[event.venueName, event.city].filter(Boolean).join(', ') || 'Venue unknown'}</small>
+              </li>
+            ))}</ul>
+            <Pagination page={page} total={preview.total} size={20} onChange={next => { if (!loading) void load(next); }} />
+          </div>
+        )}
+      </div>
+      <RecentJobs jobs={jobs} source="kakava" />
+    </section>
+  );
+}

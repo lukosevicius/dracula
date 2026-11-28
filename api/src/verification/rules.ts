@@ -46,7 +46,7 @@ export function sourceEvidence(source: Snapshot) {
     event_time: start && validField('event_date', start[1]) ? start[2] : normalizedDetails.event_time,
     event_end_date: normalizedDetails.event_end_date,
     venue: avilys ? metadata.venueName : normalizedDetails.venue,
-    city: avilys ? metadata.city : source.source_key === 'vilnius-events' ? 'Vilnius' : undefined,
+    city: avilys || source.source_key === 'kakava' ? metadata.city : source.source_key === 'vilnius-events' ? 'Vilnius' : undefined,
     ticket_url: avilys ? metadata.ticketUrl : normalizedDetails.ticket_url,
   };
   const structuredFieldsFound: Partial<Record<StructuredField, string>> = {};

@@ -68,7 +68,7 @@ export default function DuplicatesPage() {
   const editsDuringLoad = useRef<Map<number, EventRowEdits> | null>(null);
   const { isSaved, toggle, update, refresh, pendingIds, loading: savedLoading } = useSavedEvents();
   const { jobs, start, startingSource } = useJobs(() => {});
-  const refreshing = startingSource !== null || jobs.some(job => ['avilys', 'vilnius-events'].includes(job.source) && isActive(job));
+  const refreshing = startingSource !== null || jobs.some(job => ['avilys', 'kakava', 'vilnius-events'].includes(job.source) && isActive(job));
   const today = todayFormatter.format(new Date());
   const rowEdits = useEventRowEdits((id, patch) => {
     const loadingEdits = editsDuringLoad.current;

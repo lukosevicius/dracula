@@ -46,6 +46,7 @@ const navigation = [
     { path: '/import-log.html', name: 'Import log', icon: 'clock' },
     { path: '/all-events.html', name: 'All', icon: 'calendar' },
     { path: '/avilys.html', name: 'Avilys', icon: 'avilys' },
+    { path: '/kakava.html', name: 'Kakava', icon: 'ticket' },
     { path: '/vilnius-events.html', name: 'Vilnius Events', icon: 'pin' },
   ] },
   // Work waiting for an editor, most urgent first. Saved is a bookmark list, so it comes last.

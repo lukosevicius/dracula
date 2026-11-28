@@ -4,6 +4,7 @@ import type { createCentralApi } from './central-api.js';
 import type { ArtistDecision, EventDetails, ReviewStatus } from './types.js';
 import {createCentralJobs} from './central-jobs.js';
 import {fetchAvilysPage} from './sources/avilys.js';
+import {fetchKakavaPage} from './sources/kakava.js';
 
 type CentralApi = ReturnType<typeof createCentralApi>;
 const normalize=(value:string)=>value.normalize('NFKD').replace(/\p{Diacritic}/gu,'').toLocaleLowerCase('lt').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
@@ -52,8 +53,14 @@ export function createCentralDashboard(api:CentralApi, userAgent='Seeker/0.1.0',
         if(!/^\d{1,5}$/.test(raw)||Number(raw)<1||Number(raw)>10000){send(400,{error:'Invalid Avilys page.'});return true;}
         send(200,await fetchAvilysPage(Number(raw)));return true;
       }
-      const avilysImage=/^\/api\/avilys-images\/(\d{1,12})$/.exec(url.pathname);
-      if(request.method==='GET'&&avilysImage){const value=await api.getAvilysImage(Number(avilysImage[1]));if(!value){send(404,{error:'Image not found.'});return true;}response.writeHead(200,{'content-type':value.type,'cache-control':'private, no-store','x-content-type-options':'nosniff'});response.end(Buffer.from(value.bytes));return true;}
+      if(request.method==='GET' && url.pathname==='/api/kakava/preview') {
+        const raw=url.searchParams.get('page') || '1';
+        if(!/^\d{1,5}$/.test(raw)||Number(raw)<1||Number(raw)>10000){send(400,{error:'Invalid Kakava page.'});return true;}
+        // Served from the shared ten-minute cache, so paging through the preview does not call Kakava again.
+        send(200,await fetchKakavaPage(Number(raw),{userAgent}));return true;
+      }
+      const sourceImage=/^\/api\/(avilys|kakava)-images\/(\d{1,12})$/.exec(url.pathname);
+      if(request.method==='GET'&&sourceImage){const value=await api.getSourceImage(sourceImage[1] as 'avilys'|'kakava',Number(sourceImage[2]));if(!value){send(404,{error:'Image not found.'});return true;}response.writeHead(200,{'content-type':value.type,'cache-control':'private, no-store','x-content-type-options':'nosniff'});response.end(Buffer.from(value.bytes));return true;}
       if(request.method==='GET' && url.pathname==='/api/dashboard'){send(200,await api.artistsDashboard());return true;}
       const artistDetail = /^\/api\/artists\/([^/]+)$/.exec(url.pathname);
       if (request.method === 'GET' && artistDetail) {
