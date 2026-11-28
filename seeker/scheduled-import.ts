@@ -137,6 +137,18 @@ await step('Artist matching', async () => {
   return `read ${total.processed} events: ${total.linked} linked, ${total.suggested} to confirm, ${total.new_names} new names, $${total.cost_usd.toFixed(3)}${remaining ? `, ${remaining} left for the next run` : ''}`;
 });
 
+// MusicBrainz allows about one lookup a second, so a run looks up at most 200 names; the rest wait for the next run.
+await step('Artist countries', async () => {
+  let checked = 0, found = 0, remaining = 0;
+  for (let round = 0; round < 25; round++) {
+    const batch = await api.seekerWrite('/artists/new/countries', { limit: 8 });
+    checked += Number(batch.checked) || 0; found += Number(batch.found) || 0; remaining = Number(batch.remaining) || 0;
+    if (typeof batch.error === 'string') throw new Error(`${batch.error} Checked ${checked} names first.`);
+    if (!Number(batch.checked) || !remaining) break;
+  }
+  return `checked ${checked} new names in MusicBrainz, found ${found} countries${remaining ? `, ${remaining} left for the next run` : ''}`;
+});
+
 const report = [`### Scheduled import (${mode}: ${[...sources].join(', ')})`, '', '| Step | Result | Details |', '| --- | --- | --- |',
   ...steps.map(item => `| ${item.name} | ${item.status === 'completed' ? '✅' : item.status === 'failed' ? '❌' : '⏭️'} ${item.status} | ${item.summary.replace(/\|/g, '/')} |`)].join('\n');
 if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, report + '\n');

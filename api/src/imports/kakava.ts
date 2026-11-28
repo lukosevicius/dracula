@@ -40,6 +40,12 @@ function validShow(e: KakavaShow) {
   return true;
 }
 
+/** Fields an editor set by hand. Unreadable data protects every field. */
+function manualFieldsOf(event: RowDataPacket): string[] {
+  try { const value = JSON.parse(String(event.manual_fields ?? '[]')); return Array.isArray(value) ? value.filter((field): field is string => typeof field === 'string') : []; }
+  catch { return ['event_date', 'event_time', 'event_end_date', 'event_end_time']; }
+}
+
 /** Stores Kakava shows as event candidates and keeps editors' changes on later imports, like the Avilys import. */
 export async function importKakavaPage(pool: Pool, data: unknown) {
   const input = data as ImportInput;
@@ -97,7 +103,22 @@ export async function importKakavaPage(pool: Pool, data: unknown) {
           added++;
         } else {
           const id = Number(links[0].event_id);
-          const event = await lockEvent(conn, id), before = await snapshot(conn, id, event);
+          let event = await lockEvent(conn, id);
+          const before = await snapshot(conn, id, event);
+          let previousStart: unknown;
+          try { previousStart = JSON.parse(String(links[0].source_data_json)).startTime; } catch { /* Older metadata: treat as unchanged. */ }
+          const old = typeof previousStart === 'string' ? parts(previousStart) : null;
+          if (old && (old.day !== start.day || old.time !== start.time)) {
+            // Kakava moved the show. The event follows when it still shows Kakava's old date and nobody edited the
+            // date or time; otherwise an editor decides.
+            const manual = manualFieldsOf(event);
+            const follows = !Number(links[0].is_secondary) && event.event_date === old.day && (event.event_time == null || event.event_time === old.time)
+              && !['event_date', 'event_time', 'event_end_date', 'event_end_time'].some(field => manual.includes(field));
+            if (follows) await conn.execute('UPDATE events SET event_date=?,event_time=?,event_end_date=?,event_end_time=?,updated_at=? WHERE id=?', [start.day, start.time, endDate, endTime, now, id]);
+            else await conn.execute('UPDATE events SET needs_attention=1 WHERE id=?', [id]);
+            await history(conn, id, 'source_moved', actor, follows ? diff(before, await snapshot(conn, id)) : {}, { source_key: 'kakava', source_id: e.id, from: previousStart, to: e.startTime, applied: follows, job_id: input.job.id });
+            event = await lockEvent(conn, id);
+          }
           // Reviewed event fields are not overwritten on refresh; only empty ones are filled, and only while the dates agree.
           if (event.event_date === start.day) await fillFromSource(conn, event, { event_end_date: endDate, event_time: start.time, event_end_time: endTime, venue, ticket_url: e.sourceUrl, city }, now);
           if (price) {

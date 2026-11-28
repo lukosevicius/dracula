@@ -137,6 +137,12 @@ export function createAdmin(pool: Pool, token: string) {
       const [rows]=await pool.execute<RowDataPacket[]>('SELECT local_name,mime_type,source_url,source_modified FROM vilnius_images WHERE media_id=?',[mediaId]);
       return rows[0] || null;
     },
+    /** Kakava listings of events that have not ended, for the import to compare with Kakava's current listing. */
+    async kakavaListings() {
+      const [rows]=await pool.execute<RowDataPacket[]>(`SELECT s.event_id,s.source_id,e.event_date,e.publication_status FROM event_sources s JOIN events e ON e.id=s.event_id
+        WHERE s.source_key='kakava' AND (e.event_date IS NULL OR COALESCE(e.event_end_date,e.event_date)>=?) ORDER BY s.event_id LIMIT 5000`,[vilniusToday()]);
+      return rows.map(row=>({event_id:Number(row.event_id),source_id:String(row.source_id),event_date:row.event_date??null,publication_status:String(row.publication_status)}));
+    },
     async getSourceImage(sourceKey:string,sourceId:number) {
       const [rows]=await pool.execute<RowDataPacket[]>('SELECT source_url,local_name,mime_type,width,height,source_id FROM event_images WHERE source_key=? AND source_id=?',[sourceKey,String(sourceId)]);
       return rows[0] || null;

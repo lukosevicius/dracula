@@ -21,6 +21,7 @@ test('Kakava imports dated concerts, keep edits on refresh, and validate input',
     CREATE TABLE jobs(id INTEGER PRIMARY KEY,source TEXT);
     CREATE TABLE removed_listings(source_key TEXT,source_id TEXT);
     INSERT INTO jobs VALUES(1,'kakava'),(2,'avilys');`);
+  try { db.exec('ALTER TABLE events ADD COLUMN needs_attention INTEGER NOT NULL DEFAULT 0'); } catch { /* added by the merge tables */ }
   db.exec(`ALTER TABLE events ADD COLUMN interest_score INTEGER NOT NULL DEFAULT 1;
     ALTER TABLE events ADD COLUMN publication_status TEXT NOT NULL DEFAULT 'draft';
     ALTER TABLE events ADD COLUMN publication_manual INTEGER NOT NULL DEFAULT 0;
@@ -54,6 +55,19 @@ test('Kakava imports dated concerts, keep edits on refresh, and validate input',
     assert.deepEqual(await importKakavaPage(pool,{verify_after_import:false,items:[{...show,venueName:'Other'}],job}),{added:0,updated:1,attached:0,skipped:0});
     assert.equal(db.prepare('SELECT venue FROM events').get()!.venue,'Edited');
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM events').get()!.n,1);
+    // Kakava moves the show: an unedited event follows, with a history note.
+    await importKakavaPage(pool,{verify_after_import:false,items:[{...show,startTime:'2026-12-12T20:00',endTime:'2026-12-12T22:00'}],job});
+    const moved=db.prepare('SELECT event_date,event_time,event_end_time,needs_attention FROM events WHERE id=1').get()!;
+    assert.deepEqual({...moved},{event_date:'2026-12-12',event_time:'20:00',event_end_time:'22:00',needs_attention:0});
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM event_history WHERE action='source_moved'").get()!.n,1);
+    // Once an editor set the date by hand, a move only flags the event.
+    db.exec(`UPDATE events SET manual_fields='["event_date"]' WHERE id=1`);
+    await importKakavaPage(pool,{verify_after_import:false,items:[{...show,startTime:'2026-12-19T20:00',endTime:'2026-12-19T22:00'}],job});
+    const flagged=db.prepare('SELECT event_date,needs_attention FROM events WHERE id=1').get()!;
+    assert.deepEqual({...flagged},{event_date:'2026-12-12',needs_attention:1});
+    // An unchanged show is not treated as moved again.
+    await importKakavaPage(pool,{verify_after_import:false,items:[{...show,startTime:'2026-12-19T20:00',endTime:'2026-12-19T22:00'}],job});
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM event_history WHERE action='source_moved'").get()!.n,2);
     // A multi-day festival keeps its end date.
     await importKakavaPage(pool,{verify_after_import:false,items:[{...show,id:5,title:'Festivalis',startTime:'2027-05-20T18:00',endTime:'2027-05-23T21:00'}],job});
     const festival=db.prepare("SELECT e.* FROM events e JOIN event_sources s ON s.event_id=e.id WHERE s.source_id='5'").get()!;

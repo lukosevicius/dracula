@@ -8,7 +8,7 @@ import { DatabaseService } from '../database/database.service.js';
 import { claimImport, identity, importRequest, listAgents, manageAgent, queueImport, type Scope } from './agents.js';
 import { fail, type Snapshot } from './history.js';
 import { listProviders, manageProvider } from './providers.js';
-import { addArtistToEvent, artistReview, decideNewArtist, eventsWithoutArtists, extractArtists } from '../artists/extraction.js';
+import { addArtistToEvent, artistReview, decideNewArtist, eventsWithoutArtists, extractArtists, fillNewNameCountries } from '../artists/extraction.js';
 import { listScheduledRuns, saveScheduledRun } from '../imports/scheduled-runs.js';
 import { listRules, updateRules } from './rule-settings.js';
 import { verificationUsage } from './usage.js';
@@ -200,6 +200,10 @@ export class SeekerController {
         if (path === '/artists/add-to-event') {
           require('admin');
           return send(200, { ok: true, ...await addArtistToEvent(pool, body) });
+        }
+        if (path === '/artists/new/countries') {
+          require('admin');
+          return send(200, { ok: true, ...await fillNewNameCountries(pool, body) });
         }
         if (path === '/artists/new') {
           require('admin');

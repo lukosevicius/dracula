@@ -245,6 +245,24 @@ export default function NewArtistsPage() {
   const { review, load, setError, setNotice, header } = useArtistReview();
   const [busy, setBusy] = useState('');
   const [origin, setOrigin] = useState<Origin>('all');
+  const [lookingUp, setLookingUp] = useState(false);
+
+  /** Asks MusicBrainz for names without a country, a few per request; MusicBrainz allows about one lookup a second. */
+  async function lookUpCountries() {
+    setLookingUp(true); setNotice(''); setError('');
+    let checked = 0, found = 0;
+    try {
+      for (let round = 0; round < 200; round++) {
+        const batch = await api<{ checked: number; found: number; remaining: number; error?: string }>('/api/workflow/artists/new/countries', { limit: 8 });
+        checked += batch.checked; found += batch.found;
+        setNotice(`Checked ${checked} names in MusicBrainz, found ${found} countries · ${batch.remaining} left…`);
+        if (batch.error) throw new Error(`${batch.error} Stopped; the rest can be looked up later.`);
+        if (!batch.checked || !batch.remaining) break;
+      }
+      setNotice(`Checked ${checked} names in MusicBrainz and found a clear country for ${found}.`);
+    } catch (cause) { setError(errorMessage(cause)); }
+    finally { setLookingUp(false); await load(); }
+  }
   const [country, setCountry] = useState('any');
 
   async function decideName(item: NewName, decision: 'add' | 'dismiss', edit?: { name: string; country: string }) {
@@ -279,6 +297,7 @@ export default function NewArtistsPage() {
             <option value="other">Not Lithuania ({count('other')})</option>
             <option value="unknown">Country unknown ({count('unknown')})</option>
           </select></label>
+          <button className="secondary-button" style={{ alignSelf: 'end' }} type="button" disabled={lookingUp || !count('unknown')} onClick={() => void lookUpCountries()}>{lookingUp ? 'Looking up countries…' : 'Look up unknown countries'}</button>
           {origin === 'other' && <label className="field">Other country <select value={otherCountry} onChange={event => setCountry(event.target.value)}>
             <option value="any">Any other country</option>
             {others.map(([code, count]) => <option key={code} value={code}>{countryLabel(code)} ({count})</option>)}

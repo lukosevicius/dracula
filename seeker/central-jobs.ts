@@ -6,7 +6,7 @@ import {runCentralMusicBrainz} from './sources/central-musicbrainz.js';
 import {runCentralAi} from './database/central-ai-evaluation.js';
 import {fetchAvilysPage} from './sources/avilys.js';
 import {createCentralAvilysImages,createCentralSourceImages,ImageHostRefused} from './sources/central-avilys-images.js';
-import {fetchKakavaEvents} from './sources/kakava.js';
+import {fetchKakavaListing,vilniusToday} from './sources/kakava.js';
 import {MODELS,type Model} from './database/ai-evaluation.js';
 
 type Api=ReturnType<typeof createCentralApi>;
@@ -17,7 +17,7 @@ export function createCentralJobs(api:Api,userAgent:string,run:typeof runCentral
     if(input.source!==source||(source==='ai-evaluation'?(action!=='analyze'||!Array.isArray(input.event_ids)||!input.event_ids.length||input.event_ids.length>5000||!input.event_ids.every(id=>Number.isSafeInteger(id)&&id>0)||new Set(input.event_ids).size!==input.event_ids.length||!Array.isArray(input.models)||!input.models.length||new Set(input.models).size!==input.models.length||!input.models.every(model=>Object.hasOwn(MODELS,model))||!Number.isFinite(budget)||budget<=0||budget>1000||!process.env.GEMINI_API_KEY):source==='avilys'?(action!=='import'||!Number.isInteger(limit)||limit<1||limit>200||!Number.isInteger(startPage)||startPage<1||startPage>10000):source==='kakava'?(action!=='import'||!Number.isInteger(limit)||limit<1||limit>1000):source==='musicbrainz'?(!['next','start','all'].includes(action)||(action!=='all'&&(!Number.isInteger(limit)||limit<1||limit>1000))):(!['next','start','sample','refresh','download-images','details','refresh-details','details-event','refresh-all-details','refresh-upcoming-details'].includes(action)||!Number.isInteger(pages)||pages<1||pages>10||(action==='details-event'&&(!Number.isSafeInteger(input.event_id)||Number(input.event_id)<1)))))throw Object.assign(new Error('This central job is not available or its settings are invalid.'),{status:400});
     const job=await api.startJob(action,source,(source==='avilys'||source==='kakava'||source==='musicbrainz'&&action!=='all')?limit:0,input.import_request);
     setImmediate(async()=>{
-      let progress:{fetched:number;added:number;updated:number;images?:number;image_failed?:number}={fetched:0,added:0,updated:0,...(source==='avilys'||source==='kakava'?{images:0,image_failed:0}:{})},failure:unknown;
+      let progress:{fetched:number;added:number;updated:number;images?:number;image_failed?:number;removed?:number;unpublished?:number}={fetched:0,added:0,updated:0,...(source==='avilys'||source==='kakava'?{images:0,image_failed:0}:{})},failure:unknown;
       let pending=Promise.resolve();
       const heartbeat=()=>{pending=pending.then(async()=>{if(failure)return;try{await api.updateJob(job.id,job.owner,'running',progress,undefined,source);}catch(error){failure=error;}});};
       const timer=setInterval(heartbeat,15000);timer.unref();
@@ -67,7 +67,7 @@ export function createCentralJobs(api:Api,userAgent:string,run:typeof runCentral
         } else if(source==='kakava'){
           // One listing request per run; images are fetched one at a time with a pause, and stop for the run if the host pushes back.
           const ensureImage=createCentralSourceImages(jobApi,userAgent,{key:'kakava',label:'Kakava',delayMs:1500});
-          const events=(await fetchKakavaEvents({userAgent})).slice(0,limit);
+          const listing=await fetchKakavaListing({userAgent}),events=listing.events.slice(0,limit);
           let imagesStopped=input.include_images===false;
           for(let index=0;index<events.length;index+=20){
             await checkLease();
@@ -81,6 +81,24 @@ export function createCentralJobs(api:Api,userAgent:string,run:typeof runCentral
               catch(error){progress.image_failed=(progress.image_failed||0)+1;if(error instanceof ImageHostRefused)imagesStopped=true;console.error(`Kakava image download failed for show ${item.id}:`,error instanceof Error?error.message:String(error));}
             }
           }
+          // Shows Kakava cancelled, or no longer lists at all, go through the same path as removed Vilnius Events
+          // listings: a draft is deleted, a live event is unpublished and flagged once, a shared event only loses
+          // this listing. A show can leave the listing when its sales close, so only events from the day after
+          // tomorrow count as vanished, and a burst of them more likely means Kakava changed, so those wait.
+          const tomorrow=vilniusToday(Date.now()+86_400_000);
+          const ours=await api.kakavaListings();
+          const cancelled=ours.filter(item=>listing.cancelled.has(Number(item.source_id)));
+          const vanished=ours.filter(item=>!listing.listed.has(Number(item.source_id))&&!!item.event_date&&item.event_date>tomorrow);
+          const allowed=Math.max(3,Math.ceil(ours.length*0.1)),blocked=vanished.length>allowed;
+          progress={...progress,removed:0,unpublished:0};
+          for(const item of [...cancelled,...(blocked?[]:vanished)]){
+            await checkLease();
+            const gone=await api.seekerWrite(`/events/${item.event_id}/listing-gone`,{source_key:'kakava',source_id:item.source_id}) as {outcome?:string};
+            if(gone.outcome==='unpublished')progress.unpublished=(progress.unpublished||0)+1;
+            else if(gone.outcome==='deleted'||gone.outcome==='detached')progress.removed=(progress.removed||0)+1;
+          }
+          heartbeat();
+          if(blocked)throw new Error(`${vanished.length} of ${ours.length} upcoming Kakava listings are missing from Kakava, more than the ${allowed} allowed in one run. Only cancelled shows were handled; check kakava.lt.`);
           result=progress;
         } else if(source==='ai-evaluation')result=await ai(jobApi,job,input.event_ids!,input.models!,budget,process.env.GEMINI_API_KEY!,value=>{progress=value;heartbeat();},fetch,async()=>{await pending;if(failure)throw failure;});
         else if(source==='musicbrainz')result=await musicbrainz(jobApi,job,action as 'next'|'start'|'all',limit,userAgent,value=>{progress=value;heartbeat();});

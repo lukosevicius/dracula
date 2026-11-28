@@ -124,6 +124,11 @@ export function createCentralApi(origin: string, token: string, timeoutMs = 1500
       const type=response.headers.get('content-type')||'';if(!['image/jpeg','image/png','image/webp','image/gif'].includes(type))throw new Error('Central API returned an invalid image.');
       const length=Number(response.headers.get('content-length'));if(Number.isFinite(length)&&length>12*1024*1024)throw new Error('Central API image is too large.');const bytes=new Uint8Array(await response.arrayBuffer());if(bytes.length>12*1024*1024)throw new Error('Central API image is too large.');return {bytes,type};
     },
+    async kakavaListings():Promise<{event_id:number;source_id:string;event_date:string|null;publication_status:string}[]>{
+      const value=await get('/v1/admin/imports/kakava/listings');
+      if(!Array.isArray(value.listings))throw new Error('Central API returned invalid Kakava listings.');
+      return value.listings.filter((item:Record<string,unknown>)=>Number.isSafeInteger(item?.event_id)&&typeof item.source_id==='string');
+    },
     async listJobs():Promise<CentralJob[]> {
       let response:Response;
       try {response=await fetch(new URL('/v1/admin/jobs',base),{headers:{authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(timeoutMs)});}catch(error){throw new Error(`Central API request ${unreachable(error)}.`);}

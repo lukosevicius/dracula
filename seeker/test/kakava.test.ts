@@ -1,6 +1,6 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { clearKakavaCache, fetchKakavaEvents, fetchKakavaPage, normalizeKakava, KAKAVA_LIST_URL } from '../sources/kakava.js';
+import { clearKakavaCache, fetchKakavaEvents, fetchKakavaPage, normalizeKakava, readKakavaListing, KAKAVA_LIST_URL } from '../sources/kakava.js';
 
 const now = Date.parse('2026-11-28T10:00:00Z');
 const show = (overrides: Record<string, unknown> = {}) => ({
@@ -75,4 +75,18 @@ test('rejects a response that is not a Kakava listing', async () => {
   const request = (async () => Response.json({ items: [] })) as typeof fetch;
   await assert.rejects(fetchKakavaEvents({ userAgent: 'x', request }), /Invalid Kakava response/);
   await assert.rejects(fetchKakavaPage(0, { userAgent: 'x', request }), /Invalid Kakava page/);
+});
+
+test('reports cancelled music shows and every music show listed, for removing gone listings', () => {
+  const result = readKakavaListing(listing([
+    show(),
+    show({ shortId: 4, frontEndStatus: ['CANCELED'] }),
+    show({ shortId: 5, state: 'Canceled', frontEndStatus: [] }),
+    show({ shortId: 6, showDate: false }),
+    show({ shortId: 7, eventCategories: [{ id: 2 }], frontEndStatus: ['CANCELED'] }), // theatre: not ours
+    show({ shortId: 8, startDateTime: '2026-11-20T19:00:00.0000000', endDateTime: '2026-11-20T21:00:00.0000000' }), // past, still listed
+  ]), now);
+  assert.deepEqual(result.events.map(event => event.id), [1]);
+  assert.deepEqual([...result.cancelled].sort(), [4, 5]);
+  assert.deepEqual([...result.listed].sort((a, b) => a - b), [1, 4, 5, 6, 8]);
 });

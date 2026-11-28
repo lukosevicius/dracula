@@ -11,11 +11,11 @@ import { catalogueByName, normalizeArtist, type Artist } from '../verification/a
 import { fail, transaction } from '../verification/history.js';
 import { defaultProfileKey, generate, loadProfile, type Profile } from '../verification/providers.js';
 import { estimatedTokenCost, type TokenUsage } from '../verification/usage.js';
-import { lookUpMusicBrainz } from './musicbrainz-lookup.js';
+import { lookUpMusicBrainz, searchMusicBrainz } from './musicbrainz-lookup.js';
 import { candidatesFor, checkedPerformers, choicePrompt, choiceSchema, oneMatchOutcome, performerPrompt, performerSchema, type Candidate, type Outcome, type Performer, type Role } from './matching.js';
 
 type Found = Performer & { outcome: Outcome; artists: { mbid: string; name: string }[] };
-type NewName = { name: string; written: string; role: Role; evidence: string; country?: string; status: 'open' | 'added' | 'dismissed'; mbid?: string };
+type NewName = { name: string; written: string; role: Role; evidence: string; country?: string; status: 'open' | 'added' | 'dismissed'; mbid?: string; /** Looked up in MusicBrainz for a country; set even when nothing clear was found. */ country_checked?: boolean };
 export type Extraction = { performers: Found[]; new_names: NewName[] };
 
 const maxText = 12_000;
@@ -257,6 +257,42 @@ export async function addArtistToEvent(pool: Pool, input: Record<string, unknown
       ON DUPLICATE KEY UPDATE decision='accepted',decided_by='editor'`, [eventId, artist.mbid]);
     return { ...artist, event_id: eventId };
   });
+}
+
+/**
+ * Fills the country of open new names that have none from MusicBrainz, a few names per call. Only one clear match
+ * counts, as when an editor adds the artist; a name with no clear match is marked checked and not asked again.
+ * MusicBrainz allows about one request a second, which the shared reservation keeps to.
+ */
+export async function fillNewNameCountries(pool: Pool, input: Record<string, unknown>, request = fetch) {
+  const limit = input.limit === undefined ? 10 : Number(input.limit);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 30) throw fail(400, 'Choose between 1 and 30 names.');
+  const waiting = async () => {
+    const [rows] = await pool.execute<RowDataPacket[]>(`SELECT x.event_id,x.result FROM artist_extractions x JOIN events e ON e.id=x.event_id
+      WHERE x.status='completed' AND x.result LIKE '%"status":"open"%' AND (e.event_date IS NULL OR COALESCE(e.event_end_date,e.event_date)>=?)`, [vilniusToday()]);
+    const names = new Map<string, { name: string; eventIds: number[]; done: boolean }>();
+    for (const row of rows) for (const item of previousNewNames(row.result).filter(name => name.status === 'open')) {
+      const key = normalizeArtist(item.name), group = names.get(key) ?? { name: item.name, eventIds: [], done: false };
+      group.eventIds.push(Number(row.event_id));
+      group.done ||= !!item.country || !!item.country_checked;
+      names.set(key, group);
+    }
+    return [...names.values()].filter(group => !group.done);
+  };
+  const names = (await waiting()).slice(0, limit);
+  let found = 0, checked = 0, error: string | undefined;
+  for (const item of names) {
+    let match;
+    // A failed request stops the batch without marking the name, so it is asked again later.
+    try { match = await searchMusicBrainz(pool, item.name, request); } catch (cause) { error = cause instanceof Error ? cause.message : String(cause); break; }
+    checked++;
+    const country = match?.country ?? '';
+    if (country) found++;
+    await transaction(pool, async conn => {
+      for (const eventId of item.eventIds) await updateNewName(conn, eventId, normalizeArtist(item.name), country ? { country, country_checked: true } : { country_checked: true });
+    });
+  }
+  return { checked, found, remaining: (await waiting()).length, ...(error ? { error } : {}) };
 }
 
 async function updateNewName(conn: PoolConnection, eventId: number, key: string, change: Partial<NewName>) {

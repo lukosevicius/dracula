@@ -29,22 +29,23 @@ export function clearMatch(name: string, artists: Found[]): MusicBrainzArtist | 
 }
 
 export async function lookUpMusicBrainz(pool: Pool, name: string, request = fetch): Promise<MusicBrainzArtist | null> {
-  try {
-    // Shares the import's pace: MusicBrainz allows about one request a second.
-    for (let tries = 0; tries < 5; tries++) {
-      const waitMs = await reserveMusicBrainz(pool).then(result => result.waitMs, () => 0);
-      if (!waitMs) break;
-      await pause(waitMs);
-    }
-    const url = new URL('https://musicbrainz.org/ws/2/artist/');
-    url.searchParams.set('query', `artist:"${name.replace(/["\\]/g, ' ')}"`);
-    url.searchParams.set('fmt', 'json');
-    url.searchParams.set('limit', '5');
-    const response = await request(url, { headers: { accept: 'application/json', 'user-agent': userAgent }, signal: AbortSignal.timeout(10_000), redirect: 'error' });
-    if (!response.ok) return null;
-    const body = await response.json() as { artists?: Found[] };
-    return clearMatch(name, Array.isArray(body.artists) ? body.artists : []);
-  } catch {
-    return null;
+  try { return await searchMusicBrainz(pool, name, request); } catch { return null; }
+}
+
+/** Like lookUpMusicBrainz, but a failed request throws instead of reading as "no clear match". */
+export async function searchMusicBrainz(pool: Pool, name: string, request = fetch): Promise<MusicBrainzArtist | null> {
+  // Shares the import's pace: MusicBrainz allows about one request a second.
+  for (let tries = 0; tries < 5; tries++) {
+    const waitMs = await reserveMusicBrainz(pool).then(result => result.waitMs, () => 0);
+    if (!waitMs) break;
+    await pause(waitMs);
   }
+  const url = new URL('https://musicbrainz.org/ws/2/artist/');
+  url.searchParams.set('query', `artist:"${name.replace(/["\\]/g, ' ')}"`);
+  url.searchParams.set('fmt', 'json');
+  url.searchParams.set('limit', '5');
+  const response = await request(url, { headers: { accept: 'application/json', 'user-agent': userAgent }, signal: AbortSignal.timeout(10_000), redirect: 'error' });
+  if (!response.ok) throw new Error(`MusicBrainz returned HTTP ${response.status}.`);
+  const body = await response.json() as { artists?: Found[] };
+  return clearMatch(name, Array.isArray(body.artists) ? body.artists : []);
 }

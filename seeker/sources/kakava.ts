@@ -12,6 +12,8 @@ export type KakavaEvent = {
   imageUrl: string | null; priceFrom: number | null; status: string[]; promoter: string | null; sourceUrl: string;
 };
 export type KakavaPage = { data: KakavaEvent[]; page: number; pageSize: number; total: number };
+/** What one listing request tells us: shows to import, music shows Kakava marks cancelled, and every music show it lists. */
+export type KakavaListing = { events: KakavaEvent[]; cancelled: Set<number>; listed: Set<number> };
 
 export const KAKAVA_LIST_URL = 'https://api.kakava.lt/api/v1/event/show?boxOffice=false';
 const MUSIC_CATEGORY = 1;
@@ -26,8 +28,8 @@ const skippedStatuses = new Set(['CANCELED', 'SALE_EXPIRED']);
 const localTime = /^(\d{4}-\d{2}-\d{2})T((?:[01]\d|2[0-3]):[0-5]\d)(?::[0-5]\d(?:\.\d{1,9})?)?$/;
 
 type Options = { userAgent: string; request?: typeof fetch; now?: () => number; pause?: (ms: number) => Promise<void>; fresh?: boolean };
-let cache: { at: number; events: KakavaEvent[] } | null = null;
-let inFlight: Promise<KakavaEvent[]> | null = null;
+let cache: { at: number; listing: KakavaListing } | null = null;
+let inFlight: Promise<KakavaListing> | null = null;
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 const text = (value: unknown, max: number) => typeof value === 'string' && value.trim() ? value.replace(/\s+/g, ' ').trim().slice(0, max) : null;
@@ -40,7 +42,7 @@ function retryAfter(response: Response) {
   return Number.isFinite(seconds) ? Math.min(Math.max(seconds, 1000), MAX_RETRY_AFTER_MS) : RETRY_PAUSE_MS;
 }
 
-async function readListing(options: Options): Promise<unknown> {
+async function requestListing(options: Options): Promise<unknown> {
   const request = options.request ?? fetch, pause = options.pause ?? sleep;
   for (let attempt = 1; ; attempt++) {
     let response: Response;
@@ -70,15 +72,28 @@ async function readListing(options: Options): Promise<unknown> {
 
 /** Upcoming music shows in Lithuania, sorted by start time. Exported for tests. */
 export function normalizeKakava(value: unknown, now: number): KakavaEvent[] {
+  return readListing(value, now).events;
+}
+
+/** The listing split into shows to import, cancelled music shows and every music show listed. Exported for tests. */
+export function readKakavaListing(value: unknown, now: number): KakavaListing {
+  return readListing(value, now);
+}
+
+function readListing(value: unknown, now: number): KakavaListing {
   const body = record(value);
   if (!Array.isArray(body.shows)) throw new Error('Invalid Kakava response.');
-  const today = vilniusToday(now), events: KakavaEvent[] = [], seen = new Set<number>();
+  const today = vilniusToday(now), events: KakavaEvent[] = [], seen = new Set<number>(), cancelled = new Set<number>(), listed = new Set<number>();
   for (const raw of body.shows) {
     const show = record(raw);
     const id = show.shortId, eventId = show.eventShortId, title = text(show.eventTitle, 2000), slug = text(show.eventTitleSlug, 500);
     if (!Number.isSafeInteger(id) || Number(id) < 1 || !Number.isSafeInteger(eventId) || Number(eventId) < 1 || !title || !slug || !/^[\w-]+$/.test(slug) || seen.has(Number(id))) continue;
     const categories = Array.isArray(show.eventCategories) ? show.eventCategories.map(category => record(category).id) : [];
-    if (!categories.includes(MUSIC_CATEGORY) || show.showDate === false) continue;
+    if (!categories.includes(MUSIC_CATEGORY)) continue;
+    listed.add(Number(id));
+    const statuses = Array.isArray(show.frontEndStatus) ? show.frontEndStatus : [];
+    if (statuses.includes('CANCELED') || show.state === 'Canceled') cancelled.add(Number(id));
+    if (show.showDate === false) continue;
     const start = typeof show.startDateTime === 'string' ? localTime.exec(show.startDateTime) : null;
     if (!start) continue;
     const end = typeof show.endDateTime === 'string' ? localTime.exec(show.endDateTime) : null;
@@ -104,20 +119,25 @@ export function normalizeKakava(value: unknown, now: number): KakavaEvent[] {
       sourceUrl: `https://kakava.lt/renginys/${slug}/${Number(eventId)}`,
     });
   }
-  return events.sort((a, b) => a.startTime.localeCompare(b.startTime) || a.id - b.id);
+  return { events: events.sort((a, b) => a.startTime.localeCompare(b.startTime) || a.id - b.id), cancelled, listed };
 }
 
-/** All upcoming Kakava concerts. Reuses a listing fetched in the last ten minutes unless `fresh` is set. */
-export async function fetchKakavaEvents(options: Options): Promise<KakavaEvent[]> {
+/** The Kakava listing. Reuses one fetched in the last ten minutes unless `fresh` is set. */
+export async function fetchKakavaListing(options: Options): Promise<KakavaListing> {
   const now = options.now ?? Date.now;
-  if (!options.fresh && cache && now() - cache.at < CACHE_MS) return cache.events;
+  if (!options.fresh && cache && now() - cache.at < CACHE_MS) return cache.listing;
   // Concurrent callers (a preview while a job starts) share one request.
-  inFlight ??= readListing(options).then(value => {
-    const events = normalizeKakava(value, now());
-    cache = { at: now(), events };
-    return events;
+  inFlight ??= requestListing(options).then(value => {
+    const listing = readListing(value, now());
+    cache = { at: now(), listing };
+    return listing;
   }).finally(() => { inFlight = null; });
   return inFlight;
+}
+
+/** All upcoming Kakava concerts. */
+export async function fetchKakavaEvents(options: Options): Promise<KakavaEvent[]> {
+  return (await fetchKakavaListing(options)).events;
 }
 
 export async function fetchKakavaPage(page: number, options: Options): Promise<KakavaPage> {
