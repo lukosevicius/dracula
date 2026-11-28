@@ -9,12 +9,13 @@ import { claimImport, identity, importRequest, listAgents, manageAgent, queueImp
 import { fail, type Snapshot } from './history.js';
 import { listProviders, manageProvider } from './providers.js';
 import { artistReview, decideNewArtist, extractArtists } from '../artists/extraction.js';
+import { listScheduledRuns, saveScheduledRun } from '../imports/scheduled-runs.js';
 import { listRules, updateRules } from './rule-settings.js';
 import { verificationUsage } from './usage.js';
 import { vilniusToday } from '../catalogue/catalogue.service.js';
 import { dismissDuplicate, listDuplicates } from '../events/duplicates.js';
 import { listingGone, removeListing } from '../events/remove.js';
-import { mergeConfidentDuplicates, mergeEvents, pairPreviews, parseChoices, previewMerge } from '../events/merge.js';
+import { mergeConfidentDuplicates, mergeEvents, pairPreviews, parseChoices, parseOwnTitle, previewMerge } from '../events/merge.js';
 import { editPublication, manualVerification, proposeFinding, queueRulesPreview, recentVerificationJobs, resolveFinding, rulesPreview, verificationDetails, verificationJob } from './verification.js';
 
 async function readJson(request: Request): Promise<Snapshot> {
@@ -78,6 +79,10 @@ export class SeekerController {
           if (event[2]) return send(200, details);
           const { available_artists: _artists, ...eventData } = await this.admin.backend.getEvent(id);
           return send(200, { ...eventData, verification: details });
+        }
+        if (path === '/scheduled-runs') {
+          require('events:read');
+          return send(200, { runs: await listScheduledRuns(pool) });
         }
         if (path === '/artists/review') {
           require('events:read');
@@ -162,7 +167,7 @@ export class SeekerController {
           require('admin');
           const ids = body.event_ids;
           if (!Array.isArray(ids) || ids.length !== 2) throw fail(400, 'Choose two different events.');
-          return send(200, { ok: true, ...await mergeEvents(pool, Number(ids[0]), Number(ids[1]), access.actor, parseChoices(body.choices)) });
+          return send(200, { ok: true, ...await mergeEvents(pool, Number(ids[0]), Number(ids[1]), access.actor, parseChoices(body.choices), parseOwnTitle(body.own_title)) });
         }
         if (path === '/duplicates/preview') {
           require('admin');
@@ -177,6 +182,11 @@ export class SeekerController {
         if (path === '/duplicates/dismiss') {
           require('admin');
           await dismissDuplicate(pool, body.event_ids);
+          return send(200, { ok: true });
+        }
+        if (path === '/scheduled-runs') {
+          require('admin');
+          await saveScheduledRun(pool, body);
           return send(200, { ok: true });
         }
         if (path === '/artists/extract') {

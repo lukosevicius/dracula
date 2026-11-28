@@ -41,6 +41,7 @@ if (!CENTRAL_API_URL || !CENTRAL_API_TOKEN) {
 const api = createCentralApi(CENTRAL_API_URL, CENTRAL_API_TOKEN);
 const jobs = createCentralJobs(api, process.env.SEEKER_USER_AGENT || 'Seeker/0.1.0 (scheduled import)');
 const steps: Step[] = [];
+const startedAt = new Date().toISOString();
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const describe = (progress: Progress) => Object.entries(progress).map(([key, value]) => `${key} ${value}`).join(', ');
 
@@ -123,8 +124,12 @@ await step('Merge confident duplicates', async () => {
 await step('Artist matching', async () => {
   const total = { processed: 0, linked: 0, suggested: 0, new_names: 0, cost_usd: 0 };
   let remaining = 0;
-  for (let round = 0; round < 120; round++) {
-    const batch = await api.seekerWrite('/artists/extract', { limit: 5 });
+  // One event per request stays inside the API client's time limit. A slow one can still time out; the server keeps
+  // what it finished, so the loop carries on and gives up only after three failures in a row.
+  for (let round = 0, failures = 0; round < 600; round++) {
+    let batch: Record<string, unknown>;
+    try { batch = await api.seekerWrite('/artists/extract', { limit: 1 }); failures = 0; }
+    catch (error) { if (++failures >= 3) throw error; continue; }
     for (const key of Object.keys(total) as (keyof typeof total)[]) total[key] += Number(batch[key]) || 0;
     remaining = Number(batch.remaining) || 0;
     if (!Number(batch.processed) || !remaining) break;
@@ -136,4 +141,16 @@ const report = [`### Scheduled import (${mode}: ${[...sources].join(', ')})`, ''
   ...steps.map(item => `| ${item.name} | ${item.status === 'completed' ? '✅' : item.status === 'failed' ? '❌' : '⏭️'} ${item.status} | ${item.summary.replace(/\|/g, '/')} |`)].join('\n');
 if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, report + '\n');
 console.log('\n' + report);
+
+// The same summary for Seeker's Import log. A run that cannot report it still counts as done.
+const { GITHUB_ACTIONS, GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID } = process.env;
+try {
+  await api.seekerWrite('/scheduled-runs', {
+    started_at: startedAt, finished_at: new Date().toISOString(), mode, steps,
+    origin: GITHUB_ACTIONS === 'true' ? 'github' : process.platform === 'darwin' ? 'mac' : 'other',
+    run_url: GITHUB_ACTIONS === 'true' && GITHUB_SERVER_URL && GITHUB_REPOSITORY && GITHUB_RUN_ID ? `${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}` : null,
+  });
+} catch (error) {
+  console.warn(`Could not save the run to the Import log: ${error instanceof Error ? error.message : String(error)}`);
+}
 process.exit(steps.some(item => item.status === 'failed') ? 1 : 0);

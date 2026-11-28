@@ -303,3 +303,16 @@ CREATE TABLE IF NOT EXISTS artist_extractions (
   error_message VARCHAR(1000) NULL,
   FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Scheduled import log (migration 024).
+CREATE TABLE IF NOT EXISTS scheduled_runs (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  started_at VARCHAR(30) NOT NULL,
+  finished_at VARCHAR(30) NOT NULL,
+  origin VARCHAR(32) NOT NULL,
+  mode VARCHAR(32) NOT NULL,
+  status VARCHAR(32) NOT NULL,
+  steps LONGTEXT NOT NULL,
+  run_url VARCHAR(500) NULL,
+  INDEX idx_scheduled_runs_started (started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

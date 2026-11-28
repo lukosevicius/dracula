@@ -626,3 +626,9 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
 .match-event > small { display: block; font-size: 14px; color: var(--text, inherit); }
 .match-event > small a { font-weight: 650; }
 .more-events { display: block; }
+.scheduled-run { border-left: 3px solid var(--accent, #f07a9a); padding-left: 10px; }
+.run-steps { margin: 6px 0; padding-left: 4px; list-style: none; display: grid; gap: 3px; font-size: 13px; }
+.scheduled-run details summary { cursor: pointer; }
+.scheduled-run small a { display: inline-block; margin-top: 4px; }
+.merge-own-title { display: inline-flex; flex-direction: column; gap: 4px; min-width: min(100%, 320px); }
+.merge-own-title input { width: 100%; font: inherit; }

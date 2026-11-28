@@ -141,7 +141,7 @@ export async function previewMerge(pool: Pool, firstId: number, secondId: number
  * Moves everything attached to one event onto another and removes the first. The removed ID redirects to the kept
  * event. Field values follow planMerge. Runs in the caller's transaction.
  */
-export async function mergeEventsIn(conn: PoolConnection, firstId: number, secondId: number, actor: string, choices: Choices = {}, context: Record<string, unknown> = {}) {
+export async function mergeEventsIn(conn: PoolConnection, firstId: number, secondId: number, actor: string, choices: Choices = {}, context: Record<string, unknown> = {}, ownTitle?: string) {
   const pair = await loadPair(conn, firstId, secondId, true);
   const { survivor, removed, sources, keptPrice, removedPrice } = pair;
   const { keep, drop, fields } = planMerge(pair, choices);
@@ -160,6 +160,8 @@ export async function mergeEventsIn(conn: PoolConnection, firstId: number, secon
     if (field === 'review_status') updates.classification_manual = override ? 1 : Number(removed.classification_manual);
     else if (override || removedManual.has(field)) manual.add(field);
   }
+  // A title the editor wrote replaces both, and like any edit it is protected from source refreshes.
+  if (ownTitle !== undefined) { updates.title = ownTitle; manual.add('title'); }
   for (const field of ['description_override', 'about_url_override'] as const) {
     if (blank(survivor[field]) && !blank(removed[field])) updates[field] = removed[field] as Value;
   }
@@ -214,8 +216,16 @@ export function parseChoices(value: unknown): Choices {
   return choices;
 }
 
-export function mergeEvents(pool: Pool, firstId: number, secondId: number, actor: string, choices: Choices = {}) {
-  return transaction(pool, conn => mergeEventsIn(conn, firstId, secondId, actor, choices));
+export function mergeEvents(pool: Pool, firstId: number, secondId: number, actor: string, choices: Choices = {}, ownTitle?: string) {
+  return transaction(pool, conn => mergeEventsIn(conn, firstId, secondId, actor, choices, {}, ownTitle));
+}
+
+/** An editor's own title for the merged event: trimmed text, or undefined when none was given. */
+export function parseOwnTitle(value: unknown): string | undefined {
+  if (value == null || value === '') return undefined;
+  const title = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+  if (!title || title.length > 300) throw fail(400, 'Write a title of up to 300 characters.');
+  return title;
 }
 
 /** The merge preview for each pair, so a list can show them without further requests. */

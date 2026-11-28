@@ -87,3 +87,13 @@ test('a merge plan prefers venue names and known prices, and flags real disagree
   assert.equal(tickets('https://example.lt/e/1', 'https://example.lt/e/1/seatmap').conflict, true);
   assert.equal(tickets(page, page + '-2').conflict, true);
 });
+
+test('an own title for a merge is trimmed, single-spaced and limited', async () => {
+  const { parseOwnTitle } = await import('../dist/events/merge.js');
+  assert.equal(parseOwnTitle('  Paulina   Paukštaitytė '), 'Paulina Paukštaitytė');
+  assert.equal(parseOwnTitle(undefined), undefined);
+  assert.equal(parseOwnTitle(''), undefined);
+  assert.throws(() => parseOwnTitle('   '), /Write a title/);
+  assert.throws(() => parseOwnTitle('x'.repeat(301)), /Write a title/);
+  assert.throws(() => parseOwnTitle(42), /Write a title/);
+});

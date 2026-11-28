@@ -34,8 +34,12 @@ function useArtistReview() {
     setRunning(true); setNotice(''); setError('');
     const total = { processed: 0, linked: 0, suggested: 0, new_names: 0, cost_usd: 0 };
     try {
-      for (let round = 0; round < 200; round++) {
-        const batch = await api<Batch>('/api/workflow/artists/extract', { limit: 5 });
+      // One event per request keeps each one well inside Seeker's request time limit. A slow event can still time
+      // out; the server keeps whatever it finished, so the loop just carries on, and stops after three failures in a row.
+      for (let round = 0, failures = 0; round < 1000; round++) {
+        let batch: Batch;
+        try { batch = await api<Batch>('/api/workflow/artists/extract', { limit: 1 }); failures = 0; }
+        catch (cause) { if (++failures >= 3) throw cause; continue; }
         for (const key of Object.keys(total) as (keyof typeof total)[]) total[key] += batch[key];
         setNotice(`Read ${total.processed} events · ${batch.remaining} left…`);
         if (!batch.processed || !batch.remaining) break;
