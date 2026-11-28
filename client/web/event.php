@@ -147,7 +147,7 @@ function structured_data(array $event, string $url, string $image, string $summa
         '@type' => 'MusicEvent',
         'name' => clean((string) $event['title']),
         'startDate' => $start,
-        'endDate' => $end !== null && $end > $start ? $end : null,
+        'endDate' => end_date($start, $end),
         'eventStatus' => 'https://schema.org/EventScheduled',
         'eventAttendanceMode' => 'https://schema.org/OfflineEventAttendanceMode',
         'location' => ['@type' => 'Place', 'name' => $venue ?: $city, 'address' => ['@type' => 'PostalAddress', 'addressLocality' => $city, 'addressCountry' => 'LT']],
@@ -158,6 +158,21 @@ function structured_data(array $event, string $url, string $image, string $summa
     ], fn ($value) => $value !== null);
     $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP);
     return $json === false ? '' : "\n    <script type=\"application/ld+json\">" . $json . '</script>';
+}
+
+/**
+ * The end for search engines. A date without a time means "ends that day": a same-day event with no end time gets its
+ * own date, without making up a time. An end time earlier than the start (often one past midnight) is left out.
+ */
+function end_date(string $start, ?string $end): ?string
+{
+    if ($end === null) {
+        return null;
+    }
+    if (strlen($end) === 10) {
+        return $end >= substr($start, 0, 10) ? $end : null;
+    }
+    return $end > $start ? $end : null;
 }
 
 /** The first start time on the event's first day: a listed showing, or the event's own time. */
