@@ -97,8 +97,104 @@ export function MatchArtistsPage() {
           </div>
         </div>;
       })}
+      <ArtistSearch eventId={links[0].event_id} title={links[0].title} />
     </section>)}
+    {review && <EventsWithoutArtists />}
   </>;
+}
+
+type Unlinked = { event_id: number; title: string; event_date: string | null; venue: string | null; city: string | null; ai: 'read' | 'waiting' | 'failed'; found: { name: string; outcome: string }[] };
+type CatalogueArtist = { mbid: string; name: string; artist_type: string | null; area: string | null };
+const outcomeLabels: Record<string, string> = { new: 'not in catalogue', unsure: 'not sure they perform', suggested: 'waiting above', decided: 'declined earlier', linked: 'linked' };
+const searchable = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('lt');
+
+/** What the AI found in an event with no linked artist, or why it found nothing. */
+function aiNote(event: Unlinked) {
+  if (event.ai === 'waiting') return 'AI has not read this event yet.';
+  if (event.ai === 'failed') return 'AI could not read this event; it tries again later.';
+  if (!event.found.length) return 'AI found no performers in the listing.';
+  return `AI found: ${event.found.map(found => `${found.name} (${outcomeLabels[found.outcome] ?? found.outcome})`).join(', ')}`;
+}
+
+/** Upcoming music events with no artist yet, each with a quick search to link one from the catalogue. */
+function EventsWithoutArtists() {
+  const [events, setEvents] = useState<Unlinked[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function show() {
+    setLoading(true); setError('');
+    try {
+      setEvents((await api<{ events: Unlinked[] }>('/api/workflow/artists/unlinked')).events);
+    } catch (cause) { setError(errorMessage(cause)); }
+    finally { setLoading(false); }
+  }
+
+  if (!events) return <div className="unlinked-toggle">
+    <button className="secondary-button" type="button" disabled={loading} onClick={() => void show()}>{loading ? 'Loading events…' : 'Show events without artists'}</button>
+    <Feedback message={error} error />
+  </div>;
+  return <section className="panel">
+    <PanelHeading title={`Events without artists (${events.length})`} description="Upcoming music events with no linked artist. Link as many as an event needs: pick one from the catalogue, or add a name that is not in it yet." />
+    {!events.length && <p className="empty-state">Every upcoming music event has an artist.</p>}
+    {events.map(event => <UnlinkedRow key={event.event_id} event={event} />)}
+  </section>;
+}
+
+// The catalogue is loaded once per page and shared by every search box.
+let catalogue: Promise<CatalogueArtist[]> | null = null;
+const loadCatalogue = () => (catalogue ??= api<{ artists: CatalogueArtist[] }>('/api/dashboard').then(result => result.artists).catch(error => { catalogue = null; throw error; }));
+
+/**
+ * Links artists to one event by hand, as many as it needs: pick one from the catalogue, or add a name that is not in
+ * it yet (looked up in MusicBrainz first, like New artists). Linked names stay listed under the box.
+ */
+function ArtistSearch({ eventId, title }: { eventId: number; title: string }) {
+  const [artists, setArtists] = useState<CatalogueArtist[]>([]);
+  const [query, setQuery] = useState('');
+  const [linked, setLinked] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const needle = searchable(query.trim());
+  const matches = needle.length >= 2 ? artists.filter(artist => searchable(artist.name).includes(needle)).slice(0, 8) : [];
+  const exact = matches.some(artist => searchable(artist.name) === needle);
+
+  async function save(work: () => Promise<string>) {
+    setSaving(true); setError('');
+    try { const name = await work(); setLinked(current => [...current, name]); setQuery(''); window.dispatchEvent(new Event('seeker:artists-changed')); }
+    catch (cause) { setError(errorMessage(cause)); }
+    finally { setSaving(false); }
+  }
+  const link = (artist: CatalogueArtist) => save(async () => { await api(`/api/events/${eventId}/artist`, { mbid: artist.mbid, decision: 'accepted' }); return artist.name; });
+  const addNew = () => save(async () => {
+    const result = await api<{ name: string; source: string; country: string | null }>('/api/workflow/artists/add-to-event', { event_id: eventId, name: query.trim() });
+    catalogue = null;
+    return `${result.name}${result.source === 'musicbrainz' ? ' (MusicBrainz' + (result.country ? `, ${result.country})` : ')') : ' (new)'}`;
+  });
+
+  return <div className="unlinked-search">
+    {linked.length > 0 && <small className="linked-names">Linked: {linked.join(', ')}</small>}
+    <input type="search" aria-label={`Add an artist to ${plain(title)}`} placeholder="Add an artist…" value={query} disabled={saving}
+      onFocus={() => void loadCatalogue().then(setArtists).catch(cause => setError(errorMessage(cause)))}
+      onChange={change => setQuery(change.target.value)}
+      onKeyDown={event => { if (event.key === 'Enter' && needle.length >= 2 && !saving) { event.preventDefault(); if (matches.length === 1) void link(matches[0]); else if (!matches.length) void addNew(); } }} />
+    {needle.length >= 2 && <div className="inline-actions">
+      {matches.map(artist => <button key={artist.mbid} className="secondary-button" type="button" disabled={saving} onClick={() => void link(artist)}
+        title={[artist.artist_type, artist.area].filter(Boolean).join(' · ')}>{artist.name}</button>)}
+      {!exact && <button className="text-button" type="button" disabled={saving} onClick={() => void addNew()}>{saving ? 'Adding…' : `+ Add “${query.trim()}” as new artist`}</button>}
+    </div>}
+    <Feedback message={error} error />
+  </div>;
+}
+
+function UnlinkedRow({ event }: { event: Unlinked }) {
+  return <div className="artist-match unlinked-event">
+    <div>
+      <EventLine item={event} />
+      <small className="artist-match-reason">{aiNote(event)}</small>
+      <ArtistSearch eventId={event.event_id} title={event.title} />
+    </div>
+  </div>;
 }
 
 function NewNameRow({ item, busy, onDecide }: { item: NewName; busy: boolean; onDecide: (item: NewName, decision: 'add' | 'dismiss', edit?: { name: string; country: string }) => void }) {

@@ -623,7 +623,11 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
 .verification-candidates a, .verification-log a { text-decoration: underline; text-underline-offset: .18em; }
 .minor-names { margin-top: 14px; }
 .minor-names > summary { cursor: pointer; color: var(--muted, inherit); font-weight: 600; padding: 6px 0; }
-.match-event > small { display: block; font-size: 14px; color: var(--text, inherit); }
+.match-event { padding: 12px 14px 14px; }
+.match-event > small { display: block; font-size: 14px; color: var(--text, inherit); margin-bottom: 2px; }
+.match-event .artist-match { margin-top: 8px; }
+.match-event > .unlinked-search { margin-top: 10px; }
+.linked-names { color: var(--good, #8fd6a6); }
 .match-event > small a { font-weight: 650; }
 .more-events { display: block; }
 .scheduled-run { border-left: 3px solid var(--accent, #f07a9a); padding-left: 10px; }
@@ -632,3 +636,8 @@ input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var
 .scheduled-run small a { display: inline-block; margin-top: 4px; }
 .merge-own-title { display: inline-flex; flex-direction: column; gap: 4px; min-width: min(100%, 320px); }
 .merge-own-title input { width: 100%; font: inherit; }
+.unlinked-toggle { margin-top: 18px; display: flex; justify-content: center; }
+.unlinked-event { grid-template-columns: minmax(0, 1fr); }
+.unlinked-event > div > small { display: block; }
+.unlinked-search { margin-top: 8px; display: grid; gap: 6px; }
+.unlinked-search input { max-width: 360px; font: inherit; }

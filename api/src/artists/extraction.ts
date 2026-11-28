@@ -208,24 +208,8 @@ export async function decideNewArtist(pool: Pool, input: Record<string, unknown>
       for (const offer of offers) await updateNewName(conn, offer.eventId, key, { status: 'dismissed' });
       return { linked: 0 };
     }
-    const now = new Date().toISOString();
     const written = [...new Set(offers.map(offer => offer.item.written).filter(value => normalizeArtist(value) !== normalizeArtist(shown)))];
-    let mbid: string, source: 'musicbrainz' | 'dracula', savedCountry: string | null;
-    if (found) {
-      mbid = found.mbid; source = 'musicbrainz'; savedCountry = found.country ?? (country || null);
-      await conn.execute(`INSERT INTO artists(mbid,name,sort_name,artist_type,country,area,disambiguation,aliases_json,source_url,first_seen_at,updated_at,source)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,'musicbrainz') ON DUPLICATE KEY UPDATE updated_at=VALUES(updated_at)`,
-      [mbid, found.name, found.sort_name, found.artist_type, savedCountry, found.area, found.disambiguation, JSON.stringify([...new Set([...found.aliases, ...written])]), `https://musicbrainz.org/artist/${mbid}`, now, now]);
-    } else {
-      const existing = (await catalogue(conn)).get(normalizeArtist(shown)) ?? [];
-      source = 'dracula'; savedCountry = country || null;
-      if (existing[0]) mbid = existing[0].mbid;
-      else {
-        mbid = randomUUID();
-        await conn.execute(`INSERT INTO artists(mbid,name,country,aliases_json,source_url,first_seen_at,updated_at,source) VALUES(?,?,?,?,'',?,?,'dracula')`,
-          [mbid, shown, savedCountry, JSON.stringify(written), now, now]);
-      }
-    }
+    const { mbid, source, country: savedCountry } = await saveArtist(conn, shown, country, found, written);
     for (const offer of offers) {
       await conn.execute(`INSERT IGNORE INTO event_artist_decisions(event_id,artist_mbid,decision,role,evidence,decided_by) VALUES(?,?,'accepted',?,?,'editor')`,
         [offer.eventId, mbid, offer.item.role, offer.item.evidence || null]);
@@ -235,10 +219,73 @@ export async function decideNewArtist(pool: Pool, input: Record<string, unknown>
   });
 }
 
+/**
+ * The artist for a name an editor confirmed: the MusicBrainz match when there is one, else an artist already in the
+ * catalogue under that name, else a new one of Dracula's own. Other spellings are kept as aliases.
+ */
+async function saveArtist(conn: PoolConnection, shown: string, country: string, found: Awaited<ReturnType<typeof lookUpMusicBrainz>>, written: string[] = []) {
+  const now = new Date().toISOString();
+  if (found) {
+    const savedCountry = found.country ?? (country || null);
+    await conn.execute(`INSERT INTO artists(mbid,name,sort_name,artist_type,country,area,disambiguation,aliases_json,source_url,first_seen_at,updated_at,source)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,'musicbrainz') ON DUPLICATE KEY UPDATE updated_at=VALUES(updated_at)`,
+    [found.mbid, found.name, found.sort_name, found.artist_type, savedCountry, found.area, found.disambiguation, JSON.stringify([...new Set([...found.aliases, ...written])]), `https://musicbrainz.org/artist/${found.mbid}`, now, now]);
+    return { mbid: found.mbid, source: 'musicbrainz' as const, country: savedCountry, name: found.name };
+  }
+  const existing = (await catalogue(conn)).get(normalizeArtist(shown)) ?? [];
+  if (existing[0]) return { mbid: existing[0].mbid, source: 'dracula' as const, country: country || null, name: existing[0].name };
+  const mbid = randomUUID();
+  await conn.execute(`INSERT INTO artists(mbid,name,country,aliases_json,source_url,first_seen_at,updated_at,source) VALUES(?,?,?,?,'',?,?,'dracula')`,
+    [mbid, shown, country || null, JSON.stringify(written), now, now]);
+  return { mbid, source: 'dracula' as const, country: country || null, name: shown };
+}
+
+/**
+ * An editor links an artist by name to one event, also one the AI did not find. The name is looked up like
+ * New artists does: MusicBrainz first, then the catalogue, else a new artist of Dracula's own.
+ */
+export async function addArtistToEvent(pool: Pool, input: Record<string, unknown>, request = fetch) {
+  const eventId = Number(input.event_id), name = typeof input.name === 'string' ? input.name.replace(/\s+/g, ' ').trim() : '';
+  const country = typeof input.country === 'string' ? input.country.trim().toUpperCase() : '';
+  if (!Number.isSafeInteger(eventId) || eventId < 1 || !name || name.length > 200 || (country && !/^[A-Z]{2}$/.test(country))) throw fail(400, 'Write an artist name for this event.');
+  const found = await lookUpMusicBrainz(pool, name, request);
+  return transaction(pool, async conn => {
+    const [events] = await conn.execute<RowDataPacket[]>('SELECT id FROM events WHERE id=? FOR UPDATE', [eventId]);
+    if (!events.length) throw fail(404, 'Event not found.');
+    const artist = await saveArtist(conn, name, country, found);
+    await conn.execute(`INSERT INTO event_artist_decisions(event_id,artist_mbid,decision,decided_by) VALUES(?,?,'accepted','editor')
+      ON DUPLICATE KEY UPDATE decision='accepted',decided_by='editor'`, [eventId, artist.mbid]);
+    return { ...artist, event_id: eventId };
+  });
+}
+
 async function updateNewName(conn: PoolConnection, eventId: number, key: string, change: Partial<NewName>) {
   const [rows] = await conn.execute<RowDataPacket[]>('SELECT result FROM artist_extractions WHERE event_id=?', [eventId]);
   let parsed: Extraction;
   try { parsed = JSON.parse(String(rows[0]?.result)); } catch { return; }
   parsed.new_names = (parsed.new_names ?? []).map(item => item.status === 'open' && normalizeArtist(item.name) === key ? { ...item, ...change } : item);
   await conn.execute('UPDATE artist_extractions SET result=? WHERE event_id=?', [JSON.stringify(parsed), eventId]);
+}
+
+/**
+ * Upcoming music events with no linked artist, for Seeker's Match artists page: what the AI found in each (or that it
+ * has not read it yet), so an editor can link the right artist by hand.
+ */
+export async function eventsWithoutArtists(pool: Pool) {
+  const today = vilniusToday();
+  const [rows] = await pool.execute<RowDataPacket[]>(`SELECT e.id,e.title,e.event_date,e.venue,e.city,x.status AS ai_status,x.result
+    FROM events e LEFT JOIN artist_extractions x ON x.event_id=e.id
+    WHERE e.review_status IN ('music','festival') AND e.event_date IS NOT NULL
+      AND GREATEST(e.event_date, COALESCE(e.event_end_date, e.event_date)) >= ?
+      AND NOT EXISTS (SELECT 1 FROM event_artist_decisions d WHERE d.event_id=e.id AND d.decision='accepted')
+    ORDER BY e.event_date, e.id LIMIT 500`, [today]);
+  return rows.map(row => {
+    let found: { name: string; outcome: string }[] = [];
+    try {
+      const parsed = row.result ? JSON.parse(String(row.result)) as Extraction : null;
+      found = (parsed?.performers ?? []).map(p => ({ name: p.name, outcome: p.outcome }));
+    } catch { /* An unreadable result shows as nothing found. */ }
+    return { event_id: Number(row.id), title: row.title, event_date: row.event_date, venue: row.venue, city: row.city,
+      ai: row.ai_status === 'completed' ? 'read' : row.ai_status === 'failed' ? 'failed' : 'waiting', found };
+  });
 }

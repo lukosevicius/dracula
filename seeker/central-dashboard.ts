@@ -23,8 +23,8 @@ export function createCentralDashboard(api:CentralApi, userAgent='Seeker/0.1.0',
     };
     try {
       const workflowPath = url.pathname.replace(/^\/api\/workflow(?=\/)/, '');
-      const workflowRead = request.method === 'GET' && /^(?:\/providers|\/agents|\/attention-count|\/duplicates|\/verification\/(?:usage|rules(?:\/previews\/\d{1,15})?|jobs(?:\/\d{1,12})?)|\/events\/\d{1,12}\/verification|\/artists\/review|\/scheduled-runs)$/.test(workflowPath);
-      const workflowWrite = request.method === 'POST' && /^(?:\/providers|\/agents|\/duplicates\/(?:merge|merge-confident|dismiss|preview)|\/verification\/(?:jobs|rules(?:\/previews)?)|\/artists\/(?:extract|new)|\/events\/\d{1,12}\/(?:publication|remove-listing|findings\/\d{1,12}))$/.test(workflowPath);
+      const workflowRead = request.method === 'GET' && /^(?:\/providers|\/agents|\/attention-count|\/duplicates|\/verification\/(?:usage|rules(?:\/previews\/\d{1,15})?|jobs(?:\/\d{1,12})?)|\/events\/\d{1,12}\/verification|\/artists\/(?:review|unlinked)|\/scheduled-runs)$/.test(workflowPath);
+      const workflowWrite = request.method === 'POST' && /^(?:\/providers|\/agents|\/duplicates\/(?:merge|merge-confident|dismiss|preview)|\/verification\/(?:jobs|rules(?:\/previews)?)|\/artists\/(?:extract|new|add-to-event)|\/events\/\d{1,12}\/(?:publication|remove-listing|findings\/\d{1,12}))$/.test(workflowPath);
       if (workflowRead) { send(200, await api.seekerRead(workflowPath + url.search)); return true; }
       if (workflowWrite) {
         const input = await readBody(32_768);
