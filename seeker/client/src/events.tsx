@@ -322,8 +322,8 @@ export default function EventsPage({ avilys = false, kakava = false, all = false
       <PageHeading title={name} description={queue === 'attention' ? 'Review findings before publishing drafts.' : queue === 'not-music' ? 'Browse events whose type is Other.' : all ? 'Review events from all sources.' : avilys ? 'Import and review Vilnius music events from Avilys.' : kakava ? 'Import and review Lithuanian concerts sold on Kakava.' : 'Review imported events and manage the Go Vilnius feed.'} icon={avilys ? 'avilys' : kakava ? 'ticket' : 'calendar'} href={all ? undefined : avilys ? 'https://avilys.app/paieska' : kakava ? 'https://kakava.lt/renginiai/1/koncertai' : 'https://www.vilnius-events.lt/'} linkLabel={`Open ${name}`} tools={!all} />
       {all && !queue && <Metrics items={[
         { label: 'Events across all sources', value: data?.counts.total.toLocaleString() ?? '—', icon: 'calendar' },
-        { label: 'Live and eligible for the feed', value: data?.readyCount.toLocaleString() ?? '—', icon: 'check' },
-        { label: 'Unsure across all sources', value: data?.counts.unsure.toLocaleString() ?? '—', icon: 'filter' },
+        { label: 'Live in the app, not yet past', value: data?.readyCount.toLocaleString() ?? '—', icon: 'check' },
+        { label: 'Type not decided (music or other)', value: data?.counts.unsure.toLocaleString() ?? '—', icon: 'filter' },
       ]} />}
       <div className={all ? 'main-stack' : 'workspace-grid'}>
         <div className="main-stack">

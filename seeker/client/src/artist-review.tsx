@@ -223,9 +223,29 @@ function NewNameRow({ item, busy, onDecide }: { item: NewName; busy: boolean; on
 }
 
 /** Review: performers with no artist in the catalogue yet, each name once with every event that names it. */
+type Origin = 'all' | 'lt' | 'other' | 'unknown';
+const regionNames = (() => { try { return new Intl.DisplayNames(['en'], { type: 'region' }); } catch { return null; } })();
+/** Two-letter code, or '' when the AI could not tell. */
+const countryOf = (item: NewName) => {
+  const code = /^[A-Za-z]{2}$/.test(item.country?.trim() ?? '') ? item.country.trim().toUpperCase() : '';
+  return code === 'UK' ? 'GB' : code; // The AI sometimes writes UK; the ISO code is GB.
+};
+function countryLabel(code: string) {
+  if (!code) return 'Country unknown';
+  try { return regionNames?.of(code) ?? code; } catch { return code; }
+}
+/** Countries with their name counts, most common first. */
+function countryCounts(items: NewName[]): [string, number][] {
+  const counts = new Map<string, number>();
+  for (const item of items) counts.set(countryOf(item), (counts.get(countryOf(item)) ?? 0) + 1);
+  return [...counts].sort(([a, x], [b, y]) => y - x || countryLabel(a).localeCompare(countryLabel(b)));
+}
+
 export default function NewArtistsPage() {
   const { review, load, setError, setNotice, header } = useArtistReview();
   const [busy, setBusy] = useState('');
+  const [origin, setOrigin] = useState<Origin>('all');
+  const [country, setCountry] = useState('any');
 
   async function decideName(item: NewName, decision: 'add' | 'dismiss', edit?: { name: string; country: string }) {
     setBusy(item.name); setNotice(''); setError('');
@@ -238,13 +258,35 @@ export default function NewArtistsPage() {
     finally { setBusy(''); }
   }
 
-  const main = review?.new_names.filter(item => !item.minor) ?? [];
-  const minor = review?.new_names.filter(item => item.minor) ?? [];
+  const names = review?.new_names ?? [];
+  const others = countryCounts(names.filter(item => !['LT', ''].includes(countryOf(item))));
+  // A country picked earlier may have no names left after a decision; fall back to every other country.
+  const otherCountry = others.some(([code]) => code === country) ? country : 'any';
+  const group = (item: NewName): Origin => countryOf(item) === 'LT' ? 'lt' : countryOf(item) ? 'other' : 'unknown';
+  const shown = names.filter(item => origin === 'all' || group(item) === origin)
+    .filter(item => origin !== 'other' || otherCountry === 'any' || countryOf(item) === otherCountry);
+  const main = shown.filter(item => !item.minor);
+  const minor = shown.filter(item => item.minor);
+  const count = (value: Origin) => names.filter(item => group(item) === value).length;
   return <>
     {header('New artists', 'Performers the AI found that are not in the catalogue yet. Add artist looks the name up in MusicBrainz first, where one clear match brings its real country, and links every upcoming event that names it.')}
     {review && <section className="panel">
+      <div className="panel-body">
+        <div className="filter-grid">
+          <label className="field">Country <select value={origin} onChange={event => setOrigin(event.target.value as Origin)}>
+            <option value="all">All countries ({names.length})</option>
+            <option value="lt">Lithuania ({count('lt')})</option>
+            <option value="other">Not Lithuania ({count('other')})</option>
+            <option value="unknown">Country unknown ({count('unknown')})</option>
+          </select></label>
+          {origin === 'other' && <label className="field">Other country <select value={otherCountry} onChange={event => setCountry(event.target.value)}>
+            <option value="any">Any other country</option>
+            {others.map(([code, count]) => <option key={code} value={code}>{countryLabel(code)} ({count})</option>)}
+          </select></label>}
+        </div>
+      </div>
       <PanelHeading title={`Headliners, bands and ensembles (${main.length})`} />
-      {!main.length && <p className="empty-state">No new names.</p>}
+      {!main.length && <p className="empty-state">{names.length ? 'No new names match this filter.' : 'No new names.'}</p>}
       {main.map(item => <NewNameRow key={item.name} item={item} busy={!!busy} onDecide={decideName} />)}
       {minor.length > 0 && <details className="minor-names">
         <summary>Band members, guests and others ({minor.length})</summary>
