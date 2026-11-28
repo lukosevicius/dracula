@@ -52,7 +52,8 @@ const navigation = [
   { label: 'Review', items: [
     { path: '/needs-attention.html', name: 'Needs attention', icon: 'filter' },
     { path: '/possible-duplicates.html', name: 'Duplicates', icon: 'search' },
-    { path: '/artists-to-confirm.html', name: 'Artists to confirm', icon: 'check' },
+    { path: '/match-artists.html', name: 'Match artists', icon: 'check' },
+    { path: '/new-artists.html', name: 'New artists', icon: 'plus' },
     { path: '/not-music.html', name: 'Not music', icon: 'noMusic' },
     { path: '/saved-events.html', name: 'Saved', icon: 'save' },
   ] },
@@ -88,12 +89,14 @@ export function Workspace({ children }: { children: ReactNode }) {
     const load = () => { void api<{ count: number }>('/api/workflow/attention-count').then(result => set('/needs-attention.html', result.count)).catch(() => undefined); };
     // Duplicates and artists change only with imports and your own decisions, so they load once per page.
     void api<{ pairs: unknown[] }>('/api/workflow/duplicates').then(result => set('/possible-duplicates.html', result.pairs.length)).catch(() => undefined);
-    void api<{ links: unknown[]; new_names: { minor: boolean }[] }>('/api/workflow/artists/review')
-      .then(result => set('/artists-to-confirm.html', result.links.length + result.new_names.filter(name => !name.minor).length)).catch(() => undefined);
+    const loadArtists = () => void api<{ links: unknown[]; new_names: { minor: boolean }[] }>('/api/workflow/artists/review')
+      .then(result => { set('/match-artists.html', result.links.length); set('/new-artists.html', result.new_names.filter(name => !name.minor).length); }).catch(() => undefined);
+    loadArtists();
+    window.addEventListener('seeker:artists-changed', loadArtists);
     load();
     window.addEventListener('seeker:attention-changed', load);
     const timer = window.setInterval(() => { if (!document.hidden) load(); }, 15000);
-    return () => { disposed = true; window.clearInterval(timer); window.removeEventListener('seeker:attention-changed', load); };
+    return () => { disposed = true; window.clearInterval(timer); window.removeEventListener('seeker:attention-changed', load); window.removeEventListener('seeker:artists-changed', loadArtists); };
   }, []);
   const path = window.location.pathname === '/artist.html' ? '/artists.html' : window.location.pathname === '/event.html' ? '/all-events.html' : window.location.pathname;
   const current = navigation.flatMap(group => [...group.items]).find(item => item.path === path);
