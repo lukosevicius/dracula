@@ -4,6 +4,15 @@ import type { ImportRun, MusicBrainzRun } from '../../types';
 import { api, errorMessage, formatDate, isActive, jobLabels, safeUrl, type Job } from './data';
 import { Disclosure, Feedback, Icon, Pagination, PanelHeading } from './workspace';
 
+/** "12 fetched · 3 added · 9 updated", from a job's progress. */
+export function jobSummary(job: Job) {
+  let progress: Record<string, unknown> = {};
+  try { progress = JSON.parse(job.progress_json) ?? {}; } catch { /* Progress is optional. */ }
+  return job.action === 'refresh-all-details' && typeof progress.checked === 'number' && typeof progress.total === 'number'
+    ? `${progress.checked} of ${progress.total} checked`
+    : Object.entries(progress).filter(([, value]) => typeof value === 'number').map(([key, value]) => `${value} ${key.replaceAll('_', ' ')}`).join(' · ');
+}
+
 export function RecentJobs({ jobs, source }: { jobs: Job[]; source: string }) {
   const recent = jobs.filter(job => job.source === source).slice(0, 4);
   const active = recent.find(isActive);
@@ -11,11 +20,7 @@ export function RecentJobs({ jobs, source }: { jobs: Job[]; source: string }) {
     <Disclosure title={<span className="disclosure-caption">Recent jobs {active && <span className={`job-status status-${active.status}`}>{active.status}</span>}</span>}>
       <div className="job-activity">
         {recent.length ? recent.map(job => {
-          let progress: Record<string, unknown> = {};
-          try { progress = JSON.parse(job.progress_json) ?? {}; } catch { /* Progress is optional. */ }
-          const summary = job.action === 'refresh-all-details' && typeof progress.checked === 'number' && typeof progress.total === 'number'
-            ? `${progress.checked} of ${progress.total} checked`
-            : Object.entries(progress).filter(([, value]) => typeof value === 'number').map(([key, value]) => `${value} ${key.replaceAll('_', ' ')}`).join(' · ');
+          const summary = jobSummary(job);
           return (
             <div className="activity-item" key={job.id}>
               <div><strong>{jobLabels[job.action] ?? job.action}</strong><span className={`job-status status-${job.status}`}>{job.status}</span></div>

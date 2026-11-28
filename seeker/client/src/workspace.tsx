@@ -41,16 +41,20 @@ export function Icon({ name, size = 17 }: { name: IconName; size?: number }) {
 const navigation = [
   { label: 'Catalogue', items: [
     { path: '/artists.html', name: 'Artists', icon: 'library' },
-    { path: '/artists-to-confirm.html', name: 'Artists to confirm', icon: 'check' },
   ] },
   { label: 'Event sources', items: [
+    { path: '/import-log.html', name: 'Import log', icon: 'clock' },
     { path: '/all-events.html', name: 'All', icon: 'calendar' },
-    { path: '/needs-attention.html', name: 'Needs attention', icon: 'filter' },
-    { path: '/saved-events.html', name: 'Saved', icon: 'save' },
-    { path: '/not-music.html', name: 'Other events', icon: 'noMusic' },
     { path: '/avilys.html', name: 'Avilys', icon: 'avilys' },
     { path: '/vilnius-events.html', name: 'Vilnius Events', icon: 'pin' },
-    { path: '/possible-duplicates.html', name: 'Possible duplicates', icon: 'search' },
+  ] },
+  // Work waiting for an editor, most urgent first. Saved is a bookmark list, so it comes last.
+  { label: 'Review', items: [
+    { path: '/needs-attention.html', name: 'Needs attention', icon: 'filter' },
+    { path: '/possible-duplicates.html', name: 'Duplicates', icon: 'search' },
+    { path: '/artists-to-confirm.html', name: 'Artists to confirm', icon: 'check' },
+    { path: '/not-music.html', name: 'Not music', icon: 'noMusic' },
+    { path: '/saved-events.html', name: 'Saved', icon: 'save' },
   ] },
   { label: 'Tools', items: [
     { path: '/ai-evaluation.html', name: 'AI evaluation', icon: 'spark' },
@@ -68,7 +72,8 @@ function readCollapsed() {
 }
 
 export function Workspace({ children }: { children: ReactNode }) {
-  const [attentionCount, setAttentionCount] = useState(0);
+  // Waiting work, shown next to the Review items. A count that cannot load just stays hidden.
+  const [counts, setCounts] = useState<Record<string, number>>({});
   // Desktop only: the phone layout uses the menu button instead.
   const [collapsed, setCollapsed] = useState(readCollapsed);
   function toggleCollapsed() {
@@ -79,9 +84,12 @@ export function Workspace({ children }: { children: ReactNode }) {
   }
   useEffect(() => {
     let disposed = false;
-    const load = () => { void api<{ count: number }>('/api/workflow/attention-count').then(result => {
-      if (!disposed) setAttentionCount(result.count);
-    }).catch(() => undefined); };
+    const set = (path: string, count: number) => { if (!disposed) setCounts(current => ({ ...current, [path]: count })); };
+    const load = () => { void api<{ count: number }>('/api/workflow/attention-count').then(result => set('/needs-attention.html', result.count)).catch(() => undefined); };
+    // Duplicates and artists change only with imports and your own decisions, so they load once per page.
+    void api<{ pairs: unknown[] }>('/api/workflow/duplicates').then(result => set('/possible-duplicates.html', result.pairs.length)).catch(() => undefined);
+    void api<{ links: unknown[]; new_names: { minor: boolean }[] }>('/api/workflow/artists/review')
+      .then(result => set('/artists-to-confirm.html', result.links.length + result.new_names.filter(name => !name.minor).length)).catch(() => undefined);
     load();
     window.addEventListener('seeker:attention-changed', load);
     const timer = window.setInterval(() => { if (!document.hidden) load(); }, 15000);
@@ -142,7 +150,7 @@ export function Workspace({ children }: { children: ReactNode }) {
                 {group.items.map(item => (
                   <a className="nav-link" key={item.path} href={item.path} aria-current={item === current ? 'page' : undefined} onClick={() => setMenuOpen(false)}
                     title={collapsed ? item.name : undefined}>
-                    <Icon name={item.icon} /> <span className="nav-label">{item.name}</span>{item.path === '/needs-attention.html' && attentionCount > 0 && <span className="nav-attention-count" aria-label={`${attentionCount} need attention`}>{attentionCount}</span>}
+                    <Icon name={item.icon} /> <span className="nav-label">{item.name}</span>{(counts[item.path] ?? 0) > 0 && <span className="nav-attention-count" aria-label={`${counts[item.path]} waiting`}>{counts[item.path]}</span>}
                   </a>
                 ))}
               </div>

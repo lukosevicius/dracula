@@ -6,6 +6,7 @@ export type PublicationStatus = keyof typeof publicationLabels;
 
 export type EventRow = Omit<EventRecord, 'source_id' | 'artist_links' | 'artist_suggestions' | 'content_html'> & {
   id: number;
+  city?: string | null;
   publication_status?: PublicationStatus;
   verification_status?: 'not_verified' | 'queued' | 'verifying' | 'verified' | 'stale' | 'failed';
   revision?: number;
@@ -41,6 +42,7 @@ export type EventPage = {
   nextPage: number;
   runs: ImportRun[];
   sources: { source_key: string }[];
+  cities?: { city: string; count: number }[];
 };
 
 export type Job = {

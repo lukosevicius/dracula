@@ -149,6 +149,8 @@ export function createAdmin(pool: Pool, token: string) {
       const page=Number(query.get('page') || 1), limit=Number(query.get('limit') || 25), sort=query.get('sort') || 'date';
       const review=query.get('review')==='not_music'?'other':query.get('review') || 'all', when=query.get('when') || 'upcoming', source=query.get('source') || 'all';
       const assistantReview=query.get('assistantReview') || 'all', price=query.get('price') || 'all', time=query.get('time') || 'all';
+      // City: 'all', 'none' (no city), or a city name as the events list it.
+      const city=(query.get('city') || 'all').trim().slice(0,191);
       const publication=query.get('publication') || 'all', verification=query.get('verification') || 'all', needsAttention=query.get('needs_attention') || 'all';
       if(!['all','draft','live'].includes(publication) || !['all','not_verified','queued','verifying','verified','stale','failed'].includes(verification) || !['all','yes','no'].includes(needsAttention)) throw error(400,'Invalid verification or publication filter.');
       const from=query.get('from'),to=query.get('to'),today=vilniusToday(),search=normalizeEventSearch((query.get('search') || '').slice(0,200));
@@ -164,6 +166,8 @@ export function createAdmin(pool: Pool, token: string) {
       if(assistantReview==='pending') clauses.push('EXISTS (SELECT 1 FROM assistant_event_reviews ar WHERE ar.event_id=e.id AND ar.confirmed_at IS NULL)');
       if(review!=='all'){clauses.push('e.review_status=?');params.push(review);}
       if(source!=='all'){clauses.push('EXISTS (SELECT 1 FROM event_sources sf WHERE sf.event_id=e.id AND sf.source_key=?)');params.push(source);}
+      if(city==='none') clauses.push("NULLIF(TRIM(e.city),'') IS NULL");
+      else if(city!=='all'){clauses.push('TRIM(e.city)=?');params.push(city);}
       if(when==='upcoming'||when==='past'){clauses.push(`e.event_date IS NOT NULL AND COALESCE(e.event_end_date,e.event_date)${when==='past'?'<':'>='}?`);params.push(today);}
       if(when==='unknown') clauses.push('e.event_date IS NULL');
       if(['today','tomorrow','weekend','custom'].includes(when)){clauses.push('e.event_date<=? AND COALESCE(e.event_end_date,e.event_date)>=?');params.push(to!,from!);}
@@ -189,9 +193,10 @@ export function createAdmin(pool: Pool, token: string) {
           const [readyRows]=await conn.execute<RowDataPacket[]>(`SELECT COUNT(*) AS count FROM events e WHERE ${ready}`,[today]);
           const [states]=await conn.execute<RowDataPacket[]>('SELECT next_offset FROM source_state WHERE source_key=?',['vilnius-events']);
           const [sources]=await conn.execute<RowDataPacket[]>('SELECT DISTINCT source_key FROM event_sources ORDER BY source_key',[]);
+          const [cityRows]=await conn.execute<RowDataPacket[]>("SELECT TRIM(city) AS city,COUNT(*) AS count FROM events WHERE NULLIF(TRIM(city),'') IS NOT NULL GROUP BY TRIM(city) ORDER BY count DESC,city",[]);
           const [runs]=await conn.execute<RowDataPacket[]>('SELECT * FROM vilnius_event_runs ORDER BY id DESC LIMIT 8',[]);
           await conn.commit();
-          return {events:await withShowtimes(conn,events),total:searchTotal ?? Number(totals[0].count),page,limit,counts:Object.fromEntries(Object.entries(counts[0]).map(([key,value])=>[key,Number(value)])),readyCount:Number(readyRows[0].count),nextPage:Number(states[0]?.next_offset || 0)+1,sources,runs};
+          return {cities:cityRows.map(row=>({city:String(row.city),count:Number(row.count)})),events:await withShowtimes(conn,events),total:searchTotal ?? Number(totals[0].count),page,limit,counts:Object.fromEntries(Object.entries(counts[0]).map(([key,value])=>[key,Number(value)])),readyCount:Number(readyRows[0].count),nextPage:Number(states[0]?.next_offset || 0)+1,sources,runs};
         } catch(cause){await conn.rollback();throw cause;}
       } finally {conn.release();}
     },

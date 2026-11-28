@@ -8,6 +8,7 @@ import ArtistsPage from './artists';
 import EventsPage from './events';
 import DuplicatesPage from './duplicates';
 import ArtistReviewPage from './artist-review';
+import ImportLogPage from './import-log';
 import { SavedEventsPage, SavedEventsProvider } from './saved-events';
 import SettingsPage, { defaultStartPage, validStartPage } from './settings';
 import { api } from './data';
@@ -35,6 +36,7 @@ function StartupPage() {
 const page = path === '/' ? <StartupPage />
   : path === '/artists.html' ? <ArtistsPage />
   : path === '/artists-to-confirm.html' ? <ArtistReviewPage />
+  : path === '/import-log.html' ? <ImportLogPage />
   : path === '/artist.html' ? <ArtistPage mbid={new URLSearchParams(window.location.search).get('id') || ''} />
   : path === '/event.html' ? <EventPage id={new URLSearchParams(window.location.search).get('id') || ''} />
   : path === '/settings.html' ? <SettingsPage />

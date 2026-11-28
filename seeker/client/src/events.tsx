@@ -55,6 +55,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
   const [data, setData] = useState<EventPage | null>(null);
   const [query, setQuery] = useState('');
   const [price, setPrice] = useState('all');
+  const [city, setCity] = useState('all');
   const [time, setTime] = useState('all');
   const [sort, setSort] = useState<'date' | 'score-asc' | 'score-desc'>('date');
   const defaultWhen = queue ? 'all' : 'newest';
@@ -89,7 +90,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
   const apiWhen = when === 'newest' ? 'upcoming' : when;
   const invalid = when === 'custom' && (!from || (!!to && to < from));
   const extraCount = Number(assistantReview !== 'all') + Number(sourceFilter !== defaultSource) + Number(verification !== 'all');
-  const isFiltered = Boolean(query || when !== defaultWhen || price !== 'all' || time !== 'all' || publication !== 'all' || (review !== 'all' && queue !== 'not-music') || extraCount || savedOnly || sort !== 'date');
+  const isFiltered = Boolean(query || when !== defaultWhen || price !== 'all' || city !== 'all' || time !== 'all' || publication !== 'all' || (review !== 'all' && queue !== 'not-music') || extraCount || savedOnly || sort !== 'date');
   const sourceSavedEvents = savedEvents.filter(event => all || event.source_key === source);
 
   useEffect(() => {
@@ -113,7 +114,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
       return;
     }
     if (!silent) setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: String(pageSize), review, assistantReview, search: query, price, time, source: sourceFilter, when: apiWhen, today, sort, publication, verification, needs_attention: queue === 'attention' ? 'yes' : 'all' });
+    const params = new URLSearchParams({ page: String(page), limit: String(pageSize), review, assistantReview, search: query, price, city, time, source: sourceFilter, when: apiWhen, today, sort, publication, verification, needs_attention: queue === 'attention' ? 'yes' : 'all' });
     const range = dateRange(apiWhen, from, to, today);
     if (range) {
       params.set('from', range.from);
@@ -130,7 +131,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
     } finally {
       if (id === requestId.current) setLoading(false);
     }
-  }, [page, review, assistantReview, query, price, time, sourceFilter, when, apiWhen, from, to, today, invalid, sort, publication, verification, queue]);
+  }, [page, review, assistantReview, query, price, city, time, sourceFilter, when, apiWhen, from, to, today, invalid, sort, publication, verification, queue]);
   const loadCurrent = useRef(load);
   const rowEdits = useEventRowEdits((id, patch) => {
     setData(current => current ? { ...current, events: current.events.map(event => event.id === id ? { ...event, ...patch } : event) } : current);
@@ -171,6 +172,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
     setQuery('');
     setWhen(defaultWhen);
     setPrice('all');
+    setCity('all');
     setTime('all');
     setSort('date');
     setReview(queue === 'not-music' ? 'other' : 'all');
@@ -276,6 +278,7 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
     return matchesWhen
       && (!query || plainText(row.title).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
       && (price === 'all' || savedPrice.type === price)
+      && (city === 'all' || (city === 'none' ? !row.city?.trim() : row.city?.trim() === city))
       && (time === 'all' || (time === 'known' ? Boolean(row.event_time?.trim()) : !row.event_time?.trim()))
       && (queue !== 'attention' || Boolean(row.needs_attention))
       && (publication === 'all' || row.publication_status === publication)
@@ -331,6 +334,12 @@ export default function EventsPage({ avilys = false, all = false, queue }: { avi
               <div className="filter-grid">
                 <label className="field">When <select value={when} onChange={event => changeWhen(event.target.value as EventDateFilter)}>
                   {dateOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select></label>
+                <label className="field">City <select value={city} onChange={event => updateFilters(setCity, event.target.value)}>
+                  <option value="all">All cities</option>
+                  {(data?.cities ?? []).map(item => <option key={item.city} value={item.city}>{item.city} ({item.count})</option>)}
+                  {city !== 'all' && city !== 'none' && !data?.cities?.some(item => item.city === city) && <option value={city}>{city}</option>}
+                  <option value="none">No city</option>
                 </select></label>
                 <label className="field">Price <select value={price} onChange={event => updateFilters(setPrice, event.target.value)}>
                   <option value="all">All prices</option><option value="free">Free</option><option value="paid">Paid</option><option value="unknown">Price unknown</option>
